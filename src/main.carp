@@ -1,0 +1,54 @@
+(load "init.carp")
+(load "engine.carp")
+(load "render.carp")
+(load "../carp-input/glfw_backend.carp")
+
+(use Init)
+(use Engine)
+(use Renderer)
+(use GLFW)
+(use Camera)
+(use Clock)
+
+(defn main []
+  (let [width 1280
+        height 720
+        aspect (/ (Double.from-int width) (Double.from-int height))]
+    (match (Init.create-app width height "Carp WGPU Game Scaffold")
+      (Result.Error e) (do (println* "Initialization Error: " &e) -1)
+      (Result.Success app)
+        (let [ctx @(App.ctx &app)
+              win @(App.win &app)
+              surf @(App.surf &app)
+              backend (GLFWBackend.init)
+              eng (Engine.new (glfw-window->voidptr win) aspect backend)]
+          (match (Renderer.create ctx (WGPURender.surface-format surf))
+            (Result.Error e) (do (println* "Renderer Error: " &e) -2)
+            (Result.Success ren)
+              (do
+                (println* "Engine started.")
+                (while (= (GLFW.window-should-close win) 0)
+                  (do
+                    (GLFW.poll-events)
+                    
+                    (Engine.process-input! &eng)
+                    (Engine.tick! &eng)
+                    
+                    (let [p-trans (Engine.player-transform &eng)
+                          time (Clock.total (Engine.clock &eng))
+                          bg (Engine.bg-color &eng)
+                          ents (Engine.entities &eng)]
+                      (do
+                        (Renderer.update-uniforms! ctx &ren 
+                          time width height 
+                          (Transform.position p-trans) 
+                          &(Transform.forward p-trans)
+                          &(Transform.right p-trans)
+                          &(Transform.up p-trans)
+                          bg
+                          ents)
+                        (Renderer.draw surf ctx &ren)))))
+                
+                (println* "Shutting down...")
+                (Init.destroy-app app)
+                0))))))

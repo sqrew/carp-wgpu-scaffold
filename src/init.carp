@@ -1,0 +1,54 @@
+(load "GLFW.carp")
+(load "WGPURender.carp")
+(add-lib "-lX11")
+
+(use GLFW)
+(use WGPU)
+(use WGPURender)
+
+(register-type GLFWwindow)
+(register-type GLFWmonitor)
+
+; WGPURender.create-surface takes (Ptr ()) to avoid importing GLFW in the render module.
+(deftemplate glfw-window->voidptr (Fn [(Ptr GLFWwindow)] (Ptr ()))
+  "void* $NAME(GLFWwindow* w)"
+  "$DECL { return (void*)w; }")
+
+(deftype App [
+  ctx (Ptr WGPUContext)
+  win (Ptr GLFWwindow)
+  surf (Ptr WGPURenderSurface)
+  width Int
+  height Int
+])
+
+(defmodule Init
+  (defn create-app [width height title]
+    (match (WGPU.create-context)
+      (Result.Error e) (Result.Error (str* "GPU init failed: " e))
+      (Result.Success ctx)
+        (do
+          (ignore (GLFW.init))
+          (GLFW.window-hint GLFW.CLIENT_API GLFW.NO_API)
+          (let [win (GLFW.create-window width height (String.cstr title) NULL NULL)]
+            (if (null? win)
+              (do
+                (WGPU.free-context ctx)
+                (Result.Error (copy "Failed to create GLFW window")))
+              (match (WGPURender.create-surface ctx (glfw-window->voidptr win) width height)
+                (Result.Error e) 
+                  (do
+                    (GLFW.destroy-window win)
+                    (GLFW.terminate)
+                    (WGPU.free-context ctx)
+                    (Result.Error (str* "Surface failed: " e)))
+                (Result.Success surf)
+                  (Result.Success (App.init ctx win surf width height))))))))
+
+  (defn destroy-app [app]
+    (do
+      (WGPURender.free-surface @(App.surf &app))
+      (GLFW.destroy-window @(App.win &app))
+      (GLFW.terminate)
+      (WGPU.free-context @(App.ctx &app))))
+)

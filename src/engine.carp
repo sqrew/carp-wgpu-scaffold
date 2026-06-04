@@ -1,0 +1,164 @@
+(load "../carp-gamecam/camera.carp")
+(load "../carp-gametime/gametime.carp")
+(load "../carp-input/input.carp")
+(load "../carp-collision/collision.carp")
+(load "../carp-spatial/grid.carp")
+(load "../carp-transform/transform.carp")
+
+(use Camera)
+(use Clock)
+(use InputManager)
+(use Collision)
+(use CollisionChecker)
+(use SpatialGrid)
+(use Transform)
+(use Quaternion)
+
+(deftype Entity [
+  handle (Handle ())
+  transform Transform
+  collidable Collidable
+  color (Vector3 Double)
+])
+
+(deftype Engine [
+  camera Camera
+  clock Clock
+  input InputManager
+  grid (SpatialGrid Uint64)
+  entities (Array Entity)
+  player-transform Transform
+  player-collidable Collidable
+  player-yaw Double
+  player-pitch Double
+  bg-color (Vector3 Double)
+])
+
+(defmodule Engine
+  (defn new [win aspect backend]
+    (let [mgr (InputManager.create win backend)
+          grid (SpatialGrid.new 10.0 20 20 20)
+          p-handle (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l))
+          p-trans (Transform.init (Vector3.init 5.0 2.0 5.0) (Quaternion.identity) (Vector3.init 1.0 1.0 1.0))
+          p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 0.5))
+          p-col (Collidable.init p-handle p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          entities []]
+      (do
+        ;; 1. Configure Input Bindings
+        (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
+        (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
+        (InputManager.add-binding! &mgr "Left" (InputSource.Key GLFW.Keycode.A) 1.0)
+        (InputManager.add-binding! &mgr "Right" (InputSource.Key GLFW.Keycode.D) 1.0)
+        (InputManager.add-binding! &mgr "Up" (InputSource.Key GLFW.Keycode.E) 1.0)
+        (InputManager.add-binding! &mgr "Down" (InputSource.Key GLFW.Keycode.Q) 1.0)
+        (InputManager.add-binding! &mgr "LookX" (InputSource.MouseDeltaX) -0.002)
+        (InputManager.add-binding! &mgr "LookY" (InputSource.MouseDeltaY) 0.002)
+        (InputManager.add-binding! &mgr "Reset" (InputSource.Key GLFW.Keycode.R) 1.0)
+
+        ;; 2. Add some test entities
+        (for [i 1 6]
+          (let [h (the (Handle ()) (Handle.init (Uint64.from-long (Long.from-int i)) (Uint32.from-long 1l)))
+                pos (Vector3.init (* (Double.from-int i) 3.0) 2.0 0.0)
+                trans (Transform.init pos (Quaternion.identity) (Vector3.init 1.0 1.0 1.0))
+                vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
+                col (Collidable.init @&h vol (Uint32.from-long 1l) (Uint32.from-long 1l) true)
+                color (Vector3.init 1.0 0.0 0.0)]
+            (Array.push-back! &entities (Entity.init h trans col color))))
+
+        (Engine.init 
+          (Camera.new @(Transform.position &p-trans) -90.0 0.0 aspect)
+          (Clock.new)
+          mgr
+          grid
+          entities
+          p-trans
+          p-col
+          -1.5707 ;; player-yaw (facing -Z/South initially)
+          0.0     ;; player-pitch
+          (Vector3.init 0.1 0.1 0.1)))))
+
+  (defn process-input! [e]
+    (let [mgr (Engine.input e)
+          dt (Clock.unscaled-dt (Engine.clock e))
+          trans (Engine.player-transform e)
+          speed (* 10.0 dt)]
+      (do
+        (InputManager.update! mgr)
+        
+        ;; 1. Update Absolute Yaw/Pitch
+        (let [dx (InputManager.action-analog mgr "LookX")
+              dy (InputManager.action-analog mgr "LookY")]
+          (do
+            (Engine.set-player-yaw! e (+ @(Engine.player-yaw e) dx))
+            (Engine.set-player-pitch! e (Double.clamp -1.5 1.5 (+ @(Engine.player-pitch e) dy)))))
+
+        ;; 2. Reconstruct Rotation (Yaw then Pitch)
+        (let [yaw-axis (Vector3.init 0.0 1.0 0.0)
+              pitch-axis (Vector3.init 1.0 0.0 0.0)
+              q-yaw (Quaternion.from-axis-angle &yaw-axis @(Engine.player-yaw e))
+              q-pitch (Quaternion.from-axis-angle &pitch-axis @(Engine.player-pitch e))
+              final-rot (Quaternion.mul &q-yaw &q-pitch)]
+          (Transform.set-rotation! trans final-rot))
+        
+        ;; 3. Movement via basis vectors
+        (when (InputManager.action-digital? mgr "Forward") 
+          (Transform.set-position! trans (Vector3.add (Transform.position trans) &(Vector3.mul &(Transform.forward trans) speed))))
+        (when (InputManager.action-digital? mgr "Backward")
+          (Transform.set-position! trans (Vector3.add (Transform.position trans) &(Vector3.mul &(Transform.forward trans) (- 0.0 speed)))))
+        (when (InputManager.action-digital? mgr "Left")
+          (Transform.set-position! trans (Vector3.add (Transform.position trans) &(Vector3.mul &(Transform.right trans) (- 0.0 speed)))))
+        (when (InputManager.action-digital? mgr "Right")
+          (Transform.set-position! trans (Vector3.add (Transform.position trans) &(Vector3.mul &(Transform.right trans) speed))))
+        (when (InputManager.action-digital? mgr "Up")
+          (Transform.set-position! trans (Vector3.add (Transform.position trans) &(Vector3.init 0.0 speed 0.0))))
+        (when (InputManager.action-digital? mgr "Down")
+          (Transform.set-position! trans (Vector3.add (Transform.position trans) &(Vector3.init 0.0 (- 0.0 speed) 0.0))))
+
+        (when (InputManager.action-pressed? mgr "Reset")
+          (do
+            (Transform.set-position! trans (Vector3.init 5.0 2.0 5.0))
+            (Engine.set-player-yaw! e -1.5707)
+            (Engine.set-player-pitch! e 0.0))))))
+
+  (defn tick! [e]
+    (let [cam (Engine.camera e)
+          p-trans (Engine.player-transform e)
+          p-col (Engine.player-collidable e)
+          grid (Engine.grid e)
+          entities (Engine.entities e)]
+      (do
+        (Clock.tick! (Engine.clock e))
+        
+        ;; Sync Camera to Player Transform
+        (Camera.set-pos! cam @(Transform.position p-trans))
+        (Camera.set-front! cam (Transform.forward p-trans))
+
+        ;; Update player collidable position to match transform
+        (match-ref (Collidable.volume p-col)
+          (Volume.Ball s) (Sphere.set-center! s @(Transform.position p-trans))
+          _ ())
+          
+        (SpatialGrid.clear! grid)
+        (let [collidables []]
+          (do
+            (for [i 0 (Array.length entities)]
+              (let [ent (Array.unsafe-nth entities i)
+                    t (Entity.transform ent)
+                    c (Entity.collidable ent)
+                    vol (Collidable.volume c)]
+                (do
+                  ;; Sync volume to transform
+                  (match-ref vol
+                    (Volume.Ball s) (Sphere.set-center! s @(Transform.position t))
+                    _ ())
+                  (SpatialGrid.insert! grid &(Collision.get-aabb (Collidable.volume c)) (Uint64.from-long (Long.from-int i)))
+                  (Array.push-back! &collidables @c))))
+            
+            (Engine.set-bg-color! e (Vector3.init 0.1 0.1 0.1))
+            
+            (let [hits (CollisionChecker.query-and-check grid p-col &collidables false)]
+              (for [i 0 (Array.length &hits)]
+                (match-ref (Array.unsafe-nth &hits i)
+                  (CollisionResult.Triggered _) (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2))
+                  _ ()))))))))
+)

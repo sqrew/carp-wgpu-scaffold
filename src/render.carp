@@ -1,0 +1,174 @@
+(load "WGPU.carp")
+(load "WGPURender.carp")
+(load "../carp-gamecam/camera.carp")
+(load "../carp-transform/transform.carp")
+
+(use WGPU)
+(use WGPURender)
+(use Camera)
+(use Transform)
+
+(deftype Renderer [
+  pipeline (Ptr WGPURenderPipelineWrapper)
+  u-buffer (Ptr WGPUUniformBufferWrapper)
+  bind-group WGPUBindGroup
+])
+
+(def shader-wgsl
+  (str*
+    "struct Uniforms { 
+        time: f32, 
+        width: f32, 
+        height: f32, 
+        _pad0: f32,
+        cam_pos: vec4<f32>, 
+        cam_dir: vec4<f32>,
+        cam_right: vec4<f32>,
+        cam_up: vec4<f32>,
+        bg_color: vec4<f32>,
+        spheres: array<vec4<f32>, 8>
+    }
+    @group(0) @binding(0) var<uniform> u: Uniforms;
+
+    struct VertexOutput {
+        @builtin(position) position: vec4<f32>,
+        @location(0) uv: vec2<f32>,
+    }
+
+    @vertex
+    fn vs_main(@builtin(vertex_index) vi: u32) -> VertexOutput {
+        var pos = array<vec2<f32>, 3>(
+            vec2<f32>(-1.0, -1.0),
+            vec2<f32>( 3.0, -1.0),
+            vec2<f32>(-1.0,  3.0)
+        );
+        var out: VertexOutput;
+        out.position = vec4<f32>(pos[vi], 0.0, 1.0);
+        out.uv = pos[vi];
+        return out;
+    }
+
+    fn sdPlane(p: vec3<f32>, n: vec3<f32>, h: f32) -> f32 {
+        return dot(p, n) + h;
+    }
+
+    fn sdSphere(p: vec3<f32>, s: f32) -> f32 {
+        return length(p) - s;
+    }
+
+    fn worldSDF(p: vec3<f32>) -> f32 {
+        var d = sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0);
+        for(var i = 0; i < 5; i++) {
+            let s_pos = u.spheres[i].xyz;
+            if (length(s_pos) > 0.0) {
+                let s_dist = sdSphere(p - s_pos, 1.0);
+                d = min(d, s_dist);
+            }
+        }
+        return d;
+    }
+
+    @fragment
+    fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
+        let aspect = u.width / u.height;
+        let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
+        
+        let ro = u.cam_pos.xyz;
+        let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.5);
+
+        var t = 0.0;
+        var hit = false;
+        for(var i = 0; i < 80; i++) {
+            let p = ro + rd * t;
+            let d = worldSDF(p);
+            if (d < 0.001) {
+                hit = true;
+                break;
+            }
+            t += d;
+            if (t > 100.0) { break; }
+        }
+
+        var color = u.bg_color.rgb;
+        if (hit) {
+            let p = ro + rd * t;
+            if (p.y > 0.1) {
+                color = vec3<f32>(0.9, 0.9, 0.9);
+                let n = normalize(p - ro);
+                color *= dot(n, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
+            } else {
+                let grid = sin(p.x * 2.0) * sin(p.z * 2.0);
+                let check = smoothstep(-0.1, 0.1, grid);
+                color = mix(color * 0.5, color * 1.5, check);
+            }
+            color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
+        }
+
+        return vec4<f32>(color, 1.0);
+    }
+"))
+
+(defmodule Renderer
+  (defn create [ctx format]
+    (match (WGPURender.create-uniform-buffer ctx 224) ;; Increased for right/up vectors
+      (Result.Error e) (Result.Error (str* "Uniform failed: " e))
+      (Result.Success ub)
+        (match (WGPURender.create-pipeline ctx &shader-wgsl "vs_main" "fs_main" &format)
+          (Result.Error e) (do (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Pipeline failed: " e)))
+          (Result.Success pipe)
+            (match (WGPURender.create-render-uniform-bind-group ctx pipe ub)
+              (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Bind group failed: " e)))
+              (Result.Success bg)
+                (Result.Success (Renderer.init pipe ub bg))))))
+
+  (defn update-uniforms! [ctx ren time width height cam-pos cam-dir cam-right cam-up bg-color spheres]
+    (let [data [ (Double.to-float time)
+                 (Double.to-float (Double.from-int width))
+                 (Double.to-float (Double.from-int height))
+                 0.0f
+                 (Double.to-float @(Vector3.x cam-pos))
+                 (Double.to-float @(Vector3.y cam-pos))
+                 (Double.to-float @(Vector3.z cam-pos))
+                 1.0f
+                 (Double.to-float @(Vector3.x cam-dir))
+                 (Double.to-float @(Vector3.y cam-dir))
+                 (Double.to-float @(Vector3.z cam-dir))
+                 0.0f
+                 (Double.to-float @(Vector3.x cam-right))
+                 (Double.to-float @(Vector3.y cam-right))
+                 (Double.to-float @(Vector3.z cam-right))
+                 0.0f
+                 (Double.to-float @(Vector3.x cam-up))
+                 (Double.to-float @(Vector3.y cam-up))
+                 (Double.to-float @(Vector3.z cam-up))
+                 0.0f
+                 (Double.to-float @(Vector3.x bg-color))
+                 (Double.to-float @(Vector3.y bg-color))
+                 (Double.to-float @(Vector3.z bg-color))
+                 1.0f ]]
+      (do
+        (for [i 0 8]
+          (if (< i (Array.length spheres))
+            (let [s (Array.unsafe-nth spheres i)
+                  c (Entity.collidable s)]
+              (match-ref (Collidable.volume c)
+                (Volume.Ball ball)
+                  (let [center (Sphere.center ball)]
+                    (do
+                      (Array.push-back! &data (Double.to-float @(Vector3.x center)))
+                      (Array.push-back! &data (Double.to-float @(Vector3.y center)))
+                      (Array.push-back! &data (Double.to-float @(Vector3.z center)))
+                      (Array.push-back! &data 1.0f)))
+                _ (do (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f))))
+            (do (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f))))
+        (WGPURender.update-uniform-buffer ctx @(Renderer.u-buffer ren) &data))))
+
+  (defn draw [surf ctx ren]
+    (match (WGPURender.begin-frame surf ctx)
+      (Result.Error _) ()
+      (Result.Success frame)
+        (do
+          (WGPURender.run-pass frame @(Renderer.pipeline ren) @(Renderer.bind-group ren) (Maybe.Nothing))
+          (WGPURender.end-frame frame surf ctx)
+          (WGPURender.free-frame frame))))
+)

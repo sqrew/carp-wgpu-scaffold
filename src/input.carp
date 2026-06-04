@@ -1,0 +1,47 @@
+(load "GLFW.carp")
+
+(use GLFW)
+
+(deftype InputState [
+  win (Ptr GLFWwindow)
+  w Bool, a Bool, s Bool, d Bool
+  q Bool, e Bool
+  mouseX Double, mouseY Double
+  deltaX Double, deltaY Double
+  firstMouse Bool
+])
+
+(defmodule Input
+  (defn create [win]
+    (InputState.init win false false false false false false 0.0 0.0 0.0 0.0 true))
+  
+  (defn update! [input]
+    (let [win @(InputState.win input)
+          w-key (= (GLFW.get-key win GLFW.Keycode.W) GLFW.PRESS)
+          a-key (= (GLFW.get-key win GLFW.Keycode.A) GLFW.PRESS)
+          s-key (= (GLFW.get-key win GLFW.Keycode.S) GLFW.PRESS)
+          d-key (= (GLFW.get-key win GLFW.Keycode.D) GLFW.PRESS)
+          q-key (= (GLFW.get-key win GLFW.Keycode.Q) GLFW.PRESS)
+          e-key (= (GLFW.get-key win GLFW.Keycode.E) GLFW.PRESS)
+          mx 0.0
+          my 0.0]
+      (do
+        (InputState.set-w! input w-key)
+        (InputState.set-a! input a-key)
+        (InputState.set-s! input s-key)
+        (InputState.set-d! input d-key)
+        (InputState.set-q! input q-key)
+        (InputState.set-e! input e-key)
+        
+        (GLFW.get-cursor-pos win (Pointer.address &mx) (Pointer.address &my))
+        (if @(InputState.firstMouse input)
+          (do
+            (InputState.set-mouseX! input mx)
+            (InputState.set-mouseY! input my)
+            (InputState.set-firstMouse! input false))
+          (do
+            (InputState.set-deltaX! input (- mx @(InputState.mouseX input)))
+            (InputState.set-deltaY! input (- my @(InputState.mouseY input)))
+            (InputState.set-mouseX! input mx)
+            (InputState.set-mouseY! input my))))))
+)
