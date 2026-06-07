@@ -9,6 +9,8 @@
 (use GLFW)
 (use Camera)
 (use Clock)
+(use RigidBody)
+(use Transform)
 
 (defn main []
   (let [width 1280
@@ -34,7 +36,8 @@
                     (Engine.process-input! &eng)
                     (Engine.tick! &eng)
                     
-                    (let [p-trans (Engine.player-transform &eng)
+                    (let [p-rb (Engine.player-rb &eng)
+                          p-trans (RigidBody.transform p-rb)
                           time (Clock.total (Engine.clock &eng))
                           bg (Engine.bg-color &eng)
                           ents (Engine.entities &eng)]

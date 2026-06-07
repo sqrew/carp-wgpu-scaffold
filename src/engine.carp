@@ -6,6 +6,7 @@
 (load "../carp-transform/transform.carp")
 (load "../carp-dynamics/dynamics.carp")
 (load "../carp-physics/physics.carp")
+(load "../carp-rigidbody/rigidbody.carp")
 
 (use Camera)
 (use Clock)
@@ -19,11 +20,11 @@
 (use BodyType)
 (use Integrator)
 (use Solver)
+(use RigidBody)
 
 (deftype Entity [
   handle (Handle ())
-  transform Transform
-  body Body
+  rigidbody RigidBody
   collidable Collidable
   color (Vector3 Double)
 ])
@@ -34,13 +35,11 @@
   input InputManager
   grid (SpatialGrid Uint64)
   entities (Array Entity)
-  player-transform Transform
-  player-body Body
+  player-rb RigidBody
   player-collidable Collidable
   player-yaw Double
   player-pitch Double
-  floor-transform Transform
-  floor-body Body
+  floor-rb RigidBody
   floor-collidable Collidable
   bg-color (Vector3 Double)
   accumulator Double
@@ -51,13 +50,11 @@
     (let [mgr (InputManager.create win backend)
           grid (SpatialGrid.new 10.0 20 20 20)
           p-handle (Handle.init (Uint64.from-long 9999l) (Uint32.from-long 1l))
-          p-trans (Transform.init (Vector3.init 5.0 1.0 5.0) (Quaternion.identity) (Vector3.init 1.0 1.0 1.0))
-          p-body (Body.new 1.0 0.2 0.5 0.98)
+          p-rb (RigidBody.new (Vector3.init 5.0 1.0 5.0) (Quaternion.identity) 1.0 0.2 0.5 0.98)
           p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 0.5))
           p-col (Collidable.init p-handle p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
           entities []
-          f-trans (Transform.init (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) (Vector3.init 1.0 1.0 1.0))
-          f-body (Body.static 0.5 0.8)
+          f-rb (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.5 0.8)
           f-col (Collidable.init (Handle.init (Uint64.from-long 8888l) (Uint32.from-long 1l))
                                 (Volume.Box (AABB.init (Vector3.init -50.0 -10.0 -50.0) (Vector3.init 50.0 0.0 50.0)))
                                 (Uint32.from-long 1l) (Uint32.from-long 1l) false)]
@@ -74,33 +71,29 @@
         (for [i 0 5]
           (let [h (the (Handle ()) (Handle.init (Uint64.from-long (Long.from-int i)) (Uint32.from-long 1l)))
                 pos (Vector3.init (* (Double.from-int i) 6.0) 5.0 0.0)
-                trans (Transform.init pos (Quaternion.identity) (Vector3.init 1.0 1.0 1.0))
-                body (Body.new 1.0 0.5 0.5 0.98)
+                rb (RigidBody.new pos (Quaternion.identity) 1.0 0.5 0.5 0.98)
                 vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
                 col (Collidable.init @&h vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
                 color (Vector3.init 1.0 0.0 0.0)]
-            (Array.push-back! &entities (Entity.init h trans body col color))))
+            (Array.push-back! &entities (Entity.init h rb col color))))
         (Engine.init 
-          (Camera.new @(Transform.position &p-trans) -90.0 0.0 aspect)
+          (Camera.new @(RigidBody.position &p-rb) -90.0 0.0 aspect)
           (Clock.new)
           mgr
           grid
           entities
-          p-trans
-          p-body
+          p-rb
           p-col
           -1.5707 
           0.0
-          f-trans
-          f-body
+          f-rb
           f-col
           (Vector3.init 0.1 0.1 0.1)
           0.0))))
 
   (defn process-input! [e]
     (let [mgr (Engine.input e)
-          trans (Engine.player-transform e)
-          body (Engine.player-body e)
+          rb (Engine.player-rb e)
           force-mag 25.0]
       (do
         (InputManager.update! mgr)
@@ -113,34 +106,33 @@
               pitch-axis (Vector3.init 1.0 0.0 0.0)
               q-yaw (Quaternion.from-axis-angle &yaw-axis @(Engine.player-yaw e))
               q-pitch (Quaternion.from-axis-angle &pitch-axis @(Engine.player-pitch e))
-              final-rot (Quaternion.mul &q-yaw &q-pitch)]
-          (Transform.set-rotation! trans final-rot))
+              final-rot (Quaternion.mul &q-yaw &q-pitch)
+              t (RigidBody.transform rb)]
+          (Transform.set-rotation! t final-rot))
         (when (InputManager.action-digital? mgr "Forward") 
-          (Body.apply-force! body &(Vector3.mul &(Transform.forward trans) force-mag)))
+          (RigidBody.apply-force! rb &(Vector3.mul &(Transform.forward (RigidBody.transform rb)) force-mag)))
         (when (InputManager.action-digital? mgr "Backward")
-          (Body.apply-force! body &(Vector3.mul &(Transform.forward trans) (- 0.0 force-mag))))
+          (RigidBody.apply-force! rb &(Vector3.mul &(Transform.forward (RigidBody.transform rb)) (- 0.0 force-mag))))
         (when (InputManager.action-digital? mgr "Left")
-          (Body.apply-force! body &(Vector3.mul &(Transform.right trans) (- 0.0 force-mag))))
+          (Body.apply-force! (RigidBody.body rb) &(Vector3.mul &(Transform.right (RigidBody.transform rb)) (- 0.0 force-mag))))
         (when (InputManager.action-digital? mgr "Right")
-          (Body.apply-force! body &(Vector3.mul &(Transform.right trans) force-mag)))
+          (Body.apply-force! (RigidBody.body rb) &(Vector3.mul &(Transform.right (RigidBody.transform rb)) force-mag)))
         (when (InputManager.action-digital? mgr "Up")
-          (Body.apply-force! body &(Vector3.init 0.0 force-mag 0.0)))
+          (RigidBody.apply-force! rb &(Vector3.init 0.0 force-mag 0.0)))
         (when (InputManager.action-digital? mgr "Down")
-          (Body.apply-force! body &(Vector3.init 0.0 (- 0.0 force-mag) 0.0)))
+          (RigidBody.apply-force! rb &(Vector3.init 0.0 (- 0.0 force-mag) 0.0)))
         (when (InputManager.action-pressed? mgr "Reset")
           (do
-            (Transform.set-position! trans (Vector3.init 5.0 1.0 5.0))
-            (Body.set-velocity! body (Vector3.init 0.0 0.0 0.0))
+            (RigidBody.set-position! rb (Vector3.init 5.0 1.0 5.0))
+            (Body.set-velocity! (RigidBody.body rb) (Vector3.init 0.0 0.0 0.0))
             (Engine.set-player-yaw! e -1.5707)
             (Engine.set-player-pitch! e 0.0))))))
 
   (defn tick! [e]
     (let [cam (Engine.camera e)
-          p-trans (Engine.player-transform e)
-          p-body (Engine.player-body e)
+          p-rb (Engine.player-rb e)
           p-col (Engine.player-collidable e)
-          f-trans (Engine.floor-transform e)
-          f-body (Engine.floor-body e)
+          f-rb (Engine.floor-rb e)
           f-col (Engine.floor-collidable e)
           grid (Engine.grid e)
           entities (Engine.entities e)
@@ -154,21 +146,20 @@
           (do
             (let [gravity (Vector3.init 0.0 -9.81 0.0)]
               (do
-                (Body.apply-force! p-body &gravity)
+                (RigidBody.apply-force! p-rb &gravity)
                 (for [i 0 (Array.length entities)]
-                  (Body.apply-force! (Entity.body (Array.unsafe-nth entities i)) &gravity))))
-            (Integrator.step-custom! p-trans p-body fixed-dt fixed-dt)
+                  (RigidBody.apply-force! (Entity.rigidbody (Array.unsafe-nth entities i)) &gravity))))
+            (RigidBody.step-custom! p-rb fixed-dt fixed-dt)
             (for [i 0 (Array.length entities)]
-              (let [ent (Array.unsafe-nth entities i)]
-                (Integrator.step-custom! (Entity.transform ent) (Entity.body ent) fixed-dt fixed-dt)))
+              (RigidBody.step-custom! (Entity.rigidbody (Array.unsafe-nth entities i)) fixed-dt fixed-dt))
             (SpatialGrid.clear! grid)
             (for [i 0 (Array.length entities)]
               (let [ent (Array.unsafe-nth entities i)
-                    t (Entity.transform ent)
+                    rb (Entity.rigidbody ent)
                     c (Entity.collidable ent)]
                 (do
                   (match-ref (Collidable.volume c)
-                    (Volume.Ball s) (Sphere.set-center! s @(Transform.position t))
+                    (Volume.Ball s) (Sphere.set-center! s @(RigidBody.position rb))
                     _ ())
                   (SpatialGrid.insert! grid &(Collision.get-aabb (Collidable.volume c)) (Uint64.from-long (Long.from-int i))))))
             (let [collidables []]
@@ -178,7 +169,7 @@
                 (for [iter 0 8]
                   (do
                     (match-ref (Collidable.volume p-col)
-                      (Volume.Ball s) (Sphere.set-center! s @(Transform.position p-trans))
+                      (Volume.Ball s) (Sphere.set-center! s @(RigidBody.position p-rb))
                       _ ())
                     (for [idx1 0 (Array.length entities)]
                       (let [e1 (Array.unsafe-nth entities idx1)
@@ -188,7 +179,7 @@
                             (CollisionResult.Physical col)
                               (let [idx2 (Long.to-int (Uint64.to-long @(Handle.index-raw (Collision.b col))))
                                     e2 (Array.unsafe-nth entities idx2)]
-                                (Solver.solve! (Entity.transform e1) (Entity.body e1) (Entity.transform e2) (Entity.body e2) col))
+                                (Solver.solve! (Entity.rigidbody e1) (Entity.rigidbody e2) col))
                             _ ()))))
                     (let [p-hits (CollisionChecker.query-and-check grid p-col &collidables false)]
                       (for [h 0 (Array.length &p-hits)]
@@ -196,18 +187,18 @@
                           (CollisionResult.Physical col)
                             (let [idx (Long.to-int (Uint64.to-long @(Handle.index-raw (Collision.b col))))
                                   other (Array.unsafe-nth entities idx)]
-                              (do
-                                (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2))
-                                (Solver.solve! p-trans p-body (Entity.transform other) (Entity.body other) col)))
+                            (do
+                              (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2))
+                              (Solver.solve! p-rb (Entity.rigidbody other) col)))
                           _ ())))
                     (match (check-pair p-col f-col)
-                      (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! p-trans p-body f-trans f-body &col)
+                      (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! p-rb f-rb &col)
                       _ ())
                     (for [idx 0 (Array.length entities)]
                       (let [ent (Array.unsafe-nth entities idx)]
                         (match (check-pair (Entity.collidable ent) f-col)
-                          (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! (Entity.transform ent) (Entity.body ent) f-trans f-body &col)
+                          (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! (Entity.rigidbody ent) f-rb &col)
                           _ ())))))))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) fixed-dt))))
-        (Camera.set-pos! cam @(Transform.position p-trans))
-        (Camera.set-front! cam (Transform.forward p-trans))))))
+        (Camera.set-pos! cam @(RigidBody.position p-rb))
+        (Camera.set-front! cam (Transform.forward (RigidBody.transform p-rb)))))))
