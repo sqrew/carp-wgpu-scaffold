@@ -2,11 +2,13 @@
 (load "WGPURender.carp")
 (load "../carp-gamecam/camera.carp")
 (load "../carp-transform/transform.carp")
+(load "../carp-rigidbody/rigidbody.carp")
 
 (use WGPU)
 (use WGPURender)
 (use Camera)
 (use Transform)
+(use RigidBody)
 
 (deftype Renderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
@@ -26,7 +28,7 @@
         cam_right: vec4<f32>,
         cam_up: vec4<f32>,
         bg_color: vec4<f32>,
-        spheres: array<vec4<f32>, 8>
+        spheres: array<vec4<f32>, 32>
     }
     @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -58,10 +60,11 @@
 
     fn worldSDF(p: vec3<f32>) -> f32 {
         var d = sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0);
-        for(var i = 0; i < 5; i++) {
-            let s_pos = u.spheres[i].xyz;
-            if (length(s_pos) > 0.0) {
-                let s_dist = sdSphere(p - s_pos, 1.0);
+        // Supports up to 32 dynamic spheres
+        for(var i = 0; i < 32; i++) {
+            let s_data = u.spheres[i];
+            if (s_data.w > 0.0) {
+                let s_dist = sdSphere(p - s_data.xyz, s_data.w);
                 d = min(d, s_dist);
             }
         }
@@ -110,7 +113,7 @@
 
 (defmodule Renderer
   (defn create [ctx format]
-    (match (WGPURender.create-uniform-buffer ctx 224) ;; Increased for right/up vectors
+    (match (WGPURender.create-uniform-buffer ctx 608) ;; 96 (base) + 32 * 16 (spheres)
       (Result.Error e) (Result.Error (str* "Uniform failed: " e))
       (Result.Success ub)
         (match (WGPURender.create-pipeline ctx &shader-wgsl "vs_main" "fs_main" &format)
@@ -121,7 +124,7 @@
               (Result.Success bg)
                 (Result.Success (Renderer.init pipe ub bg))))))
 
-  (defn update-uniforms! [ctx ren time width height cam-pos cam-dir cam-right cam-up bg-color spheres]
+  (defn update-uniforms! [ctx ren time width height cam-pos cam-dir cam-right cam-up bg-color entities]
     (let [data [ (Double.to-float time)
                  (Double.to-float (Double.from-int width))
                  (Double.to-float (Double.from-int height))
@@ -147,18 +150,20 @@
                  (Double.to-float @(Vector3.z bg-color))
                  1.0f ]]
       (do
-        (for [i 0 8]
-          (if (< i (Array.length spheres))
-            (let [s (Array.unsafe-nth spheres i)
-                  c (Entity.collidable s)]
-              (match-ref (Collidable.volume c)
+        ;; Sync up to 32 spheres
+        (for [i 0 32]
+          (if (< i (Array.length entities))
+            (let [ent (Array.unsafe-nth entities i)
+                  rb (Entity.rigidbody ent)
+                  col (Entity.collidable ent)
+                  pos (RigidBody.position rb)]
+              (match-ref (Collidable.volume col)
                 (Volume.Ball ball)
-                  (let [center (Sphere.center ball)]
-                    (do
-                      (Array.push-back! &data (Double.to-float @(Vector3.x center)))
-                      (Array.push-back! &data (Double.to-float @(Vector3.y center)))
-                      (Array.push-back! &data (Double.to-float @(Vector3.z center)))
-                      (Array.push-back! &data 1.0f)))
+                  (do
+                    (Array.push-back! &data (Double.to-float @(Vector3.x pos)))
+                    (Array.push-back! &data (Double.to-float @(Vector3.y pos)))
+                    (Array.push-back! &data (Double.to-float @(Vector3.z pos)))
+                    (Array.push-back! &data (Double.to-float @(Sphere.radius ball))))
                 _ (do (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f))))
             (do (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f))))
         (WGPURender.update-uniform-buffer ctx @(Renderer.u-buffer ren) &data))))

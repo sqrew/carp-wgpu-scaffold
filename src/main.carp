@@ -11,6 +11,7 @@
 (use Clock)
 (use RigidBody)
 (use Transform)
+(use Player)
 
 (defn main []
   (let [width 1280
@@ -36,7 +37,7 @@
                     (Engine.process-input! &eng)
                     (Engine.tick! &eng)
                     
-                    (let [p-rb (Engine.player-rb &eng)
+                    (let [p-rb (Player.rigidbody (Engine.player &eng))
                           p-trans (RigidBody.transform p-rb)
                           time (Clock.total (Engine.clock &eng))
                           bg (Engine.bg-color &eng)
