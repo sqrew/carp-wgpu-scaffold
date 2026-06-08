@@ -1,0 +1,110 @@
+(load "WGPU.carp")
+(load "WGPURender.carp")
+(load "commands.carp")
+
+(use WGPU)
+(use WGPURender)
+
+(def line-shader-wgsl
+  (str*
+    "struct Uniforms {
+        view_proj: mat4x4<f32>,
+    }
+    @group(0) @binding(0) var<uniform> u: Uniforms;
+
+    struct VertexInput {
+        @location(0) position: vec3<f32>,
+        @location(1) color: vec3<f32>,
+    }
+
+    struct VertexOutput {
+        @builtin(position) clip_pos: vec4<f32>,
+        @location(0) color: vec3<f32>,
+    }
+
+    @vertex
+    fn vs_main(in: VertexInput) -> VertexOutput {
+        var out: VertexOutput;
+        out.clip_pos = u.view_proj * vec4<f32>(in.position, 1.0);
+        out.color = in.color;
+        return out;
+    }
+
+    @fragment
+    fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+        return vec4<f32>(in.color, 1.0);
+    }
+"))
+
+(deftype LinePass [
+  pipeline (Ptr WGPUGeomPipelineWrapper)
+  u-buffer (Ptr WGPUUniformBufferWrapper)
+  v-buffer (Ptr WGPUVertexBufferWrapper)
+  bind-group WGPUBindGroup
+  max-lines Int
+])
+
+(defmodule LinePass
+  (defn create [ctx format max-lines]
+    (let [u-size 64 ;; 4x4 mat
+          v-size (* max-lines (* 2 24))
+          dummy-data (the (Array Float) (replicate (/ v-size 4) &0.0f))]
+      (match (WGPURender.create-uniform-buffer ctx u-size)
+        (Result.Error e) (Result.Error (str* "Line Uniform failed: " e))
+        (Result.Success ub)
+          (match (WGPURender.create-vertex-buffer ctx &dummy-data)
+            (Result.Error e) (do (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Line Vertex failed: " e)))
+            (Result.Success vb)
+              (match (WGPURender.create-geom-pipeline ctx &line-shader-wgsl "vs_main" "fs_main" &format "line-list" 24)
+                (Result.Error e) (do (WGPURender.free-uniform-buffer ub) (WGPURender.free-vertex-buffer vb) (Result.Error (str* "Line Pipeline failed: " e)))
+                (Result.Success pipe)
+                  (match (WGPURender.create-uniform-bind-group ctx pipe ub)
+                    (Result.Error e) (do (WGPURender.free-geom-pipeline pipe) (WGPURender.free-uniform-buffer ub) (WGPURender.free-vertex-buffer vb) (Result.Error (str* "Line Bind group failed: " e)))
+                    (Result.Success bg)
+                      (Result.Success (LinePass.init pipe ub vb bg max-lines))))))))
+
+  (defn update! [ctx lp view-proj commands]
+    (let [v-data (the (Array Float) [])
+          line-count 0
+          max @(LinePass.max-lines lp)]
+      (do
+        ;; 1. Update Uniforms (ViewProj Matrix)
+        (WGPURender.update-uniform-buffer ctx @(LinePass.u-buffer lp) view-proj)
+        
+        ;; 2. Pack Vertex Data from commands
+        (for [i 0 (Array.length commands)]
+          (when (< line-count max)
+            (match-ref (Array.unsafe-nth commands i)
+              (RenderCommand.DrawLine start end color)
+                (do
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.x start)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.y start)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.z start)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.x color)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.y color)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.z color)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.x end)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.y end)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.z end)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.x color)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.y color)))
+                  (Array.push-back! &v-data (Double.to-float @(Vector3.z color)))
+                  (set! line-count (inc line-count)))
+              _ ())))
+        
+        ;; 3. Upload to GPU (Re-create if size changed)
+        (if (> line-count 0)
+            (let [required-size (Uint64.from-long (Long.from-int (* (Array.length &v-data) 4)))]
+              (do
+                ;; For now, we just update. In a real engine, we'd check size and re-allocate.
+                ;; But create-vertex-buffer in our helper makes a static buffer by default?
+                ;; No, it's dynamic enough for QueueWrite.
+                (WGPURender.update-vertex-buffer ctx @(LinePass.v-buffer lp) &v-data)))
+            ())
+        line-count)))
+
+  (defn render [frame ctx lp line-count depth]
+    (if (> line-count 0)
+        (WGPURender.run-geom-pass-overlay frame @(LinePass.pipeline lp) @(LinePass.bind-group lp) @(LinePass.v-buffer lp) depth (Uint32.from-long (Long.from-int (* line-count 2))) (Maybe.Nothing))
+        ()))
+)

@@ -25,7 +25,7 @@
               surf @(App.surf &app)
               backend (GLFWBackend.init)
               eng (Engine.new (glfw-window->voidptr win) aspect backend)]
-          (match (Renderer.create ctx (WGPURender.surface-format surf))
+          (match (Renderer.create ctx (WGPURender.surface-format surf) width height)
             (Result.Error e) (do (println* "Renderer Error: " &e) -2)
             (Result.Success ren)
               (do
@@ -37,21 +37,14 @@
                     (Engine.process-input! &eng)
                     (Engine.tick! &eng)
                     
-                    (let [p-rb (Player.rigidbody (Engine.player &eng))
-                          p-trans (RigidBody.transform p-rb)
-                          time (Clock.total (Engine.clock &eng))
-                          bg (Engine.bg-color &eng)
-                          ents (Engine.entities &eng)]
+                    (let [cam (Engine.camera &eng)
+                          time (Clock.total (Engine.clock &eng))]
                       (do
-                        (Renderer.update-uniforms! ctx &ren 
-                          time width height 
-                          (Transform.position p-trans) 
-                          &(Transform.forward p-trans)
-                          &(Transform.right p-trans)
-                          &(Transform.up p-trans)
-                          bg
-                          ents)
-                        (Renderer.draw surf ctx &ren)))))
+                        (Renderer.clear! &ren)
+                        (Engine.submit-render-commands! &eng &ren)
+                        (let [line-count (Renderer.process-commands! ctx &ren 
+                                           time width height cam)]
+                          (Renderer.draw surf ctx &ren line-count))))))
                 
                 (println* "Shutting down...")
                 (Init.destroy-app app)

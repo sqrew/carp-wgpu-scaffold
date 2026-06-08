@@ -1,0 +1,8 @@
+(load "../carp-geometry/geometry.carp")
+(use Geometry)
+
+(deftype RenderCommand
+  (DrawSdf [(Vector3 Double) Double Quaternion])
+  (DrawLine [(Vector3 Double) (Vector3 Double) (Vector3 Double)])
+  (DrawAABB [AABB (Vector3 Double)])
+  (SetBg [(Vector3 Double)]))

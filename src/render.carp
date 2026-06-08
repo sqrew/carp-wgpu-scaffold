@@ -3,22 +3,32 @@
 (load "../carp-gamecam/camera.carp")
 (load "../carp-transform/transform.carp")
 (load "../carp-rigidbody/rigidbody.carp")
+(load "commands.carp")
+(load "line_pass.carp")
 
 (use WGPU)
 (use WGPURender)
 (use Camera)
 (use Transform)
 (use RigidBody)
+(use LinePass)
 
 (deftype Renderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
   u-buffer (Ptr WGPUUniformBufferWrapper)
   bind-group WGPUBindGroup
+  depth-texture (Ptr WGPUDepthTexture)
+  line-pass LinePass
+  commands (Array RenderCommand)
 ])
 
 (def shader-wgsl
   (str*
-    "struct Uniforms { 
+    "struct SphereData {
+        pos: vec4<f32>,
+        rot: vec4<f32>,
+    }
+    struct Uniforms { 
         time: f32, 
         width: f32, 
         height: f32, 
@@ -28,7 +38,7 @@
         cam_right: vec4<f32>,
         cam_up: vec4<f32>,
         bg_color: vec4<f32>,
-        spheres: array<vec4<f32>, 32>
+        spheres: array<SphereData, 32>
     }
     @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -58,13 +68,20 @@
         return length(p) - s;
     }
 
+    fn rotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
+        return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
+    }
+
+    fn q_inv(q: vec4<f32>) -> vec4<f32> {
+        return vec4<f32>(-q.xyz, q.w);
+    }
+
     fn worldSDF(p: vec3<f32>) -> f32 {
         var d = sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0);
-        // Supports up to 32 dynamic spheres
         for(var i = 0; i < 32; i++) {
             let s_data = u.spheres[i];
-            if (s_data.w > 0.0) {
-                let s_dist = sdSphere(p - s_data.xyz, s_data.w);
+            if (s_data.pos.w > 0.0) {
+                let s_dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
                 d = min(d, s_dist);
             }
         }
@@ -96,8 +113,29 @@
         if (hit) {
             let p = ro + rd * t;
             if (p.y > 0.1) {
+                var minDist = 100.0;
+                var hitId = -1;
+                for(var i = 0; i < 32; i++) {
+                    let s_data = u.spheres[i];
+                    if (s_data.pos.w > 0.0) {
+                        let d = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
+                        if (d < minDist) {
+                            minDist = d;
+                            hitId = i;
+                        }
+                    }
+                }
+                
                 color = vec3<f32>(0.9, 0.9, 0.9);
-                let n = normalize(p - ro);
+                if (hitId != -1) {
+                    let s_data = u.spheres[hitId];
+                    let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                    let stripe = sin(lp.y * 10.0);
+                    let check = smoothstep(-0.1, 0.1, stripe);
+                    color = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
+                }
+
+                let n = normalize(p - ro); // Simple normal approximation
                 color *= dot(n, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
             } else {
                 let grid = sin(p.x * 2.0) * sin(p.z * 2.0);
@@ -112,8 +150,8 @@
 "))
 
 (defmodule Renderer
-  (defn create [ctx format]
-    (match (WGPURender.create-uniform-buffer ctx 608) ;; 96 (base) + 32 * 16 (spheres)
+  (defn create [ctx format width height]
+    (match (WGPURender.create-uniform-buffer ctx 1120) ;; 96 + 32 * 32
       (Result.Error e) (Result.Error (str* "Uniform failed: " e))
       (Result.Success ub)
         (match (WGPURender.create-pipeline ctx &shader-wgsl "vs_main" "fs_main" &format)
@@ -122,10 +160,32 @@
             (match (WGPURender.create-render-uniform-bind-group ctx pipe ub)
               (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Bind group failed: " e)))
               (Result.Success bg)
-                (Result.Success (Renderer.init pipe ub bg))))))
+                (match (WGPURender.create-depth-texture ctx width height)
+                  (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Depth failed: " e)))
+                  (Result.Success dt)
+                    (match (LinePass.create ctx format 1000)
+                      (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "LinePass failed: " e)))
+                      (Result.Success lp)
+                        (Result.Success (Renderer.init pipe ub bg dt lp []))))))))
 
-  (defn update-uniforms! [ctx ren time width height cam-pos cam-dir cam-right cam-up bg-color entities]
-    (let [data [ (Double.to-float time)
+  (defn clear! [ren]
+    (let [cmds (Renderer.commands ren)]
+      (while (not (Array.empty? cmds))
+        (ignore (Array.pop-back! cmds)))))
+
+  (defn submit! [ren cmd]
+    (Array.push-back! (Renderer.commands ren) cmd))
+
+  (defn process-commands! [ctx ren time width height cam]
+    (let [bg-color (Vector3.init 0.1 0.1 0.1)
+          commands (Renderer.commands ren)
+          vp (Camera.view-projection cam)
+          vp-data (CameraMat4.data &vp)
+          cam-pos (Camera.pos cam)
+          cam-dir (Camera.front cam)
+          cam-right (Camera.right cam)
+          cam-up (Camera.up cam)
+          data [ (Double.to-float time)
                  (Double.to-float (Double.from-int width))
                  (Double.to-float (Double.from-int height))
                  0.0f
@@ -144,36 +204,53 @@
                  (Double.to-float @(Vector3.x cam-up))
                  (Double.to-float @(Vector3.y cam-up))
                  (Double.to-float @(Vector3.z cam-up))
-                 0.0f
-                 (Double.to-float @(Vector3.x bg-color))
-                 (Double.to-float @(Vector3.y bg-color))
-                 (Double.to-float @(Vector3.z bg-color))
-                 1.0f ]]
+                 0.0f]]
       (do
-        ;; Sync up to 32 spheres
-        (for [i 0 32]
-          (if (< i (Array.length entities))
-            (let [ent (Array.unsafe-nth entities i)
-                  rb (Entity.rigidbody ent)
-                  col (Entity.collidable ent)
-                  pos (RigidBody.position rb)]
-              (match-ref (Collidable.volume col)
-                (Volume.Ball ball)
-                  (do
-                    (Array.push-back! &data (Double.to-float @(Vector3.x pos)))
-                    (Array.push-back! &data (Double.to-float @(Vector3.y pos)))
-                    (Array.push-back! &data (Double.to-float @(Vector3.z pos)))
-                    (Array.push-back! &data (Double.to-float @(Sphere.radius ball))))
-                _ (do (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f))))
-            (do (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f) (Array.push-back! &data 0.0f))))
-        (WGPURender.update-uniform-buffer ctx @(Renderer.u-buffer ren) &data))))
+        ;; 1. Global Sdf Pass Uniforms
+        (for [i 0 (Array.length commands)]
+          (match-ref (Array.unsafe-nth commands i)
+            (RenderCommand.SetBg bg) (set! bg-color @bg)
+            _ ()))
+        (Array.push-back! &data (Double.to-float @(Vector3.x &bg-color)))
+        (Array.push-back! &data (Double.to-float @(Vector3.y &bg-color)))
+        (Array.push-back! &data (Double.to-float @(Vector3.z &bg-color)))
+        (Array.push-back! &data 1.0f)
+        (let [sphere-count 0]
+          (do
+            (for [i 0 (Array.length commands)]
+              (when (< sphere-count 32)
+                (match-ref (Array.unsafe-nth commands i)
+                  (RenderCommand.DrawSdf pos radius rot)
+                    (do
+                      ;; Position + Radius (vec4)
+                      (Array.push-back! &data (Double.to-float @(Vector3.x pos)))
+                      (Array.push-back! &data (Double.to-float @(Vector3.y pos)))
+                      (Array.push-back! &data (Double.to-float @(Vector3.z pos)))
+                      (Array.push-back! &data (Double.to-float @radius))
+                      ;; Rotation (vec4)
+                      (Array.push-back! &data (Double.to-float @(Quaternion.x rot)))
+                      (Array.push-back! &data (Double.to-float @(Quaternion.y rot)))
+                      (Array.push-back! &data (Double.to-float @(Quaternion.z rot)))
+                      (Array.push-back! &data (Double.to-float @(Quaternion.w rot)))
+                      (set! sphere-count (inc sphere-count)))
+                  _ ())))
+            (for [i sphere-count 32]
+              (do (for [j 0 8] (Array.push-back! &data 0.0f))))))
+        (WGPURender.update-uniform-buffer ctx @(Renderer.u-buffer ren) &data)
+        
+        ;; 2. Line Pass Update (returns line-count)
+        (LinePass.update! ctx (Renderer.line-pass ren) vp-data commands))))
 
-  (defn draw [surf ctx ren]
+  (defn draw [surf ctx ren line-count]
     (match (WGPURender.begin-frame surf ctx)
       (Result.Error _) ()
       (Result.Success frame)
         (do
+          ;; Pass 1: SDF Scene
           (WGPURender.run-pass frame @(Renderer.pipeline ren) @(Renderer.bind-group ren) (Maybe.Nothing))
+          ;; Pass 2: Line Geometry (if any)
+          (LinePass.render frame ctx (Renderer.line-pass ren) line-count @(Renderer.depth-texture ren))
+          
           (WGPURender.end-frame frame surf ctx)
           (WGPURender.free-frame frame))))
 )

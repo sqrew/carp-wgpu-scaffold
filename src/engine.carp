@@ -8,6 +8,7 @@
 (load "../carp-physics/physics.carp")
 (load "../carp-rigidbody/rigidbody.carp")
 (load "player.carp")
+(load "render.carp")
 
 (use Camera)
 (use Clock)
@@ -69,7 +70,7 @@
             (let [idx (+ x (* z 6))
                   h (the (Handle ()) (Handle.init (Uint64.from-long (Long.from-int idx)) (Uint32.from-long 1l)))
                   pos (Vector3.init (* (Double.from-int x) 6.0) 5.0 (* (Double.from-int z) 6.0))
-                  rb (RigidBody.new pos (Quaternion.identity) 1.0 0.8 0.5 0.98)
+                  rb (RigidBody.new pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)
                   vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
                   col (Collidable.init @&h vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
                   color (Vector3.init 1.0 0.0 0.0)]
@@ -182,6 +183,26 @@
                           (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! (Entity.rigidbody ent) f-rb &col)
                           _ ())))))))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) fixed-dt))))
-        (Camera.set-pos! cam @(RigidBody.position p-rb))
-        (Camera.set-front! cam (Transform.forward (RigidBody.transform p-rb))))))
+        (let [p-trans (RigidBody.transform p-rb)]
+          (do
+            (Camera.set-pos! cam @(RigidBody.position p-rb))
+            (Camera.set-front! cam (Transform.forward p-trans))
+            (Camera.set-right! cam (Transform.right p-trans))
+            (Camera.set-up! cam (Transform.up p-trans)))))))
+
+  (defn submit-render-commands! [e ren]
+    (let [entities (Engine.entities e)]
+      (do
+        (Renderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
+        (for [i 0 (Array.length entities)]
+          (let [ent (Array.unsafe-nth entities i)
+                rb (Entity.rigidbody ent)
+                pos @(RigidBody.position rb)
+                col (Entity.collidable ent)]
+            (match-ref (Collidable.volume col)
+              (Volume.Ball ball)
+                (do
+                  (Renderer.submit! ren (RenderCommand.DrawSdf @&pos @(Sphere.radius ball) @(RigidBody.rotation rb)))
+                  (Renderer.submit! ren (RenderCommand.DrawLine @&pos (Vector3.init @(Vector3.x &pos) 0.0 @(Vector3.z &pos)) (Vector3.init 1.0 1.0 1.0))))
+              _ ()))))))
 )
