@@ -9,28 +9,21 @@
 (load "../carp-rigidbody/rigidbody.carp")
 (load "player.carp")
 (load "render.carp")
+(load "entity.carp")
+(load "physics_system.carp")
 
 (use Camera)
 (use Clock)
 (use InputManager)
 (use Collision)
-(use CollisionChecker)
 (use SpatialGrid)
 (use Transform)
 (use Quaternion)
 (use Body)
-(use BodyType)
-(use Integrator)
-(use Solver)
 (use RigidBody)
 (use Player)
-
-(deftype Entity [
-  handle (Handle ())
-  rigidbody RigidBody
-  collidable Collidable
-  color (Vector3 Double)
-])
+(use Entity)
+(use PhysicsSystem)
 
 (deftype Engine [
   camera Camera
@@ -99,90 +92,22 @@
     (let [cam (Engine.camera e)
           p (Engine.player e)
           p-rb (Player.rigidbody p)
-          p-col (Player.collidable p)
           f-rb (Engine.floor-rb e)
           f-col (Engine.floor-collidable e)
           grid (Engine.grid e)
           entities (Engine.entities e)
-          dt (Clock.unscaled-dt (Engine.clock e))
-          fixed-dt 0.00833]
+          dt (Clock.unscaled-dt (Engine.clock e))]
       (do
         (Clock.tick! (Engine.clock e))
         (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.1)))
         (Engine.set-bg-color! e (Vector3.init 0.1 0.1 0.1))
-        (while (>= @(Engine.accumulator e) fixed-dt)
+
+        (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
           (do
-            (let [gravity (Vector3.init 0.0 -9.81 0.0)]
-              (do
-                (RigidBody.apply-force! p-rb &gravity)
-                (for [i 0 (Array.length entities)]
-                  (RigidBody.apply-force! (Entity.rigidbody (Array.unsafe-nth entities i)) &gravity))))
-            (RigidBody.step-custom! p-rb fixed-dt fixed-dt)
-            (for [i 0 (Array.length entities)]
-              (RigidBody.step-custom! (Entity.rigidbody (Array.unsafe-nth entities i)) fixed-dt fixed-dt))
-            (for [iter 0 8]
-              (do
-                (Player.sync-volume! p)
-                (for [i 0 (Array.length entities)]
-                  (let [ent (Array.unsafe-nth entities i)
-                        rb (Entity.rigidbody ent)
-                        c (Entity.collidable ent)]
-                    (match-ref (Collidable.volume c)
-                      (Volume.Ball s) (Sphere.set-center! s @(RigidBody.position rb))
-                      _ ())))
-                (SpatialGrid.clear! grid)
-                (for [i 0 (Array.length entities)]
-                  (let [ent (Array.unsafe-nth entities i)
-                        rb (Entity.rigidbody ent)
-                        vol (Collidable.volume (Entity.collidable ent))
-                        vel (Body.velocity (RigidBody.body rb))
-                        swept (Collision.get-swept-aabb vol vel fixed-dt)]
-                    (SpatialGrid.insert! grid &swept (Uint64.from-long (Long.from-int i)))))
-                (let [collidables (Array.copy-map &(fn [e] @(Entity.collidable e)) entities)]
-                  (do
-                    (for [idx1 0 (Array.length entities)]
-                      (let [e1 (Array.unsafe-nth entities idx1)
-                            rb1 (Entity.rigidbody e1)
-                            vel1 (Body.velocity (RigidBody.body rb1))
-                            hits (CollisionChecker.query-and-check grid (Entity.collidable e1) &collidables true)]
-                        (for [h 0 (Array.length &hits)]
-                          (match-ref (Array.unsafe-nth &hits h)
-                            (CollisionResult.Physical col)
-                              (let [idx2 (Long.to-int (Uint64.to-long @(Handle.index-raw (Collision.b col))))
-                                    e2 (Array.unsafe-nth entities idx2)]
-                                (match (CollisionChecker.check-pair-swept (Entity.collidable e1) vel1 fixed-dt (Entity.collidable e2))
-                                  (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb1 (Entity.rigidbody e2) &actual-col)
-                                  _ ()))
-                            _ ()))))
-                    (let [p-vol (Collidable.volume p-col)
-                          p-vel (Body.velocity (RigidBody.body p-rb))
-                          p-swept (Collision.get-swept-aabb p-vol p-vel fixed-dt)]
-                      (do
-                        (let [candidates (SpatialGrid.query-unique grid &p-swept)
-                              hits []]
-                          (do
-                            (for [c 0 (Array.length &candidates)]
-                              (let [other-idx (Long.to-int (Uint64.to-long @(Array.unsafe-nth &candidates c)))
-                                    other (Array.unsafe-nth entities other-idx)]
-                                (match (CollisionChecker.check-pair-swept p-col p-vel fixed-dt (Entity.collidable other))
-                                  (Maybe.Just (CollisionResult.Physical col)) (Array.push-back! &hits col)
-                                  _ ())))
-                            (for [h 0 (Array.length &hits)]
-                              (let [col (Array.unsafe-nth &hits h)]
-                                (do
-                                  (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2))
-                                  (Solver.solve! p-rb (Entity.rigidbody (Array.unsafe-nth entities (Long.to-int (Uint64.to-long @(Handle.index-raw (Collision.b col)))))) col))))))
-                        (match (CollisionChecker.check-pair-swept p-col p-vel fixed-dt f-col)
-                          (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! p-rb f-rb &col)
-                          _ ())))
-                    (for [idx 0 (Array.length entities)]
-                      (let [ent (Array.unsafe-nth entities idx)
-                            rb (Entity.rigidbody ent)
-                            vel (Body.velocity (RigidBody.body rb))]
-                        (match (CollisionChecker.check-pair-swept (Entity.collidable ent) vel fixed-dt f-col)
-                          (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! (Entity.rigidbody ent) f-rb &col)
-                          _ ())))))))
-            (Engine.set-accumulator! e (- @(Engine.accumulator e) fixed-dt))))
+            (when (PhysicsSystem.step! p entities grid f-rb f-col)
+                  (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
+            (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
+
         (let [p-trans (RigidBody.transform p-rb)]
           (do
             (Camera.set-pos! cam @(RigidBody.position p-rb))

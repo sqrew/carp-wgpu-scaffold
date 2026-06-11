@@ -1,0 +1,12 @@
+(load "../carp-rigidbody/rigidbody.carp")
+(load "../carp-collision/collision.carp")
+
+(use RigidBody)
+(use Collision)
+
+(deftype Entity [
+  handle (Handle ())
+  rigidbody RigidBody
+  collidable Collidable
+  color (Vector3 Double)
+])
