@@ -1,0 +1,33 @@
+(load "physics_system.carp")
+
+(defmodule GPUGrid
+  (def cell-count 8000) ;; 20x20x20
+  (def max-ids-per-cell 16)
+  
+  ;; Structure:
+  ;; [0..999]   : Cell offsets (Uint32) - index into ID part
+  ;; [1000..1000+max-ids] : Entity IDs (Uint32)
+  
+  (defn flatten [grid entities]
+    (let [cols @(SpatialGrid.cols grid)
+          rows @(SpatialGrid.rows grid)
+          layers @(SpatialGrid.layers grid)
+          buckets (SpatialGrid.buckets grid)
+          total-cells (* cols (* rows layers))
+          ;; 1 int per cell for count, then space for IDs
+          ;; For simplicity in this first pass, let's use a fixed-size grid on GPU
+          ;; [cell_0_count, cell_0_id0, cell_0_id1, ..., cell_1_count, ...]
+          stride 17 ;; 1 count + 16 IDs
+          data (the (Array Float) (replicate (* total-cells stride) &0.0f))]
+      (do
+        (for [i 0 total-cells]
+          (let [bucket (Array.unsafe-nth buckets i)
+                count (min (Array.length bucket) 16)
+                base-idx (* i stride)]
+            (do
+              (Array.aset! &data base-idx (the Float (Double.to-float (Double.from-int count))))
+              (for [j 0 count]
+                (let [ent-idx (the Int (Long.to-int (Uint64.to-long @(Array.unsafe-nth bucket j))))]
+                  (Array.aset! &data (+ base-idx (inc j)) (the Float (Double.to-float (Double.from-int ent-idx)))))))))
+        data)))
+)

@@ -43,7 +43,7 @@
                         (Renderer.clear! &ren)
                         (Engine.submit-render-commands! &eng &ren)
                         (let [line-count (Renderer.process-commands! ctx &ren 
-                                           time width height cam)]
+                                           time width height cam (Engine.grid &eng) (Engine.entities &eng))]
                           (Renderer.draw surf ctx &ren line-count))))))
                 
                 (println* "Shutting down...")

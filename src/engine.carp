@@ -11,6 +11,7 @@
 (load "render.carp")
 (load "entity.carp")
 (load "physics_system.carp")
+(load "Random.carp")
 
 (use Camera)
 (use Clock)
@@ -24,6 +25,7 @@
 (use Player)
 (use Entity)
 (use PhysicsSystem)
+(use Random)
 
 (deftype Engine [
   camera Camera
@@ -58,6 +60,7 @@
         (InputManager.add-binding! &mgr "LookX" (InputSource.MouseDeltaX) 0.002)
         (InputManager.add-binding! &mgr "LookY" (InputSource.MouseDeltaY) 0.002)
         (InputManager.add-binding! &mgr "Reset" (InputSource.Key GLFW.Keycode.R) 1.0)
+        (InputManager.add-binding! &mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
         (for [z 0 5]
           (for [x 0 6]
             (let [idx (+ x (* z 6))
@@ -80,13 +83,45 @@
           (Vector3.init 0.1 0.1 0.1)
           0.0))))
 
+  (defn spawn-bullet! [e]
+    (let [p (Engine.player e)
+          p-rb (Player.rigidbody p)
+          p-trans (RigidBody.transform p-rb)
+          p-pos (RigidBody.position p-rb)
+          p-dir (Transform.forward p-trans)
+          
+          ;; Spawn slightly in front of player
+          bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir 1.0))
+          
+          ;; Initial velocity
+          bullet-vel (Vector3.mul &p-dir 30.0)
+          
+          ;; Random angular velocity
+          rand-x (Double.random-between -10.0 10.0)
+          rand-y (Double.random-between -10.0 10.0)
+          rand-z (Double.random-between -10.0 10.0)
+          bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
+          
+          ;; Create bullet
+          h (the (Handle ()) (Handle.init (Uint64.from-long (Long.from-int (Array.length (Engine.entities e)))) (Uint32.from-long 1l)))
+          rb (RigidBody.new bullet-pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
+          vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 0.4))
+          col (Collidable.init @&h vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          color (Vector3.init 1.0 1.0 0.0)]
+      (do
+        (Body.set-velocity! (RigidBody.body &rb) bullet-vel)
+        (Body.set-angular-velocity! (RigidBody.body &rb) bullet-ang-vel)
+        (Array.push-back! (Engine.entities e) (Entity.init h rb col color)))))
+
   (defn process-input! [e]
     (let [mgr (Engine.input e)
           p (Engine.player e)
           dt (Clock.unscaled-dt (Engine.clock e))]
       (do
         (InputManager.update! mgr)
-        (Player.process-input! p mgr dt))))
+        (Player.process-input! p mgr dt)
+        (when (InputManager.action-pressed? mgr "Fire")
+          (Engine.spawn-bullet! e)))))
 
   (defn tick! [e]
     (let [cam (Engine.camera e)
