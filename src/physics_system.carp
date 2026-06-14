@@ -1,119 +1,103 @@
-(load "../carp-spatial/grid.carp")
-(load "../carp-collision/collision.carp")
-(load "../carp-physics/physics.carp")
-(load "../carp-rigidbody/rigidbody.carp")
-(load "entity.carp")
-(load "player.carp")
-
-(use SpatialGrid)
-(use Collision)
-(use CollisionChecker)
-(use RigidBody)
-(use Solver)
+;; physics_system.carp
 
 (defmodule PhysicsSystem
+  (use SpatialGrid)
+  (use Collision)
+  (use CollisionChecker)
+  (use RigidBody)
+  (use Solver)
+  (use ECS)
+  (use InputManager)
+
   (def fixed-dt 0.00833)
   (def gravity (Vector3.init 0.0 -9.81 0.0))
   (def iterations 8)
 
-  (defn apply-gravity! [p-rb entities]
-    (do
-      (RigidBody.apply-force! p-rb &gravity)
-      (for [i 0 (Array.length entities)]
-        (RigidBody.apply-force! (Entity.rigidbody (Array.unsafe-nth entities i)) &gravity))))
-
-  (defn step-bodies! [p-rb entities dt]
-    (do
-      (RigidBody.step-custom! p-rb dt dt)
-      (for [i 0 (Array.length entities)]
-        (RigidBody.step-custom! (Entity.rigidbody (Array.unsafe-nth entities i)) dt dt))))
-
-  (defn sync-volumes! [p entities]
-    (do
-      (Player.sync-volume! p)
-      (for [i 0 (Array.length entities)]
-        (let [ent (Array.unsafe-nth entities i)
-              rb (Entity.rigidbody ent)
-              c (Entity.collidable ent)]
-          (match-ref (Collidable.volume c)
-            (Volume.Ball s) (Sphere.set-center! s @(RigidBody.position rb))
-            _ ())))))
-
-  (defn update-grid! [grid entities dt]
-    (do
-      (SpatialGrid.clear! grid)
-      (for [i 0 (Array.length entities)]
-        (let [ent (Array.unsafe-nth entities i)
-              rb (Entity.rigidbody ent)
-              vol (Collidable.volume (Entity.collidable ent))
-              vel (Body.velocity (RigidBody.body rb))
-              swept (Collision.get-swept-aabb vol vel dt)]
-          (SpatialGrid.insert! grid &swept (Uint64.from-long (Long.from-int i)))))))
-
-  (defn resolve-collisions! [p entities grid f-rb f-col dt]
-    (let [p-rb (Player.rigidbody p)
-          p-col (Player.collidable p)
-          collidables (Array.copy-map &(fn [e] @(Entity.collidable e)) entities)
-          collision-occurred false]
+  (defn apply-player-movement! [p-rb mgr dt]
+    (let [move-speed 20.0
+          trans (RigidBody.transform p-rb)
+          forward (Transform.forward trans)
+          right (Transform.right trans)
+          move-dir (Vector3.init 0.0 0.0 0.0)]
       (do
-        ;; 1. Entities vs Entities
-        (for [idx1 0 (Array.length entities)]
-          (let [e1 (Array.unsafe-nth entities idx1)
-                rb1 (Entity.rigidbody e1)
-                vel1 (Body.velocity (RigidBody.body rb1))
-                hits (CollisionChecker.query-and-check grid (Entity.collidable e1) &collidables true)]
-            (for [h 0 (Array.length &hits)]
-              (match-ref (Array.unsafe-nth &hits h)
-                (CollisionResult.Physical col)
-                  (let [idx2 (Long.to-int (Uint64.to-long @(Handle.index-raw (Collision.b col))))
-                        e2 (Array.unsafe-nth entities idx2)]
-                    (match (CollisionChecker.check-pair-swept (Entity.collidable e1) vel1 dt (Entity.collidable e2))
-                      (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb1 (Entity.rigidbody e2) &actual-col)
-                      _ ()))
-                _ ()))))
+        (when (InputManager.action-digital? mgr "Forward")
+          (set! move-dir (Vector3.add &move-dir &forward)))
+        (when (InputManager.action-digital? mgr "Backward")
+          (set! move-dir (Vector3.sub &move-dir &forward)))
+        (when (InputManager.action-digital? mgr "Left")
+          (set! move-dir (Vector3.sub &move-dir &right)))
+        (when (InputManager.action-digital? mgr "Right")
+          (set! move-dir (Vector3.add &move-dir &right)))
+        
+        (when (not (< (Vector3.mag-sq &move-dir) 0.001))
+          (let [accel (Vector3.mul &(Vector3.normalize &move-dir) move-speed)]
+            (RigidBody.apply-force! p-rb &accel)))
 
-        ;; 2. Player vs Entities
-        (let [p-vol (Collidable.volume p-col)
-              p-vel (Body.velocity (RigidBody.body p-rb))
-              p-swept (Collision.get-swept-aabb p-vol p-vel dt)
-              candidates (SpatialGrid.query-unique grid &p-swept)]
-          (for [c 0 (Array.length &candidates)]
-            (let [other-idx (Long.to-int (Uint64.to-long @(Array.unsafe-nth &candidates c)))
-                  other (Array.unsafe-nth entities other-idx)]
-              (match (CollisionChecker.check-pair-swept p-col p-vel dt (Entity.collidable other))
-                (Maybe.Just (CollisionResult.Physical col)) 
-                  (do
-                    (set! collision-occurred true)
-                    (Solver.solve! p-rb (Entity.rigidbody other) &col))
-                _ ()))))
+        (let [look-x (InputManager.action-analog mgr "LookX")
+              look-y (InputManager.action-analog mgr "LookY")
+              rot (Transform.rotation trans)
+              right (Transform.right trans)
+              yaw-axis (Vector3.init 0.0 1.0 0.0)
+              yaw-rot (Quaternion.from-axis-angle yaw-axis (- 0.0 look-x))
+              pitch-rot (Quaternion.from-axis-angle right (- 0.0 look-y))
+              new-rot (Quaternion.mul rot &yaw-rot)]
+          (RigidBody.set-rotation! p-rb (Quaternion.mul &pitch-rot &new-rot))))))
 
-        ;; 3. Player vs Floor
-        (let [p-vel (Body.velocity (RigidBody.body p-rb))]
-          (match (CollisionChecker.check-pair-swept p-col p-vel dt f-col)
-            (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! p-rb f-rb &col)
-            _ ()))
-
-        ;; 4. Entities vs Floor
-        (for [idx 0 (Array.length entities)]
-          (let [ent (Array.unsafe-nth entities idx)
-                rb (Entity.rigidbody ent)
-                vel (Body.velocity (RigidBody.body rb))]
-            (match (CollisionChecker.check-pair-swept (Entity.collidable ent) vel dt f-col)
-              (Maybe.Just (CollisionResult.Physical col)) (Solver.solve! (Entity.rigidbody ent) f-rb &col)
-              _ ())))
-        collision-occurred)))
-
-  (defn step! [p entities grid f-rb f-col]
+  (defn step-ecs! [world grid f-rb f-col]
     (let [collision-occurred false]
       (do
-        (PhysicsSystem.apply-gravity! (Player.rigidbody p) entities)
-        (PhysicsSystem.step-bodies! (Player.rigidbody p) entities PhysicsSystem.fixed-dt)
-        
+        ;; 1. Apply Gravity and Step Bodies
+        (ECS.query world [ent RigidBody]
+          (let [rb (Maybe.unsafe-from (ECS.get-component world &ent))]
+            (do
+              (RigidBody.apply-force! &rb &gravity)
+              (RigidBody.step-custom! &rb fixed-dt fixed-dt))))
+
         (for [iter 0 PhysicsSystem.iterations]
           (do
-            (PhysicsSystem.sync-volumes! p entities)
-            (PhysicsSystem.update-grid! grid entities PhysicsSystem.fixed-dt)
-            (when (PhysicsSystem.resolve-collisions! p entities grid f-rb f-col PhysicsSystem.fixed-dt)
-                  (set! collision-occurred true))))
+            ;; 2. Sync Volumes and Update Grid
+            (SpatialGrid.clear! grid)
+            (ECS.query world [ent RigidBody Collidable]
+              (let [rb (Maybe.unsafe-from (ECS.get-component world &ent))
+                    col (Maybe.unsafe-from (ECS.get-component world &ent))
+                    vol (Collidable.volume &col)
+                    pos (RigidBody.position &rb)]
+                (do
+                  (match-ref vol
+                    (Volume.Ball s) (Sphere.set-center! s @pos)
+                    _ ())
+                  (let [vel (Body.velocity (RigidBody.body &rb))
+                        swept (Collision.get-swept-aabb vol vel fixed-dt)]
+                    (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent))))))
+
+            ;; 3. Resolve Collisions
+            ;; Resolve vs Floor
+            (ECS.query world [ent RigidBody Collidable]
+              (let [rb (Maybe.unsafe-from (ECS.get-component world &ent))
+                    col (Maybe.unsafe-from (ECS.get-component world &ent))
+                    vel (Body.velocity (RigidBody.body &rb))]
+                (match (CollisionChecker.check-pair-swept &col vel fixed-dt f-col)
+                  (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! &rb f-rb &actual-col)
+                  _ ())))
+
+            ;; Resolve vs Other Entities
+            (ECS.query world [ent1 RigidBody Collidable]
+              (let [rb1 (Maybe.unsafe-from (ECS.get-component world &ent1))
+                    col1 (Maybe.unsafe-from (ECS.get-component world &ent1))
+                    aabb (Collision.get-aabb (Collidable.volume &col1))
+                    candidates (SpatialGrid.query-unique grid &aabb)]
+                (for [c 0 (Array.length &candidates)]
+                  (let [id2 (Array.unsafe-nth &candidates c)
+                        ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
+                    (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1))) (ECS.has-component? world &ent2 Collidable))
+                      (let [rb2 (Maybe.unsafe-from (ECS.get-component world &ent2))
+                            col2 (Maybe.unsafe-from (ECS.get-component world &ent2))
+                            vel1 (Body.velocity (RigidBody.body &rb1))]
+                        (match (CollisionChecker.check-pair-swept &col1 vel1 fixed-dt &col2)
+                          (Maybe.Just (CollisionResult.Physical actual-col)) 
+                            (do
+                              (set! collision-occurred true)
+                              (Solver.solve! &rb1 &rb2 &actual-col))
+                          _ ())))))))))
         collision-occurred)))
 )

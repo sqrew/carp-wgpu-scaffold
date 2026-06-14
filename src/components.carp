@@ -1,0 +1,30 @@
+;; components.carp
+
+(deftype PlayerTag [])
+(defmodule PlayerTag
+  (defn zero [] (PlayerTag.init))
+  (implements zero PlayerTag.zero)
+)
+
+(defmodule RigidBody
+  (defn zero [] (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.0 0.0))
+  (implements zero RigidBody.zero)
+)
+
+(defmodule Collidable
+  (defn zero [] (Collidable.init (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)) (Volume.Box (AABB.init (Vector3.init 0.0 0.0 0.0) (Vector3.init 0.0 0.0 0.0))) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
+  (implements zero Collidable.zero)
+)
+
+(defmodule Vector3
+  (defn zero-v3 [] (Vector3.init 0.0 0.0 0.0))
+  (implements zero Vector3.zero-v3)
+)
+
+(deftype Color [v (Vector3 Double)])
+(defmodule Color
+  (defn zero [] (Color.init (Vector3.init 0.0 0.0 0.0)))
+  (implements zero Color.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag)

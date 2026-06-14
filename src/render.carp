@@ -1,11 +1,4 @@
-(load "WGPU.carp")
-(load "WGPURender.carp")
-(load "../carp-gamecam/camera.carp")
-(load "../carp-transform/transform.carp")
-(load "../carp-rigidbody/rigidbody.carp")
-(load "commands.carp")
-(load "line_pass.carp")
-(load "gpu_spatial.carp")
+;; render.carp
 
 (use WGPU)
 (use WGPURender)
@@ -14,18 +7,19 @@
 (use RigidBody)
 (use LinePass)
 (use GPUSpatial)
+(use ECS)
 
-(deftype Renderer [
+(deftype WGPURenderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
   u-buffer (Ptr WGPUUniformBufferWrapper)
   s-buffer WGPUBuffer
   bind-group WGPUBindGroup
   depth-texture (Ptr WGPUDepthTexture)
-  line-pass LinePass
+  line-pass LinePassRenderer
   commands (Array RenderCommand)
 ])
 
-(defmodule Renderer
+(defmodule WGPURenderer
   (def max-spheres 64)
   (def max-ids-per-cell 16)
   (def header-size 96)
@@ -108,7 +102,7 @@
               else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p.z) / rd.z); }
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
-              let count = min(i32(cell.count), " (Int.str max-ids) ");
+              let count = min(i32(cell.count), 16);
               for(var i = 0; i < count; i = i + 1) {
                   let s_idx = i32(cell.ids[i]);
                   let s_data = u.spheres[s_idx];
@@ -116,7 +110,7 @@
               }
               return min(d, max(t_exit + 0.01, 0.05));
           } else {
-             for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
+             for(var i = 0; i < 64; i = i + 1) {
                 let s_data = u.spheres[i];
                 if (s_data.pos.w > 0.0) { d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w)); }
              }
@@ -151,14 +145,14 @@
                   if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                       let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                       let cell = grid[idx];
-                      let count = min(i32(cell.count), " (Int.str max-ids) ");
+                      let count = min(i32(cell.count), 16);
                       for(var i = 0; i < count; i = i + 1) {
                           let s_idx = i32(cell.ids[i]);
                           let s_dist = sdSphere(p - u.spheres[s_idx].pos.xyz, u.spheres[s_idx].pos.w);
                           if (s_dist < minDist) { minDist = s_dist; hitId = s_idx; }
                       }
                   } else {
-                      for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
+                      for(var i = 0; i < 64; i = i + 1) {
                           let s_data = u.spheres[i];
                           if (s_data.pos.w > 0.0) {
                               let s_dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
@@ -188,9 +182,9 @@
     "))
 
   (defn create [ctx format width height grid]
-    (let [u-size (+ (+ Renderer.header-size 16) (* Renderer.max-spheres Renderer.sphere-data-size))
-          shader (shader-wgsl Renderer.max-spheres Renderer.max-ids-per-cell)
-          s-size (GPUSpatial.required-floats grid Renderer.max-ids-per-cell)]
+    (let [u-size (+ (+ WGPURenderer.header-size 16) (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
+          shader (shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
+          s-size (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell)]
       (match (WGPURender.create-uniform-buffer ctx u-size)
         (Result.Error e) (Result.Error (str* "Uniform failed: " e))
         (Result.Success ub)
@@ -209,19 +203,19 @@
                           (match (LinePass.create ctx format 1000)
                             (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-pipeline pipe) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "LinePass failed: " e)))
                             (Result.Success lp)
-                              (Result.Success (Renderer.init pipe ub sb bg dt lp []))))))))))
+                              (Result.Success (WGPURenderer.init pipe ub sb bg dt lp []))))))))))
 
   (defn clear! [ren]
-    (let [cmds (Renderer.commands ren)]
+    (let [cmds (WGPURenderer.commands ren)]
       (while (not (Array.empty? cmds))
         (ignore (Array.pop-back! cmds)))))
 
   (defn submit! [ren cmd]
-    (Array.push-back! (Renderer.commands ren) cmd))
+    (Array.push-back! (WGPURenderer.commands ren) cmd))
 
-  (defn process-commands! [ctx ren time width height cam grid entities]
+  (defn process-commands! [ctx ren time width height cam grid world]
     (let [bg-color (Vector3.init 0.1 0.1 0.1)
-          commands (Renderer.commands ren)
+          commands (WGPURenderer.commands ren)
           vp (Camera.view-projection cam)
           vp-data (CameraMat4.data &vp)
           cam-pos (Camera.pos cam)
@@ -268,7 +262,7 @@
         (let [sphere-count 0]
           (do
             (for [i 0 (Array.length commands)]
-              (when (< sphere-count Renderer.max-spheres)
+              (when (< sphere-count WGPURenderer.max-spheres)
                 (match-ref (Array.unsafe-nth commands i)
                   (RenderCommand.DrawSdf pos radius rot)
                     (do
@@ -282,20 +276,20 @@
                       (Array.push-back! &data (Double.to-float @(Quaternion.w rot)))
                       (set! sphere-count (inc sphere-count)))
                   _ ())))
-            (for [i sphere-count Renderer.max-spheres]
+            (for [i sphere-count WGPURenderer.max-spheres]
               (do (for [j 0 8] (Array.push-back! &data 0.0f))))))
-        (WGPURender.update-uniform-buffer ctx @(Renderer.u-buffer ren) &data)
-        (let [flat-grid (GPUSpatial.flatten grid Renderer.max-ids-per-cell)]
-          (WGPU.write-floats ctx @(Renderer.s-buffer ren) &flat-grid))
-        (LinePass.update! ctx (Renderer.line-pass ren) vp-data commands))))
+        (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) &data)
+        (let [flat-grid (GPUSpatial.flatten grid 16)]
+          (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) &flat-grid))
+        (LinePass.update! ctx (WGPURenderer.line-pass ren) vp-data commands))))
 
   (defn draw [surf ctx ren line-count]
     (match (WGPURender.begin-frame surf ctx)
       (Result.Error _) ()
       (Result.Success frame)
         (do
-          (WGPURender.run-pass frame @(Renderer.pipeline ren) @(Renderer.bind-group ren) (Maybe.Nothing))
-          (LinePass.render frame ctx (Renderer.line-pass ren) line-count @(Renderer.depth-texture ren))
+          (WGPURender.run-pass frame @(WGPURenderer.pipeline ren) @(WGPURenderer.bind-group ren) (Maybe.Nothing))
+          (LinePass.render frame ctx (WGPURenderer.line-pass ren) line-count @(WGPURenderer.depth-texture ren))
           (WGPURender.end-frame frame surf ctx)
           (WGPURender.free-frame frame))))
 )

@@ -1,17 +1,56 @@
-(load "init.carp")
-(load "engine.carp")
-(load "render.carp")
+;; Load Core Libraries First
+(load "Vector.carp")
+(load "Map.carp")
+(load "Result.carp")
+(load "Random.carp")
+(load "GLFW.carp")
+(load "WGPU.carp")
+(load "WGPURender.carp")
+
+(add-lib "-lX11")
+
+(register-type GLFWwindow)
+(register-type GLFWmonitor)
+
+;; Load Custom Libraries
+(load "../carp-transform/transform.carp")
+(load "../carp-dynamics/dynamics.carp")
+(load "../carp-rigidbody/rigidbody.carp")
+(load "../carp-geometry/geometry.carp")
+(load "../carp-handle/handle.carp")
+(load "../carp-spatial/grid.carp")
+(load "../carp-collision/collision.carp")
+(load "../carp-physics/physics.carp")
+(load "../carp-input/input.carp")
 (load "../carp-input/glfw_backend.carp")
+(load "../carp-gametime/gametime.carp")
+(load "../carp-gamecam/camera.carp")
+
+;; Define ECS Protocol globally
+(defprotocol (HasComponent w c)
+  [(get-storage (Fn [(Ref w q)] (Ref (SparseSet c) q)))])
+
+(load "../carp-ecs-lite/src/ecs.carp")
+
+;; --- PROJECT MODULES ---
+(load "commands.carp")
+(load "components.carp")
+(load "init.carp")
+(load "gpu_spatial.carp")
+(load "line_pass.carp")
+(load "render.carp")
+(load "physics_system.carp")
+(load "engine.carp")
 
 (use Init)
 (use Engine)
-(use Renderer)
+(use WGPURenderer)
 (use GLFW)
 (use Camera)
 (use Clock)
 (use RigidBody)
 (use Transform)
-(use Player)
+(use ECS)
 
 (defn main []
   (let [width 1280
@@ -25,7 +64,7 @@
               surf @(App.surf &app)
               backend (GLFWBackend.init)
               eng (Engine.new (glfw-window->voidptr win) aspect backend)]
-          (match (Renderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))
+          (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))
             (Result.Error e) (do (println* "Renderer Error: " &e) -2)
             (Result.Success ren)
               (do
@@ -40,11 +79,11 @@
                     (let [cam (Engine.camera &eng)
                           time (Clock.total (Engine.clock &eng))]
                       (do
-                        (Renderer.clear! &ren)
+                        (WGPURenderer.clear! &ren)
                         (Engine.submit-render-commands! &eng &ren)
-                        (let [line-count (Renderer.process-commands! ctx &ren 
-                                           time width height cam (Engine.grid &eng) (Engine.entities &eng))]
-                          (Renderer.draw surf ctx &ren line-count))))))
+                        (let [line-count (WGPURenderer.process-commands! ctx &ren 
+                                           time width height cam (Engine.grid &eng) (Engine.world &eng))]
+                          (WGPURenderer.draw surf ctx &ren line-count))))))
                 
                 (println* "Shutting down...")
                 (Init.destroy-app app)

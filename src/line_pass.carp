@@ -1,42 +1,9 @@
-(load "WGPU.carp")
-(load "WGPURender.carp")
-(load "commands.carp")
+;; line_pass.carp
 
 (use WGPU)
 (use WGPURender)
 
-(def line-shader-wgsl
-  (str*
-    "struct Uniforms {
-        view_proj: mat4x4<f32>,
-    }
-    @group(0) @binding(0) var<uniform> u: Uniforms;
-
-    struct VertexInput {
-        @location(0) position: vec3<f32>,
-        @location(1) color: vec3<f32>,
-    }
-
-    struct VertexOutput {
-        @builtin(position) clip_pos: vec4<f32>,
-        @location(0) color: vec3<f32>,
-    }
-
-    @vertex
-    fn vs_main(in: VertexInput) -> VertexOutput {
-        var out: VertexOutput;
-        out.clip_pos = u.view_proj * vec4<f32>(in.position, 1.0);
-        out.color = in.color;
-        return out;
-    }
-
-    @fragment
-    fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-        return vec4<f32>(in.color, 1.0);
-    }
-"))
-
-(deftype LinePass [
+(deftype LinePassRenderer [
   pipeline (Ptr WGPUGeomPipelineWrapper)
   u-buffer (Ptr WGPUUniformBufferWrapper)
   v-buffer (Ptr WGPUVertexBufferWrapper)
@@ -45,6 +12,37 @@
 ])
 
 (defmodule LinePass
+  (def line-shader-wgsl
+    (str*
+      "struct Uniforms {
+          view_proj: mat4x4<f32>,
+      }
+      @group(0) @binding(0) var<uniform> u: Uniforms;
+
+      struct VertexInput {
+          @location(0) position: vec3<f32>,
+          @location(1) color: vec3<f32>,
+      }
+
+      struct VertexOutput {
+          @builtin(position) clip_pos: vec4<f32>,
+          @location(0) color: vec3<f32>,
+      }
+
+      @vertex
+      fn vs_main(in: VertexInput) -> VertexOutput {
+          var out: VertexOutput;
+          out.clip_pos = u.view_proj * vec4<f32>(in.position, 1.0);
+          out.color = in.color;
+          return out;
+      }
+
+      @fragment
+      fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+          return vec4<f32>(in.color, 1.0);
+      }
+  "))
+
   (defn create [ctx format max-lines]
     (let [u-size 64 ;; 4x4 mat
           v-size (* max-lines (* 2 24))
@@ -61,15 +59,15 @@
                   (match (WGPURender.create-uniform-bind-group ctx pipe ub)
                     (Result.Error e) (do (WGPURender.free-geom-pipeline pipe) (WGPURender.free-uniform-buffer ub) (WGPURender.free-vertex-buffer vb) (Result.Error (str* "Line Bind group failed: " e)))
                     (Result.Success bg)
-                      (Result.Success (LinePass.init pipe ub vb bg max-lines))))))))
+                      (Result.Success (LinePassRenderer.init pipe ub vb bg max-lines))))))))
 
   (defn update! [ctx lp view-proj commands]
     (let [v-data (the (Array Float) [])
           line-count 0
-          max @(LinePass.max-lines lp)]
+          max @(LinePassRenderer.max-lines lp)]
       (do
         ;; 1. Update Uniforms (ViewProj Matrix)
-        (WGPURender.update-uniform-buffer ctx @(LinePass.u-buffer lp) view-proj)
+        (WGPURender.update-uniform-buffer ctx @(LinePassRenderer.u-buffer lp) view-proj)
         
         ;; 2. Pack Vertex Data from commands
         (for [i 0 (Array.length commands)]
@@ -92,19 +90,14 @@
                   (set! line-count (inc line-count)))
               _ ())))
         
-        ;; 3. Upload to GPU (Re-create if size changed)
+        ;; 3. Upload to GPU (QueueWrite)
         (if (> line-count 0)
-            (let [required-size (Uint64.from-long (Long.from-int (* (Array.length &v-data) 4)))]
-              (do
-                ;; For now, we just update. In a real engine, we'd check size and re-allocate.
-                ;; But create-vertex-buffer in our helper makes a static buffer by default?
-                ;; No, it's dynamic enough for QueueWrite.
-                (WGPURender.update-vertex-buffer ctx @(LinePass.v-buffer lp) &v-data)))
+            (WGPURender.update-vertex-buffer ctx @(LinePassRenderer.v-buffer lp) &v-data)
             ())
         line-count)))
 
   (defn render [frame ctx lp line-count depth]
     (if (> line-count 0)
-        (WGPURender.run-geom-pass-overlay frame @(LinePass.pipeline lp) @(LinePass.bind-group lp) @(LinePass.v-buffer lp) depth (Uint32.from-long (Long.from-int (* line-count 2))) (Maybe.Nothing))
+        (WGPURender.run-geom-pass-overlay frame @(LinePassRenderer.pipeline lp) @(LinePassRenderer.bind-group lp) @(LinePassRenderer.v-buffer lp) depth (Uint32.from-long (Long.from-int (* line-count 2))) (Maybe.Nothing))
         ()))
 )

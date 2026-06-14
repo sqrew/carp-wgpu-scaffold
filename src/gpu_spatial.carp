@@ -23,7 +23,7 @@
             (do
               (Array.aset! &data base-idx (the Float (Double.to-float (Double.from-int count))))
               (for [j 0 count]
-                (let [ent-idx (the Int (Long.to-int (Uint64.to-long @(Array.unsafe-nth bucket j))))]
+                (let [ent-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth bucket j))))]
                   (Array.aset! &data (+ base-idx (inc j)) (the Float (Double.to-float (Double.from-int ent-idx)))))))))
         data)))
 )
