@@ -5,7 +5,7 @@
 (load "../carp-rigidbody/rigidbody.carp")
 (load "commands.carp")
 (load "line_pass.carp")
-(load "gpu_grid.carp")
+(load "gpu_spatial.carp")
 
 (use WGPU)
 (use WGPURender)
@@ -13,7 +13,7 @@
 (use Transform)
 (use RigidBody)
 (use LinePass)
-(use GPUGrid)
+(use GPUSpatial)
 
 (deftype Renderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
@@ -27,10 +27,11 @@
 
 (defmodule Renderer
   (def max-spheres 64)
+  (def max-ids-per-cell 16)
   (def header-size 96)
   (def sphere-data-size 32)
 
-  (defn shader-wgsl [limit]
+  (defn shader-wgsl [limit max-ids]
     (str*
       "struct SphereData {
           pos: vec4<f32>,
@@ -38,7 +39,7 @@
       }
       struct Cell {
           count: f32,
-          ids: array<f32, 16>,
+          ids: array<f32, " (Int.str max-ids) ">,
       }
       struct Uniforms { 
           time: f32, 
@@ -92,19 +93,12 @@
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> f32 {
           var d = sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0);
-          
           let gx = i32(floor(p.x / u.cell_size));
           let gy = i32(floor(p.y / u.cell_size));
           let gz = i32(floor(p.z / u.cell_size));
-          
-          if (gx >= 0 && gx < i32(u.grid_dims.x) &&
-              gy >= 0 && gy < i32(u.grid_dims.y) &&
-              gz >= 0 && gz < i32(u.grid_dims.z)) {
-              
+          if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
               let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
               let cell_max = cell_min + vec3<f32>(u.cell_size);
-              
-              // Ray-AABB intersection for the current cell exit
               var t_exit = 100.0;
               if (rd.x > 0.0001) { t_exit = min(t_exit, (cell_max.x - p.x) / rd.x); }
               else if (rd.x < -0.0001) { t_exit = min(t_exit, (cell_min.x - p.x) / rd.x); }
@@ -112,26 +106,19 @@
               else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p.y) / rd.y); }
               if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p.z) / rd.z); }
               else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p.z) / rd.z); }
-
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
-              let count = min(i32(cell.count), 16);
-              
-              var local_d = 100.0;
+              let count = min(i32(cell.count), " (Int.str max-ids) ");
               for(var i = 0; i < count; i = i + 1) {
                   let s_idx = i32(cell.ids[i]);
                   let s_data = u.spheres[s_idx];
-                  local_d = min(local_d, sdSphere(p - s_data.pos.xyz, s_data.pos.w));
+                  d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w));
               }
-              // Return min of actual distance OR a safe step to the cell boundary
-              return min(min(d, local_d), max(t_exit + 0.01, 0.05));
+              return min(d, max(t_exit + 0.01, 0.05));
           } else {
-             // Fallback brute force
              for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
                 let s_data = u.spheres[i];
-                if (s_data.pos.w > 0.0) {
-                    d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w));
-                }
+                if (s_data.pos.w > 0.0) { d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w)); }
              }
              return d;
           }
@@ -141,60 +128,44 @@
       fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
           let aspect = u.width / u.height;
           let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
-          
           let ro = u.cam_pos.xyz;
           let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.5);
-
           var t = 0.0;
           var hit = false;
-          for(var i = 0; i < 150; i = i + 1) {
+          for(var i = 0; i < 80; i = i + 1) {
               let p = ro + rd * t;
               let d = worldSDF(p, rd);
-              if (d < 0.001) {
-                  hit = true;
-                  break;
-              }
+              if (d < 0.001) { hit = true; break; }
               t += d;
               if (t > 100.0) { break; }
           }
-
           var color = u.bg_color.rgb;
           if (hit) {
               let p = ro + rd * t;
               if (p.y > 0.1) {
                   var minDist = 100.0;
                   var hitId = -1;
-                  
                   let gx = i32(floor(p.x / u.cell_size));
                   let gy = i32(floor(p.y / u.cell_size));
                   let gz = i32(floor(p.z / u.cell_size));
-                  if (gx >= 0 && gx < i32(u.grid_dims.x) &&
-                      gy >= 0 && gy < i32(u.grid_dims.y) &&
-                      gz >= 0 && gz < i32(u.grid_dims.z)) {
+                  if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                       let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                       let cell = grid[idx];
-                      let count = min(i32(cell.count), 16);
+                      let count = min(i32(cell.count), " (Int.str max-ids) ");
                       for(var i = 0; i < count; i = i + 1) {
                           let s_idx = i32(cell.ids[i]);
                           let s_dist = sdSphere(p - u.spheres[s_idx].pos.xyz, u.spheres[s_idx].pos.w);
-                          if (s_dist < minDist) {
-                              minDist = s_dist;
-                              hitId = s_idx;
-                          }
+                          if (s_dist < minDist) { minDist = s_dist; hitId = s_idx; }
                       }
                   } else {
                       for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
                           let s_data = u.spheres[i];
                           if (s_data.pos.w > 0.0) {
                               let s_dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
-                              if (s_dist < minDist) {
-                                  minDist = s_dist;
-                                  hitId = i;
-                              }
+                              if (s_dist < minDist) { minDist = s_dist; hitId = i; }
                           }
                       }
                   }
-
                   color = vec3<f32>(0.9, 0.9, 0.9);
                   if (hitId != -1) {
                       let s_data = u.spheres[hitId];
@@ -203,7 +174,6 @@
                       let check = smoothstep(-0.1, 0.1, stripe);
                       color = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
                   }
-
                   let n = normalize(p - ro);
                   color *= dot(n, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
               } else {
@@ -213,15 +183,14 @@
               }
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
           }
-
           return vec4<f32>(color, 1.0);
       }
     "))
 
-  (defn create [ctx format width height]
+  (defn create [ctx format width height grid]
     (let [u-size (+ (+ Renderer.header-size 16) (* Renderer.max-spheres Renderer.sphere-data-size))
-          shader (shader-wgsl Renderer.max-spheres)
-          s-size (* GPUGrid.cell-count 17)]
+          shader (shader-wgsl Renderer.max-spheres Renderer.max-ids-per-cell)
+          s-size (GPUSpatial.required-floats grid Renderer.max-ids-per-cell)]
       (match (WGPURender.create-uniform-buffer ctx u-size)
         (Result.Error e) (Result.Error (str* "Uniform failed: " e))
         (Result.Success ub)
@@ -316,7 +285,7 @@
             (for [i sphere-count Renderer.max-spheres]
               (do (for [j 0 8] (Array.push-back! &data 0.0f))))))
         (WGPURender.update-uniform-buffer ctx @(Renderer.u-buffer ren) &data)
-        (let [flat-grid (GPUGrid.flatten grid entities)]
+        (let [flat-grid (GPUSpatial.flatten grid Renderer.max-ids-per-cell)]
           (WGPU.write-floats ctx @(Renderer.s-buffer ren) &flat-grid))
         (LinePass.update! ctx (Renderer.line-pass ren) vp-data commands))))
 

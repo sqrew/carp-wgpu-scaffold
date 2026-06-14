@@ -43,7 +43,7 @@
 (defmodule Engine
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
-          grid (SpatialGrid.new 10.0 20 20 20)
+          grid (SpatialGrid.new 20.0 10 10 10)
           p (Player.new (Vector3.init 5.0 1.0 5.0) aspect)
           entities []
           f-rb (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.8 0.8)

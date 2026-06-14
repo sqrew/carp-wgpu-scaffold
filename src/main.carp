@@ -25,7 +25,7 @@
               surf @(App.surf &app)
               backend (GLFWBackend.init)
               eng (Engine.new (glfw-window->voidptr win) aspect backend)]
-          (match (Renderer.create ctx (WGPURender.surface-format surf) width height)
+          (match (Renderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))
             (Result.Error e) (do (println* "Renderer Error: " &e) -2)
             (Result.Success ren)
               (do
