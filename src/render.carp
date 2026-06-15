@@ -22,7 +22,7 @@
 (defmodule WGPURenderer
   (def max-spheres 128)
   (def max-ids-per-cell 16)
-  (def header-size 96)
+  (def header-size 128)
   (def sphere-data-size 32)
 
   (defn shader-wgsl [limit max-ids]
@@ -46,6 +46,7 @@
           cam_up: vec4<f32>,
           bg_color: vec4<f32>,
           grid_dims: vec4<f32>,
+          grid_origin: vec4<f32>,
           spheres: array<SphereData, " (Int.str limit) ">
       }
       @group(0) @binding(0) var<storage, read> grid: array<Cell>;
@@ -85,21 +86,22 @@
           return vec4<f32>(-q.xyz, q.w);
       }
 
-      fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> f32 {
-          var d = sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0);
-          let gx = i32(floor(p.x / u.cell_size));
-          let gy = i32(floor(p.y / u.cell_size));
-          let gz = i32(floor(p.z / u.cell_size));
+      fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
+          var d = vec2<f32>(sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0), -1.0);
+          let p_local = p - u.grid_origin.xyz;
+          let gx = i32(floor(p_local.x / u.cell_size));
+          let gy = i32(floor(p_local.y / u.cell_size));
+          let gz = i32(floor(p_local.z / u.cell_size));
           if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
               let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
               let cell_max = cell_min + vec3<f32>(u.cell_size);
               var t_exit = 100.0;
-              if (rd.x > 0.0001) { t_exit = min(t_exit, (cell_max.x - p.x) / rd.x); }
-              else if (rd.x < -0.0001) { t_exit = min(t_exit, (cell_min.x - p.x) / rd.x); }
-              if (rd.y > 0.0001) { t_exit = min(t_exit, (cell_max.y - p.y) / rd.y); }
-              else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p.y) / rd.y); }
-              if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p.z) / rd.z); }
-              else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p.z) / rd.z); }
+              if (rd.x > 0.0001) { t_exit = min(t_exit, (cell_max.x - p_local.x) / rd.x); }
+              else if (rd.x < -0.0001) { t_exit = min(t_exit, (cell_min.x - p_local.x) / rd.x); }
+              if (rd.y > 0.0001) { t_exit = min(t_exit, (cell_max.y - p_local.y) / rd.y); }
+              else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p_local.y) / rd.y); }
+              if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p_local.z) / rd.z); }
+              else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p_local.z) / rd.z); }
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
               let count = min(i32(cell.count), " (Int.str max-ids) ");
@@ -107,14 +109,18 @@
                   let s_idx = i32(cell.ids[i]);
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
                     let s_data = u.spheres[s_idx];
-                    d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w));
+                    let dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
+                    if (dist < d.x) { d = vec2<f32>(dist, f32(s_idx)); }
                   }
               }
-              return min(d, max(t_exit + 0.01, 0.05));
+              return vec2<f32>(min(d.x, max(t_exit + 0.01, 0.05)), d.y);
           } else {
              for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
                 let s_data = u.spheres[i];
-                if (s_data.pos.w > 0.0) { d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w)); }
+                if (s_data.pos.w > 0.0) { 
+                  let dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
+                  if (dist < d.x) { d = vec2<f32>(dist, f32(i)); }
+                }
              }
              return d;
           }
@@ -127,53 +133,37 @@
           let ro = u.cam_pos.xyz;
           let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.5);
           var t = 0.0;
-          var hit = false;
+          var hitId = -1.0;
           for(var i = 0; i < 80; i = i + 1) {
               let p = ro + rd * t;
-              let d = worldSDF(p, rd);
-              if (d < 0.001) { hit = true; break; }
-              t += d;
+              let res = worldSDF(p, rd);
+              if (res.x < 0.001) { hitId = res.y; break; }
+              t += res.x;
               if (t > 100.0) { break; }
           }
           var color = u.bg_color.rgb;
-          if (hit) {
+          if (t <= 100.0) {
               let p = ro + rd * t;
               let normal_floor = vec3<f32>(0.0, 1.0, 0.0);
-              if (p.y > 0.1) {
-                  var minDist = 100.0;
-                  var hitId = -1;
-                  let gx = i32(floor(p.x / u.cell_size));
-                  let gy = i32(floor(p.y / u.cell_size));
-                  let gz = i32(floor(p.z / u.cell_size));
-                  if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
-                      let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
-                      let cell = grid[idx];
-                      let count = min(i32(cell.count), " (Int.str max-ids) ");
-                      for(var i = 0; i < count; i = i + 1) {
-                          let s_idx = i32(cell.ids[i]);
-                          if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
-                            let s_dist = sdSphere(p - u.spheres[s_idx].pos.xyz, u.spheres[s_idx].pos.w);
-                            if (s_dist < minDist) { minDist = s_dist; hitId = s_idx; }
-                          }
-                      }
-                  }
-                  color = vec3<f32>(0.9, 0.9, 0.9);
-                  if (hitId != -1) {
-                      let s_data = u.spheres[hitId];
-                      let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                      let stripe = sin(lp.y * 10.0);
-                      let check = smoothstep(-0.1, 0.1, stripe);
-                      color = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
-                      let sn = normalize(p - s_data.pos.xyz);
-                      color *= max(dot(sn, vec3<f32>(0.5, 1.0, 0.3)), 0.2);
-                  } else {
-                      color *= max(dot(normal_floor, vec3<f32>(0.5, 1.0, 0.3)), 0.2);
-                  }
+              let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+              if (hitId != -1.0) {
+                  let s_idx = i32(hitId);
+                  let s_data = u.spheres[s_idx];
+                  let sn = normalize(p - s_data.pos.xyz);
+                  let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                  let stripe = sin(lp.y * 10.0);
+                  let check = smoothstep(-0.1, 0.1, stripe);
+                  let base_col = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
+                  color = base_col * max(dot(sn, light_dir), 0.2);
               } else {
-                  let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
-                  let check = smoothstep(-0.1, 0.1, grid_v);
-                  color = mix(color * 0.5, color * 1.5, check);
-                  color *= max(dot(normal_floor, vec3<f32>(0.5, 1.0, 0.3)), 0.2);
+                  if (p.y < 0.1) {
+                      let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
+                      let check = smoothstep(-0.1, 0.1, grid_v);
+                      let floor_col = mix(vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(0.3, 0.3, 0.3), check);
+                      color = floor_col * max(dot(normal_floor, light_dir), 0.2);
+                  } else {
+                      color = vec3<f32>(0.5, 0.5, 0.5) * max(dot(normal_floor, light_dir), 0.2);
+                  }
               }
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
           }
@@ -182,7 +172,7 @@
     "))
 
   (defn create [ctx format width height grid]
-    (let [u-size (+ (+ WGPURenderer.header-size 16) (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
+    (let [u-size (+ (+ WGPURenderer.header-size 0) (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
           shader (shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
           s-size (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell)]
       (match (WGPURender.create-uniform-buffer ctx u-size)
@@ -226,9 +216,10 @@
           cols (Double.from-int @(SpatialGrid.cols grid))
           rows (Double.from-int @(SpatialGrid.rows grid))
           layers (Double.from-int @(SpatialGrid.layers grid))
-          data (the (Array Float) (replicate (/ (+ header-size (* WGPURenderer.max-spheres sphere-data-size)) 4) &0.0f))]
+          origin (SpatialGrid.origin grid)
+          data (the (Array Float) (replicate (/ (+ WGPURenderer.header-size (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size)) 4) &0.0f))]
       (do
-        ;; 1. Populate Header (0-79 bytes)
+        ;; 1. Populate Header (0-127 bytes)
         (Array.aset! &data 0 (Double.to-float time))
         (Array.aset! &data 1 (Double.to-float (Double.from-int width)))
         (Array.aset! &data 2 (Double.to-float (Double.from-int height)))
@@ -250,7 +241,7 @@
         (Array.aset! &data 18 (Double.to-float @(Vector3.z cam-up)))
         (Array.aset! &data 19 0.0f)
 
-        ;; 2. Populate BG Color and Grid Dims (80-111 bytes)
+        ;; 2. Populate BG Color and Grid Dims (80-127 bytes)
         (for [i 0 (Array.length commands)]
           (match-ref (Array.unsafe-nth commands i)
             (RenderCommand.SetBg bg) (set! bg-color @bg)
@@ -263,9 +254,12 @@
         (Array.aset! &data 25 (Double.to-float rows))
         (Array.aset! &data 26 (Double.to-float layers))
         (Array.aset! &data 27 0.0f)
+        (Array.aset! &data 28 (Double.to-float @(Vector3.x origin)))
+        (Array.aset! &data 29 (Double.to-float @(Vector3.y origin)))
+        (Array.aset! &data 30 (Double.to-float @(Vector3.z origin)))
+        (Array.aset! &data 31 0.0f)
 
-        ;; 3. Populate Spheres using Entity ID as index (112+ bytes)
-        ;; Note: We exclude the PlayerTag so the camera isn't stuck inside the player sphere.
+        ;; 3. Populate Spheres using Entity ID as index (128+ bytes)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [id (ECS.Entity.id &ent)]
             (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
@@ -273,8 +267,7 @@
               (let [pos (RigidBody.position rb)
                     rot (RigidBody.rotation rb)
                     rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
-                    ;; Correct Base: 28 floats (112 bytes) = 4 (time/dims) + 16 (cam) + 8 (bg/grid)
-                    base (+ (/ (+ header-size 16) 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
+                    base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
                 (do
                   (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
                   (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
@@ -295,7 +288,7 @@
       (Result.Error _) ()
       (Result.Success frame)
         (do
-          (WGPURender.run-pass frame @(WGPURenderer.pipeline ren) @(WGPURenderer.bind-group ren) (Maybe.Nothing))
+          (WGPURenderer.run-pass frame @(WGPURenderer.pipeline ren) @(WGPURenderer.bind-group ren) (Maybe.Nothing))
           (LinePass.render frame ctx (WGPURenderer.line-pass ren) line-count @(WGPURenderer.depth-texture ren))
           (WGPURender.end-frame frame surf ctx)
           (WGPURender.free-frame frame))))

@@ -29,7 +29,8 @@
 
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
-          grid (SpatialGrid.new 20.0 10 10 10)
+          grid-origin (Vector3.init -100.0 -100.0 -100.0)
+          grid (SpatialGrid.new-with-origin 20.0 10 10 10 grid-origin)
           world (GameWorld.new)
           f-rb (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.8 0.8)
           f-col (Collidable.init (Handle.init (Uint64.from-long 8888l) (Uint32.from-long 1l))
@@ -139,7 +140,7 @@
           dt (Clock.unscaled-dt (Engine.clock e))]
       (do
         (Clock.tick! (Engine.clock e))
-        (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.1)))
+        (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.033)))
         (Engine.set-bg-color! e (Vector3.init 0.1 0.1 0.1))
 
         (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
