@@ -20,7 +20,7 @@
 ])
 
 (defmodule WGPURenderer
-  (def max-spheres 64)
+  (def max-spheres 128)
   (def max-ids-per-cell 16)
   (def header-size 96)
   (def sphere-data-size 32)
@@ -102,15 +102,17 @@
               else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p.z) / rd.z); }
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
-              let count = min(i32(cell.count), 16);
+              let count = min(i32(cell.count), " (Int.str max-ids) ");
               for(var i = 0; i < count; i = i + 1) {
                   let s_idx = i32(cell.ids[i]);
-                  let s_data = u.spheres[s_idx];
-                  d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w));
+                  if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
+                    let s_data = u.spheres[s_idx];
+                    d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w));
+                  }
               }
               return min(d, max(t_exit + 0.01, 0.05));
           } else {
-             for(var i = 0; i < 64; i = i + 1) {
+             for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
                 let s_data = u.spheres[i];
                 if (s_data.pos.w > 0.0) { d = min(d, sdSphere(p - s_data.pos.xyz, s_data.pos.w)); }
              }
@@ -136,6 +138,7 @@
           var color = u.bg_color.rgb;
           if (hit) {
               let p = ro + rd * t;
+              let normal_floor = vec3<f32>(0.0, 1.0, 0.0);
               if (p.y > 0.1) {
                   var minDist = 100.0;
                   var hitId = -1;
@@ -145,18 +148,12 @@
                   if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                       let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                       let cell = grid[idx];
-                      let count = min(i32(cell.count), 16);
+                      let count = min(i32(cell.count), " (Int.str max-ids) ");
                       for(var i = 0; i < count; i = i + 1) {
                           let s_idx = i32(cell.ids[i]);
-                          let s_dist = sdSphere(p - u.spheres[s_idx].pos.xyz, u.spheres[s_idx].pos.w);
-                          if (s_dist < minDist) { minDist = s_dist; hitId = s_idx; }
-                      }
-                  } else {
-                      for(var i = 0; i < 64; i = i + 1) {
-                          let s_data = u.spheres[i];
-                          if (s_data.pos.w > 0.0) {
-                              let s_dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
-                              if (s_dist < minDist) { minDist = s_dist; hitId = i; }
+                          if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
+                            let s_dist = sdSphere(p - u.spheres[s_idx].pos.xyz, u.spheres[s_idx].pos.w);
+                            if (s_dist < minDist) { minDist = s_dist; hitId = s_idx; }
                           }
                       }
                   }
@@ -167,13 +164,16 @@
                       let stripe = sin(lp.y * 10.0);
                       let check = smoothstep(-0.1, 0.1, stripe);
                       color = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
+                      let sn = normalize(p - s_data.pos.xyz);
+                      color *= max(dot(sn, vec3<f32>(0.5, 1.0, 0.3)), 0.2);
+                  } else {
+                      color *= max(dot(normal_floor, vec3<f32>(0.5, 1.0, 0.3)), 0.2);
                   }
-                  let n = normalize(p - ro);
-                  color *= dot(n, vec3<f32>(0.0, 1.0, 0.0)) * 0.5 + 0.5;
               } else {
                   let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
                   let check = smoothstep(-0.1, 0.1, grid_v);
                   color = mix(color * 0.5, color * 1.5, check);
+                  color *= max(dot(normal_floor, vec3<f32>(0.5, 1.0, 0.3)), 0.2);
               }
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
           }
@@ -226,58 +226,64 @@
           cols (Double.from-int @(SpatialGrid.cols grid))
           rows (Double.from-int @(SpatialGrid.rows grid))
           layers (Double.from-int @(SpatialGrid.layers grid))
-          data [ (Double.to-float time)
-                 (Double.to-float (Double.from-int width))
-                 (Double.to-float (Double.from-int height))
-                 (Double.to-float cell-size)
-                 (Double.to-float @(Vector3.x cam-pos))
-                 (Double.to-float @(Vector3.y cam-pos))
-                 (Double.to-float @(Vector3.z cam-pos))
-                 1.0f
-                 (Double.to-float @(Vector3.x cam-dir))
-                 (Double.to-float @(Vector3.y cam-dir))
-                 (Double.to-float @(Vector3.z cam-dir))
-                 0.0f
-                 (Double.to-float @(Vector3.x cam-right))
-                 (Double.to-float @(Vector3.y cam-right))
-                 (Double.to-float @(Vector3.z cam-right))
-                 0.0f
-                 (Double.to-float @(Vector3.x cam-up))
-                 (Double.to-float @(Vector3.y cam-up))
-                 (Double.to-float @(Vector3.z cam-up))
-                 0.0f]]
+          data (the (Array Float) (replicate (/ (+ header-size (* WGPURenderer.max-spheres sphere-data-size)) 4) &0.0f))]
       (do
+        ;; 1. Populate Header (0-79 bytes)
+        (Array.aset! &data 0 (Double.to-float time))
+        (Array.aset! &data 1 (Double.to-float (Double.from-int width)))
+        (Array.aset! &data 2 (Double.to-float (Double.from-int height)))
+        (Array.aset! &data 3 (Double.to-float cell-size))
+        (Array.aset! &data 4 (Double.to-float @(Vector3.x cam-pos)))
+        (Array.aset! &data 5 (Double.to-float @(Vector3.y cam-pos)))
+        (Array.aset! &data 6 (Double.to-float @(Vector3.z cam-pos)))
+        (Array.aset! &data 7 1.0f)
+        (Array.aset! &data 8 (Double.to-float @(Vector3.x cam-dir)))
+        (Array.aset! &data 9 (Double.to-float @(Vector3.y cam-dir)))
+        (Array.aset! &data 10 (Double.to-float @(Vector3.z cam-dir)))
+        (Array.aset! &data 11 0.0f)
+        (Array.aset! &data 12 (Double.to-float @(Vector3.x cam-right)))
+        (Array.aset! &data 13 (Double.to-float @(Vector3.y cam-right)))
+        (Array.aset! &data 14 (Double.to-float @(Vector3.z cam-right)))
+        (Array.aset! &data 15 0.0f)
+        (Array.aset! &data 16 (Double.to-float @(Vector3.x cam-up)))
+        (Array.aset! &data 17 (Double.to-float @(Vector3.y cam-up)))
+        (Array.aset! &data 18 (Double.to-float @(Vector3.z cam-up)))
+        (Array.aset! &data 19 0.0f)
+
+        ;; 2. Populate BG Color and Grid Dims (80-111 bytes)
         (for [i 0 (Array.length commands)]
           (match-ref (Array.unsafe-nth commands i)
             (RenderCommand.SetBg bg) (set! bg-color @bg)
             _ ()))
-        (Array.push-back! &data (Double.to-float @(Vector3.x &bg-color)))
-        (Array.push-back! &data (Double.to-float @(Vector3.y &bg-color)))
-        (Array.push-back! &data (Double.to-float @(Vector3.z &bg-color)))
-        (Array.push-back! &data 1.0f)
-        (Array.push-back! &data (Double.to-float cols))
-        (Array.push-back! &data (Double.to-float rows))
-        (Array.push-back! &data (Double.to-float layers))
-        (Array.push-back! &data 0.0f)
-        (let [sphere-count 0]
-          (do
-            (for [i 0 (Array.length commands)]
-              (when (< sphere-count WGPURenderer.max-spheres)
-                (match-ref (Array.unsafe-nth commands i)
-                  (RenderCommand.DrawSdf pos radius rot)
-                    (do
-                      (Array.push-back! &data (Double.to-float @(Vector3.x pos)))
-                      (Array.push-back! &data (Double.to-float @(Vector3.y pos)))
-                      (Array.push-back! &data (Double.to-float @(Vector3.z pos)))
-                      (Array.push-back! &data (Double.to-float @radius))
-                      (Array.push-back! &data (Double.to-float @(Quaternion.x rot)))
-                      (Array.push-back! &data (Double.to-float @(Quaternion.y rot)))
-                      (Array.push-back! &data (Double.to-float @(Quaternion.z rot)))
-                      (Array.push-back! &data (Double.to-float @(Quaternion.w rot)))
-                      (set! sphere-count (inc sphere-count)))
-                  _ ())))
-            (for [i sphere-count WGPURenderer.max-spheres]
-              (do (for [j 0 8] (Array.push-back! &data 0.0f))))))
+        (Array.aset! &data 20 (Double.to-float @(Vector3.x &bg-color)))
+        (Array.aset! &data 21 (Double.to-float @(Vector3.y &bg-color)))
+        (Array.aset! &data 22 (Double.to-float @(Vector3.z &bg-color)))
+        (Array.aset! &data 23 1.0f)
+        (Array.aset! &data 24 (Double.to-float cols))
+        (Array.aset! &data 25 (Double.to-float rows))
+        (Array.aset! &data 26 (Double.to-float layers))
+        (Array.aset! &data 27 0.0f)
+
+        ;; 3. Populate Spheres using Entity ID as index (112+ bytes)
+        (ECS.query world [ent RigidBody Collidable]
+          (let [id (ECS.Entity.id &ent)]
+            (when (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
+              (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
+                    col (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
+                    pos (RigidBody.position rb)
+                    rot (RigidBody.rotation rb)
+                    rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
+                    base (+ (/ header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
+                (do
+                  (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
+                  (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                  (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                  (Array.aset! &data (+ base 3) (Double.to-float rad))
+                  (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                  (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                  (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                  (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot))))))))
+
         (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) &data)
         (let [flat-grid (GPUSpatial.flatten grid 16)]
           (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) &flat-grid))
