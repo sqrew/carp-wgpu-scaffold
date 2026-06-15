@@ -8,6 +8,7 @@
   (use Solver)
   (use ECS)
   (use InputManager)
+  (use RotationState)
 
   (def fixed-dt 0.00833)
   (def gravity (Vector3.init 0.0 -9.81 0.0))
@@ -59,20 +60,17 @@
     (let [collision-occurred false]
       (do
         ;; 1. Apply Gravity and Step Bodies
-        (ECS.query world [ent RigidBody]
-          (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))]
-            (do
-              (RigidBody.apply-force! rb &gravity)
-              (RigidBody.step-custom! rb fixed-dt fixed-dt))))
+        (ECS.query world [ent (rb RigidBody)]
+          (do
+            (RigidBody.apply-force! rb &gravity)
+            (RigidBody.step-custom! rb fixed-dt fixed-dt)))
 
-        (for [iter 0 PhysicsSystem.iterations]
+        (for [iter-idx 0 iterations]
           (do
             ;; 2. Sync Volumes and Update Grid (using live components)
             (SpatialGrid.clear! grid)
-            (ECS.query world [ent RigidBody Collidable]
-              (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                    col (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                    vol (Collidable.volume col)
+            (ECS.query world [ent (rb RigidBody) (col Collidable)]
+              (let [vol (Collidable.volume col)
                     pos (RigidBody.position rb)]
                 (do
                   (match-ref vol
@@ -84,32 +82,27 @@
 
             ;; 3. Resolve Collisions (using live components)
             ;; Resolve vs Floor
-            (ECS.query world [ent RigidBody Collidable]
-              (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                    col (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                    vel (Body.velocity (RigidBody.body rb))]
+            (ECS.query world [ent (rb RigidBody) (col Collidable)]
+              (let [vel (Body.velocity (RigidBody.body rb))]
                 (match (CollisionChecker.check-pair-swept col vel fixed-dt f-col)
                   (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb f-rb &actual-col)
                   _ ())))
 
             ;; Resolve vs Other Entities
-            (ECS.query world [ent1 RigidBody Collidable]
-              (let [rb1 (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent1)) world))
-                    col1 (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent1)) world))
-                    aabb (Collision.get-aabb (Collidable.volume col1))
+            (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
+              (let [aabb (Collision.get-aabb (Collidable.volume col1))
                     candidates (SpatialGrid.query-unique grid &aabb)]
                 (for [c 0 (Array.length &candidates)]
                   (let [id2 (Array.unsafe-nth &candidates c)
                         ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
-                    (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1))) (ECS.has-component? world &ent2 Collidable))
-                      (let [rb2 (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent2)) world))
-                            col2 (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent2)) world))
-                            vel1 (Body.velocity (RigidBody.body rb1))]
-                        (match (CollisionChecker.check-pair-swept col1 vel1 fixed-dt col2)
-                          (Maybe.Just (CollisionResult.Physical actual-col)) 
-                            (do
-                              (set! collision-occurred true)
-                              (Solver.solve! rb1 rb2 &actual-col))
-                          _ ())))))))))
+                    (when (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
+                      (ECS.with-components world ent2 [(rb2 RigidBody) (col2 Collidable)]
+                        (let [vel1 (Body.velocity (RigidBody.body rb1))]
+                          (match (CollisionChecker.check-pair-swept col1 vel1 fixed-dt col2)
+                            (Maybe.Just (CollisionResult.Physical actual-col)) 
+                              (do
+                                (set! collision-occurred true)
+                                (Solver.solve! rb1 rb2 &actual-col))
+                            _ ()))))))))))
         collision-occurred)))
 )

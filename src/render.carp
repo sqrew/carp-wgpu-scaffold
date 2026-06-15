@@ -265,13 +265,12 @@
         (Array.aset! &data 27 0.0f)
 
         ;; 3. Populate Spheres using Entity ID as index (112+ bytes)
-        (ECS.query world [ent RigidBody Collidable]
+        ;; Note: We exclude the PlayerTag so the camera isn't stuck inside the player sphere.
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [id (ECS.Entity.id &ent)]
             (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
                        (not (ECS.has-component? world &ent PlayerTag)))
-              (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                    col (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                    pos (RigidBody.position rb)
+              (let [pos (RigidBody.position rb)
                     rot (RigidBody.rotation rb)
                     rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
                     ;; Correct Base: 28 floats (112 bytes) = 4 (time/dims) + 16 (cam) + 8 (bg/grid)
