@@ -114,8 +114,8 @@
       (do
         (InputManager.update! mgr)
         (ECS.query (Engine.world e) [p-ent RigidBody PlayerTag]
-          (let [p-rb (Maybe.unsafe-from (ECS.get-component (Engine.world e) &p-ent))]
-            (PhysicsSystem.apply-player-movement! &p-rb mgr dt)))
+          (let [p-rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr (Engine.world e) &p-ent)) (Engine.world e)))]
+            (PhysicsSystem.apply-player-movement! p-rb mgr dt)))
         (when (InputManager.action-pressed? mgr "Fire")
           (spawn-bullet! e)))))
 
