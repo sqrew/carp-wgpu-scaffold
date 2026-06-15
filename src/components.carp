@@ -6,6 +6,12 @@
   (implements zero PlayerTag.zero)
 )
 
+(deftype RotationState [yaw Double pitch Double])
+(defmodule RotationState
+  (defn zero [] (RotationState.init -1.5707 0.0))
+  (implements zero RotationState.zero)
+)
+
 (defmodule RigidBody
   (defn zero [] (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.0 0.0))
   (implements zero RigidBody.zero)
@@ -27,4 +33,4 @@
   (implements zero Color.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState)

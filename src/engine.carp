@@ -53,11 +53,13 @@
               p-rb (RigidBody.new p-pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)
               p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
               p-col (Collidable.init @(ECS.Entity.handle &p-ent) p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-              p-color (Color.init (Vector3.init 0.0 1.0 0.0))]
+              p-color (Color.init (Vector3.init 0.0 1.0 0.0))
+              p-rot (RotationState.init -1.5707 0.0)]
           (do
             (ECS.add-component! &world &p-ent p-rb)
             (ECS.add-component! &world &p-ent p-col)
             (ECS.add-component! &world &p-ent p-color)
+            (ECS.add-component! &world &p-ent p-rot)
             (ECS.add-component! &world &p-ent (PlayerTag.init))))
 
         (for [z 0 5]
@@ -86,11 +88,18 @@
             0.0)))))
 
   (defn spawn-bullet! [e]
-    (ECS.query (Engine.world e) [p-ent RigidBody PlayerTag]
-      (let [p-rb (Maybe.unsafe-from (ECS.get-component (Engine.world e) &p-ent))
-            p-trans (RigidBody.transform &p-rb)
-            p-pos (RigidBody.position &p-rb)
-            p-dir (Transform.forward p-trans)
+    (ECS.query (Engine.world e) [p-ent RigidBody RotationState PlayerTag]
+      (let [p-rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr (Engine.world e) &p-ent)) (Engine.world e)))
+            p-rot (the (Ref RotationState) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr (Engine.world e) &p-ent)) (Engine.world e)))
+            p-pos (RigidBody.position p-rb)
+            
+            ;; Use RotationState to determine bullet direction
+            yaw-axis (Vector3.init 0.0 1.0 0.0)
+            pitch-axis (Vector3.init 1.0 0.0 0.0)
+            q-yaw (Quaternion.from-axis-angle yaw-axis @(RotationState.yaw p-rot))
+            q-pitch (Quaternion.from-axis-angle pitch-axis @(RotationState.pitch p-rot))
+            look-rot (Quaternion.mul &q-yaw &q-pitch)
+            p-dir (Transform.forward-quat &look-rot)
             
             ;; Spawn slightly in front of player
             bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir 1.0))
@@ -118,9 +127,10 @@
           dt (Clock.unscaled-dt (Engine.clock e))]
       (do
         (InputManager.update! mgr)
-        (ECS.query (Engine.world e) [p-ent RigidBody PlayerTag]
-          (let [p-rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr (Engine.world e) &p-ent)) (Engine.world e)))]
-            (PhysicsSystem.apply-player-movement! p-rb mgr dt)))
+        (ECS.query (Engine.world e) [p-ent RigidBody RotationState PlayerTag]
+          (let [p-rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr (Engine.world e) &p-ent)) (Engine.world e)))
+                p-rot (the (Ref RotationState) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr (Engine.world e) &p-ent)) (Engine.world e)))]
+            (PhysicsSystem.apply-player-movement! p-rb p-rot mgr dt)))
         (when (InputManager.action-pressed? mgr "Fire")
           (spawn-bullet! e)))))
 
@@ -142,28 +152,34 @@
                   (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 
-        ;; Update Camera using live component data
-        (ECS.query world [p-ent RigidBody PlayerTag]
+        ;; Update Camera using live RotationState to decouple from physics roll
+        (ECS.query world [p-ent RigidBody RotationState PlayerTag]
           (let [p-rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &p-ent)) world))
-                p-trans (RigidBody.transform p-rb)]
+                p-rot (the (Ref RotationState) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &p-ent)) world))
+                yaw @(RotationState.yaw p-rot)
+                pitch @(RotationState.pitch p-rot)
+                
+                ;; Reconstruct rotation for camera (unaffected by body roll)
+                yaw-axis (Vector3.init 0.0 1.0 0.0)
+                pitch-axis (Vector3.init 1.0 0.0 0.0)
+                q-yaw (Quaternion.from-axis-angle yaw-axis yaw)
+                q-pitch (Quaternion.from-axis-angle pitch-axis pitch)
+                look-rot (Quaternion.mul &q-yaw &q-pitch)]
             (do
               (Camera.set-pos! cam @(RigidBody.position p-rb))
-              (Camera.set-front! cam (Transform.forward p-trans))
-              (Camera.set-right! cam (Transform.right p-trans))
-              (Camera.set-up! cam (Transform.up p-trans))))))))
+              (Camera.set-front! cam (Transform.forward-quat &look-rot))
+              (Camera.set-right! cam (Transform.right-quat &look-rot))
+              (Camera.set-up! cam (Transform.up-quat &look-rot))))))))
 
   (defn submit-render-commands! [e ren]
     (let [world (Engine.world e)]
       (do
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
+        ;; Note: DrawSdf commands are now redundant as WGPURenderer queries the world directly for Raymarching.
+        ;; We still loop to submit lines for debug visualization.
         (ECS.query world [ent RigidBody Collidable Color]
           (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                col (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
-                pos @(RigidBody.position rb)]
-            (match-ref (Collidable.volume col)
-              (Volume.Ball ball)
-                (do
-                  (WGPURenderer.submit! ren (RenderCommand.DrawSdf @&pos @(Sphere.radius ball) @(RigidBody.rotation rb)))
-                  (WGPURenderer.submit! ren (RenderCommand.DrawLine @&pos (Vector3.init @(Vector3.x &pos) 0.0 @(Vector3.z &pos)) (Vector3.init 1.0 1.0 1.0))))
-              _ ()))))))
+                pos (RigidBody.position rb)]
+            (do
+              (WGPURenderer.submit! ren (RenderCommand.DrawLine @pos (Vector3.init @(Vector3.x pos) 0.0 @(Vector3.z pos)) (Vector3.init 1.0 1.0 1.0)))))))))
 )

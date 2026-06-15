@@ -13,13 +13,32 @@
   (def gravity (Vector3.init 0.0 -9.81 0.0))
   (def iterations 8)
 
-  (defn apply-player-movement! [p-rb mgr dt]
+  (defn apply-player-movement! [p-rb p-rot mgr dt]
     (let [move-speed 20.0
-          trans (RigidBody.transform p-rb)
-          forward (Transform.forward trans)
-          right (Transform.right trans)
+          ;; Use RotationState for camera vectors to avoid rolling
+          yaw @(RotationState.yaw p-rot)
+          pitch @(RotationState.pitch p-rot)
+          
+          ;; Mouse look updates
+          dx (InputManager.action-analog mgr "LookX")
+          dy (InputManager.action-analog mgr "LookY")
+          new-yaw (+ yaw dx)
+          new-pitch (clamp -1.5 1.5 (+ pitch dy))
+          
+          ;; Decoupled Orientation
+          yaw-axis (Vector3.init 0.0 1.0 0.0)
+          pitch-axis (Vector3.init 1.0 0.0 0.0)
+          q-yaw (Quaternion.from-axis-angle yaw-axis new-yaw)
+          q-pitch (Quaternion.from-axis-angle pitch-axis new-pitch)
+          look-rot (Quaternion.mul &q-yaw &q-pitch)
+          
+          forward (Transform.forward-quat &look-rot)
+          right (Transform.right-quat &look-rot)
           move-dir (Vector3.init 0.0 0.0 0.0)]
       (do
+        (RotationState.set-yaw! p-rot new-yaw)
+        (RotationState.set-pitch! p-rot new-pitch)
+        
         (when (InputManager.action-digital? mgr "Forward")
           (set! move-dir (Vector3.add &move-dir &forward)))
         (when (InputManager.action-digital? mgr "Backward")
@@ -33,25 +52,15 @@
           (let [accel (Vector3.mul &(Vector3.normalize &move-dir) move-speed)]
             (RigidBody.apply-force! p-rb &accel)))
 
-        (let [look-x (InputManager.action-analog mgr "LookX")
-              look-y (InputManager.action-analog mgr "LookY")
-              rot (Transform.rotation trans)
-              
-              ;; Correct FPS rotation order: Apply yaw globally (Y-axis) and pitch locally (right-axis)
-              yaw-axis (Vector3.init 0.0 1.0 0.0)
-              yaw-rot (Quaternion.from-axis-angle yaw-axis (- 0.0 look-x))
-              pitch-rot (Quaternion.from-axis-angle right (- 0.0 look-y))
-              
-              ;; q' = yaw * q * pitch (standard FPS camera accumulation)
-              new-rot (Quaternion.mul &yaw-rot rot)]
-          (RigidBody.set-rotation! p-rb (Quaternion.mul &new-rot &pitch-rot))))))
+        ;; The sphere itself doesn't need to roll with the camera
+        (RigidBody.set-rotation! p-rb look-rot))))
 
   (defn step-ecs! [world grid f-rb f-col]
     (let [collision-occurred false]
       (do
         ;; 1. Apply Gravity and Step Bodies
         (ECS.query world [ent RigidBody]
-          (let [rb (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world)]
+          (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))]
             (do
               (RigidBody.apply-force! rb &gravity)
               (RigidBody.step-custom! rb fixed-dt fixed-dt))))
