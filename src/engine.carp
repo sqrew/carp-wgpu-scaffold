@@ -142,12 +142,12 @@
                   (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 
-        ;; Update Camera
+        ;; Update Camera using live component data
         (ECS.query world [p-ent RigidBody PlayerTag]
-          (let [p-rb (Maybe.unsafe-from (ECS.get-component world &p-ent))
-                p-trans (RigidBody.transform &p-rb)]
+          (let [p-rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &p-ent)) world))
+                p-trans (RigidBody.transform p-rb)]
             (do
-              (Camera.set-pos! cam @(RigidBody.position &p-rb))
+              (Camera.set-pos! cam @(RigidBody.position p-rb))
               (Camera.set-front! cam (Transform.forward p-trans))
               (Camera.set-right! cam (Transform.right p-trans))
               (Camera.set-up! cam (Transform.up p-trans))))))))
@@ -157,13 +157,13 @@
       (do
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (ECS.query world [ent RigidBody Collidable Color]
-          (let [rb (Maybe.unsafe-from (ECS.get-component world &ent))
-                col (Maybe.unsafe-from (ECS.get-component world &ent))
-                pos @(RigidBody.position &rb)]
-            (match-ref (Collidable.volume &col)
+          (let [rb (the (Ref RigidBody) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
+                col (the (Ref Collidable) (ECS.ptr->ref (Maybe.unsafe-from (ECS.get-component-ptr world &ent)) world))
+                pos @(RigidBody.position rb)]
+            (match-ref (Collidable.volume col)
               (Volume.Ball ball)
                 (do
-                  (WGPURenderer.submit! ren (RenderCommand.DrawSdf @&pos @(Sphere.radius ball) @(RigidBody.rotation &rb)))
+                  (WGPURenderer.submit! ren (RenderCommand.DrawSdf @&pos @(Sphere.radius ball) @(RigidBody.rotation rb)))
                   (WGPURenderer.submit! ren (RenderCommand.DrawLine @&pos (Vector3.init @(Vector3.x &pos) 0.0 @(Vector3.z &pos)) (Vector3.init 1.0 1.0 1.0))))
               _ ()))))))
 )
