@@ -50,9 +50,14 @@
         ;; Create Player Entity
         (let [p-ent (GameWorld.create-entity! &world)
               p-pos (Vector3.init 5.0 1.0 5.0)
-              p-rb (RigidBody.new p-pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)]
+              p-rb (RigidBody.new p-pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)
+              p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
+              p-col (Collidable.init @(ECS.Entity.handle &p-ent) p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+              p-color (Color.init (Vector3.init 0.0 1.0 0.0))]
           (do
             (ECS.add-component! &world &p-ent p-rb)
+            (ECS.add-component! &world &p-ent p-col)
+            (ECS.add-component! &world &p-ent p-color)
             (ECS.add-component! &world &p-ent (PlayerTag.init))))
 
         (for [z 0 5]
