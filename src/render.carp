@@ -262,21 +262,24 @@
         ;; 3. Populate Spheres using Entity ID as index (128+ bytes)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [id (ECS.Entity.id &ent)]
-            (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
-                       (not (ECS.has-component? world &ent PlayerTag)))
-              (let [pos (RigidBody.position rb)
-                    rot (RigidBody.rotation rb)
-                    rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
-                    base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
-                (do
-                  (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
-                  (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                  (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                  (Array.aset! &data (+ base 3) (Double.to-float rad))
-                  (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                  (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                  (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                  (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot))))))))
+            (do
+              (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
+                         (not (ECS.has-component? world &ent PlayerTag)))
+                (let [pos (RigidBody.position rb)
+                      rot (RigidBody.rotation rb)
+                      rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
+                      base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
+                  (do
+                    (when (and (> id (Uint32.from-long 4l)) (< time 5.0)) 
+                      (println* "Rendering sphere ID: " id " at " pos " rad: " rad))
+                    (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
+                    (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                    (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                    (Array.aset! &data (+ base 3) (Double.to-float rad))
+                    (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                    (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                    (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                    (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot)))))))))
 
         (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) &data)
         (let [flat-grid (GPUSpatial.flatten grid 16)]
