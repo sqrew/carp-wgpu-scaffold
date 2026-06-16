@@ -12,9 +12,9 @@
   (implements zero RotationState.zero)
 )
 
-(deftype Parent [parent-id Uint32 local-pos (Vector3 Double) local-rot Quaternion])
+(deftype Parent [parent-handle (Handle ()) local-pos (Vector3 Double) local-rot Quaternion])
 (defmodule Parent
-  (defn zero [] (Parent.init (Uint32.from-long 0l) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+  (defn zero [] (Parent.init (Handle.null) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
   (implements zero Parent.zero)
 )
 

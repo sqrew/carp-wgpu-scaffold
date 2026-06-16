@@ -5,7 +5,7 @@
     (* @(SpatialGrid.cols grid) (* @(SpatialGrid.rows grid) @(SpatialGrid.layers grid))))
 
   (defn stride [max-ids]
-    (inc max-ids))
+    20) ;; (1 count + 3 pad + 16 ids) = 20 floats = 80 bytes (16-byte aligned)
 
   (defn required-floats [grid max-ids]
     (* (GPUSpatial.cell-count grid) (GPUSpatial.stride max-ids)))
@@ -24,6 +24,6 @@
               (Array.aset! &data base-idx (the Float (Double.to-float (Double.from-int count))))
               (for [j 0 count]
                 (let [ent-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth bucket j))))]
-                  (Array.aset! &data (+ base-idx (inc j)) (the Float (Double.to-float (Double.from-int ent-idx)))))))))
+                  (Array.aset! &data (+ base-idx (+ 4 j)) (the Float (Double.to-float (Double.from-int ent-idx)))))))))
         data)))
 )

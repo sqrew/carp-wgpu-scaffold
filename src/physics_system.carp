@@ -45,8 +45,8 @@
 
   (defn sync-transforms! [world]
     (ECS.query world [ent (p Parent) (rb RigidBody)]
-      (let [pid @(Parent.parent-id p)
-            parent-ent (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long pid)) (Uint32.from-long 1l)))]
+      (let [parent-h (Parent.parent-handle p)
+            parent-ent (ECS.Entity.init @parent-h)]
         (ECS.with-components world parent-ent [pe (p-rb RigidBody)]
           (let [p-pos (RigidBody.position p-rb)
                 p-rot (RigidBody.rotation p-rb)
@@ -73,14 +73,13 @@
         ;; 2. Rebuild Spatial Grid ONCE per frame (Massive CPU Speedup)
         (SpatialGrid.clear! grid)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
-          (when (not (ECS.has-component? world &ent NegativeSDF))
-            (let [vol (Collidable.volume col)
-                  pos (RigidBody.position rb)]
-              (do
-                (match-ref vol (Volume.Ball s) (Sphere.set-center! s @pos) _ ())
-                (let [vel (Body.velocity (RigidBody.body rb))
-                      swept (Collision.get-swept-aabb vol vel fixed-dt)]
-                  (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent)))))))
+          (let [vol (Collidable.volume col)
+                pos (RigidBody.position rb)]
+            (do
+              (match-ref vol (Volume.Ball s) (Sphere.set-center! s @pos) _ ())
+              (let [vel (Body.velocity (RigidBody.body rb))
+                    swept (Collision.get-swept-aabb vol vel fixed-dt)]
+                (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent))))))
 
         (for [iter-idx 0 iterations]
           (do
@@ -112,6 +111,7 @@
                                       is-p2 (ECS.has-component? world &e2 PlayerTag)]
                                   (when (and (and (or is-p1 is-p2) (not (and is-p1 is-p2))) (= iter-idx 0))
                                     (let [target-ent-id (if is-p1 @id2 (ECS.Entity.id &ent1))
+                                          target-handle (if is-p1 (ECS.Entity.handle &e2) (ECS.Entity.handle &ent1))
                                           target-rb (if is-p1 rb2 rb1)
                                           
                                           ;; IMPACT VELOCITY: Scale crater by relative speed
@@ -134,7 +134,7 @@
                                         (ECS.add-component! world &crater c-rb)
                                         (ECS.add-component! world &crater c-col)
                                         (ECS.add-component! world &crater (NegativeSDF.init))
-                                        (ECS.add-component! world &crater (Parent.init target-ent-id local-pos (Quaternion.identity))))))))
+                                        (ECS.add-component! world &crater (Parent.init @target-handle local-pos (Quaternion.identity))))))))
                             _ ()))))))))))
         collision-occurred)))
 )

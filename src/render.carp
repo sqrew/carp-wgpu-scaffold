@@ -32,7 +32,7 @@
           rot: vec4<f32>,
       }
       struct Cell {
-          count: f32,
+          header: vec4<f32>,
           ids: array<f32, " (Int.str max-ids) ">,
       }
       struct Uniforms { 
@@ -106,7 +106,7 @@
 
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
-              let count = min(i32(cell.count), " (Int.str max-ids) ");
+              let count = min(i32(cell.header.x), " (Int.str max-ids) ");
               for(var i = 0; i < count; i = i + 1) {
                   let s_idx = i32(cell.ids[i]);
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
