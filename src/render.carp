@@ -92,6 +92,7 @@
           let gx = i32(floor(p_local.x / u.cell_size));
           let gy = i32(floor(p_local.y / u.cell_size));
           let gz = i32(floor(p_local.z / u.cell_size));
+
           if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
               let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
               let cell_max = cell_min + vec3<f32>(u.cell_size);
@@ -102,6 +103,7 @@
               else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p_local.y) / rd.y); }
               if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p_local.z) / rd.z); }
               else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p_local.z) / rd.z); }
+
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
               let count = min(i32(cell.count), " (Int.str max-ids) ");
@@ -109,19 +111,16 @@
                   let s_idx = i32(cell.ids[i]);
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
                     let s_data = u.spheres[s_idx];
-                    let dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
-                    if (dist < d.x) { d = vec2<f32>(dist, f32(s_idx)); }
+                    let dist = sdSphere(p - s_data.pos.xyz, abs(s_data.pos.w));
+                    if (s_data.pos.w > 0.0) {
+                      if (dist < d.x) { d = vec2<f32>(dist, f32(s_idx)); }
+                    } else {
+                      d.x = max(d.x, -dist);
+                    }
                   }
               }
               return vec2<f32>(min(d.x, max(t_exit + 0.01, 0.05)), d.y);
           } else {
-             for(var i = 0; i < " (Int.str limit) "; i = i + 1) {
-                let s_data = u.spheres[i];
-                if (s_data.pos.w > 0.0) { 
-                  let dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
-                  if (dist < d.x) { d = vec2<f32>(dist, f32(i)); }
-                }
-             }
              return d;
           }
       }
@@ -174,7 +173,7 @@
   (defn create [ctx format width height grid]
     (let [u-size (+ (+ WGPURenderer.header-size 0) (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
           shader (shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
-          s-size (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell)]
+          s-size (* (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell) 4)]
       (match (WGPURender.create-uniform-buffer ctx u-size)
         (Result.Error e) (Result.Error (str* "Uniform failed: " e))
         (Result.Success ub)
@@ -262,24 +261,22 @@
         ;; 3. Populate Spheres using Entity ID as index (128+ bytes)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [id (ECS.Entity.id &ent)]
-            (do
-              (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
-                         (not (ECS.has-component? world &ent PlayerTag)))
-                (let [pos (RigidBody.position rb)
-                      rot (RigidBody.rotation rb)
-                      rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
-                      base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
-                  (do
-                    (when (and (> id (Uint32.from-long 4l)) (< time 5.0)) 
-                      (println* "Rendering sphere ID: " id " at " pos " rad: " rad))
-                    (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
-                    (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                    (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                    (Array.aset! &data (+ base 3) (Double.to-float rad))
-                    (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                    (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                    (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                    (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot)))))))))
+            (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
+                       (not (ECS.has-component? world &ent PlayerTag)))
+              (let [pos (RigidBody.position rb)
+                    rot (RigidBody.rotation rb)
+                    base-rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
+                    rad (if (ECS.has-component? world &ent NegativeSDF) (* base-rad -1.0) base-rad)
+                    base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
+                (do
+                  (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
+                  (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                  (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                  (Array.aset! &data (+ base 3) (Double.to-float rad))
+                  (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                  (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                  (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                  (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot))))))))
 
         (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) &data)
         (let [flat-grid (GPUSpatial.flatten grid 16)]
