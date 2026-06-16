@@ -1,0 +1,120 @@
+     1	;; physics_system.carp
+       
+     2	(defmodule PhysicsSystem
+     3	  (use SpatialGrid)
+     4	  (use Collision)
+     5	  (use CollisionChecker)
+     6	  (use RigidBody)
+     7	  (use Solver)
+     8	  (use ECS)
+     9	  (use InputManager)
+    10	  (use RotationState)
+    11	  (use Parent)
+    12	  (use Coordinator)
+       
+    13	  (def fixed-dt 0.00833)
+    14	  (def gravity (Vector3.init 0.0 -9.81 0.0))
+    15	  (def iterations 8)
+       
+    16	  (defn apply-player-movement! [p-rb p-rot mgr dt]
+    17	    (let [move-speed 20.0
+    18	          yaw @(RotationState.yaw p-rot)
+    19	          pitch @(RotationState.pitch p-rot)
+    20	          dx (InputManager.action-analog mgr "LookX")
+    21	          dy (InputManager.action-analog mgr "LookY")
+    22	          new-yaw (+ yaw dx)
+    23	          new-pitch (clamp -1.5 1.5 (+ pitch dy))
+    24	          yaw-axis (Vector3.init 0.0 1.0 0.0)
+    25	          pitch-axis (Vector3.init 1.0 0.0 0.0)
+    26	          q-yaw (Quaternion.from-axis-angle yaw-axis new-yaw)
+    27	          q-pitch (Quaternion.from-axis-angle pitch-axis new-pitch)
+    28	          look-rot (Quaternion.mul &q-yaw &q-pitch)
+    29	          forward (Transform.forward-quat &look-rot)
+    30	          right (Transform.right-quat &look-rot)
+    31	          move-dir (Vector3.init 0.0 0.0 0.0)]
+    32	      (do
+    33	        (RotationState.set-yaw! p-rot new-yaw)
+    34	        (RotationState.set-pitch! p-rot new-pitch)
+    35	        (when (InputManager.action-digital? mgr "Forward") (set! move-dir (Vector3.add &move-dir &forward)))
+    36	        (when (InputManager.action-digital? mgr "Backward") (set! move-dir (Vector3.sub &move-dir &forward)))
+    37	        (when (InputManager.action-digital? mgr "Left") (set! move-dir (Vector3.sub &move-dir &right)))
+    38	        (when (InputManager.action-digital? mgr "Right") (set! move-dir (Vector3.add &move-dir &right)))
+    39	        (when (not (< (Vector3.mag-sq &move-dir) 0.001))
+    40	          (let [accel (Vector3.mul &(Vector3.normalize &move-dir) move-speed)]
+    41	            (RigidBody.apply-force! p-rb &accel)))
+    42	        (RigidBody.set-rotation! p-rb look-rot))))
+       
+    43	  (defn sync-transforms! [world]
+    44	    (ECS.query world [ent (p Parent) (rb RigidBody)]
+    45	      (let [pid @(Parent.parent-id p)
+    46	            parent-ent (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long pid)) (Uint32.from-long 1l)))]
+    47	        (ECS.with-components world parent-ent [pe (p-rb RigidBody)]
+    48	          (let [p-pos (RigidBody.position p-rb)
+    49	                p-rot (RigidBody.rotation p-rb)
+    50	                l-pos (Parent.local-pos p)
+    51	                l-rot (Parent.local-rot p)
+    52	                world-offset (Quaternion.rotate p-rot l-pos)
+    53	                new-pos (Vector3.add p-pos &world-offset)
+    54	                new-rot (Quaternion.mul p-rot l-rot)]
+    55	            (do
+    56	              (RigidBody.set-position! rb new-pos)
+    57	              (RigidBody.set-rotation! rb new-rot)))))))
+       
+    58	  (defn step-ecs! [world grid f-rb f-col coord]
+    59	    (let [collision-occurred false]
+    60	      (do
+    61	        (sync-transforms! world)
+    62	        
+    63	        ;; 1. Apply Gravity and Step Bodies
+    64	        (ECS.query world [ent (rb RigidBody)]
+    65	          (do
+    66	            (RigidBody.apply-force! rb &gravity)
+    67	            (RigidBody.step-custom! rb fixed-dt fixed-dt)))
+       
+    68	        ;; 2. Rebuild Spatial Grid ONCE per frame (Massive CPU Speedup)
+    69	        (SpatialGrid.clear! grid)
+    70	        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+    71	          (when (not (ECS.has-component? world &ent NegativeSDF))
+    72	            (let [vol (Collidable.volume col)
+    73	                  pos (RigidBody.position rb)]
+    74	              (do
+    75	                (match-ref vol (Volume.Ball s) (Sphere.set-center! s @pos) _ ())
+    76	                (let [vel (Body.velocity (RigidBody.body rb))
+    77	                      swept (Collision.get-swept-aabb vol vel fixed-dt)]
+    78	                  (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent)))))))
+       
+    79	        (for [iter-idx 0 iterations]
+    80	          (do
+    81	            (ECS.query world [ent (rb RigidBody) (col Collidable)]
+    82	              (let [vel (Body.velocity (RigidBody.body rb))]
+    83	                (match (CollisionChecker.check-pair-swept col vel fixed-dt f-col)
+    84	                  (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb f-rb &actual-col)
+    85	                  _ ())))
+    86	            (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
+    87	              (let [aabb (Collision.get-aabb (Collidable.volume col1))
+    88	                    candidates (SpatialGrid.query-unique grid &aabb)]
+    89	                (for [c 0 (Array.length &candidates)]
+    90	                  (let [id2 (Array.unsafe-nth &candidates c)
+    91	                        ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
+    92	                    (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1))) (not (ECS.has-component? world &ent2 NegativeSDF)))
+    93	                      (ECS.with-components world ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
+    94	                        (let [vel1 (Body.velocity (RigidBody.body rb1))]
+    95	                          (match (CollisionChecker.check-pair-swept col1 vel1 fixed-dt col2)
+    96	                            (Maybe.Just (CollisionResult.Physical actual-col)) 
+    97	                              (do
+    98	                                (set! collision-occurred true)
+    99	                                (Solver.solve! rb1 rb2 &actual-col)
+   100	                                (let [is-p1 (ECS.has-component? world &ent1 PlayerTag)
+   101	                                      is-p2 (ECS.has-component? world &e2 PlayerTag)]
+   102	                                  (when (and (and (or is-p1 is-p2) (not (and is-p1 is-p2))) (= iter-idx 0))
+   103	                                    (let [target-ent (if is-p1 e2 ent1)
+   104	                                          v1 (Body.velocity (RigidBody.body rb1))
+   105	                                          v2 (Body.velocity (RigidBody.body rb2))
+   106	                                          rel-v (Vector3.sub v1 v2)
+   107	                                          speed (Vector3.mag &rel-v)
+   108	                                          c-pos (Contact.point (Collision.contact &actual-col))]
+   109	                                      (Coordinator.dispatch! coord (GameEvent.Impact @c-pos speed target-ent)))))
+   110	                            _ ()))))))))))
+   111	        collision-occurred)))
+   112	)
+   113	)

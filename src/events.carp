@@ -1,0 +1,29 @@
+;; src/events.carp
+
+(deftype BulletSpawnData [
+  pos (Vector3 Double)
+  vel (Vector3 Double)
+  ang-vel (Vector3 Double)
+])
+
+(deftype SystemEvent
+  (Quit [])
+  (WindowResize [Int Int]))
+
+(deftype GameEvent
+  (SpawnBullet [BulletSpawnData])
+  (EntityDestroyed [Uint32]))
+
+(deftype InputEvent
+  (Action [String Double])) ;; Name and value
+
+(deftype UIEvent
+  (MenuOpen [])
+  (MenuClose [])
+  (ButtonClicked [String]))
+
+(deftype EventKind
+  (System [SystemEvent])
+  (Game [GameEvent])
+  (Input [InputEvent])
+  (UI [UIEvent]))

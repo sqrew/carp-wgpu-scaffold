@@ -33,6 +33,8 @@
 (load "../carp-ecs-lite/src/ecs.carp")
 
 ;; --- PROJECT MODULES ---
+(load "events.carp")
+(load "coordinator.carp")
 (load "commands.carp")
 (load "components.carp")
 (load "init.carp")
@@ -64,27 +66,28 @@
               surf @(App.surf &app)
               backend (GLFWBackend.init)
               eng (Engine.new (glfw-window->voidptr win) aspect backend)]
-          (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))
-            (Result.Error e) (do (println* "Renderer Error: " &e) -2)
-            (Result.Success ren)
               (do
-                (println* "Engine started.")
-                (while (= (GLFW.window-should-close win) 0)
-                  (do
-                    (GLFW.poll-events)
-                    
-                    (Engine.process-input! &eng)
-                    (Engine.tick! &eng)
-                    
-                    (let [cam (Engine.camera &eng)
-                          time (Clock.total (Engine.clock &eng))]
-                      (do
-                        (WGPURenderer.clear! &ren)
-                        (Engine.submit-render-commands! &eng &ren)
-                        (let [line-count (WGPURenderer.process-commands! ctx &ren 
-                                           time width height cam (Engine.grid &eng) (Engine.world &eng))]
-                          (WGPURenderer.draw surf ctx &ren line-count))))))
-                
-                (println* "Shutting down...")
-                (Init.destroy-app app)
-                0))))))
+              (let [_ (Engine.register-internal-handlers! &eng)] ())
+              (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))              (Result.Error e) (do (println* "Renderer Error: " &e) -2)
+              (Result.Success ren)
+                (do
+                  (println* "Engine started.")
+                  (while (= (GLFW.window-should-close win) 0)
+                    (do
+                      (GLFW.poll-events)
+
+                      (Engine.process-input! &eng)
+                      (Engine.tick! &eng)
+
+                      (let [cam (Engine.camera &eng)
+                            time (Clock.total (Engine.clock &eng))]
+                        (do
+                          (WGPURenderer.clear! &ren)
+                          (Engine.submit-render-commands! &eng &ren)
+                          (let [line-count (WGPURenderer.process-commands! ctx &ren 
+                                             time width height cam (Engine.grid &eng) (Engine.world &eng))]
+                            (WGPURenderer.draw surf ctx &ren line-count))))))
+
+                  (println* "Shutting down...")
+                  (Init.destroy-app app)
+                  0)))))))

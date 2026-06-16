@@ -14,6 +14,7 @@
   (use Random)
   (use ECS)
   (use WGPURenderer)
+  (use Coordinator)
 
   (deftype Engine [
     camera Camera
@@ -25,6 +26,7 @@
     floor-collidable Collidable
     bg-color (Vector3 Double)
     accumulator Double
+    coordinator Coordinator
   ])
 
   (defn new [win aspect backend]
@@ -35,7 +37,8 @@
           f-rb (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.8 0.8)
           f-col (Collidable.init (Handle.init (Uint64.from-long 8888l) (Uint32.from-long 1l))
                                 (Volume.Surface (Plane.init (Vector3.init 0.0 1.0 0.0) 0.0))
-                                (Uint32.from-long 1l) (Uint32.from-long 1l) false)]
+                                (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          coord (Coordinator.new)]
       (do
         (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
         (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
@@ -76,17 +79,42 @@
                 (ECS.add-component! &world &ent col)
                 (ECS.add-component! &world &ent color)))))
 
-        (let [p-cam-pos (Vector3.init 5.0 1.0 5.0)] ;; Default cam pos if player not found
-          (Engine.init 
-            (Camera.new p-cam-pos -90.0 0.0 aspect)
-            (Clock.new)
-            mgr
-            grid
-            world
-            f-rb
-            f-col
-            (Vector3.init 0.1 0.1 0.1)
-            0.0)))))
+        (Engine.init 
+          (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
+          (Clock.new)
+          mgr
+          grid
+          world
+          f-rb
+          f-col
+          (Vector3.init 0.1 0.1 0.1)
+          0.0
+          coord))))
+
+  (defn register-internal-handlers! [e]
+    (Coordinator.subscribe! (Engine.coordinator e)
+      &(fn [ev]
+        (match-ref ev
+          (EventKind.Game game-ev)
+            (match-ref game-ev
+              (GameEvent.SpawnBullet data)
+                (let [pos (BulletSpawnData.pos data)
+                      vel (BulletSpawnData.vel data)
+                      ang-vel (BulletSpawnData.ang-vel data)
+                      bullet-ent (GameWorld.create-entity! (Engine.world e))
+                      rb (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
+                      vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 0.4))
+                      col (Collidable.init @(ECS.Entity.handle &bullet-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+                      color (Color.init (Vector3.init 1.0 1.0 0.0))]
+                  (do
+                    (Body.set-velocity! (RigidBody.body &rb) @vel)
+                    (Body.set-angular-velocity! (RigidBody.body &rb) @ang-vel)
+                    (ECS.add-component! (Engine.world e) &bullet-ent rb)
+                    (ECS.add-component! (Engine.world e) &bullet-ent col)
+                    (ECS.add-component! (Engine.world e) &bullet-ent color)
+                    (Result.Success ())))
+              _ (Result.Success ()))
+          _ (Result.Success ())))))
 
   (defn spawn-bullet! [e]
     (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-rot RotationState) (p-tag PlayerTag)]
@@ -109,17 +137,9 @@
             rand-z (Double.random-between -10.0 10.0)
             bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
             
-            bullet-ent (GameWorld.create-entity! (Engine.world e))
-            rb (RigidBody.new bullet-pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
-            vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 0.4))
-            col (Collidable.init @(ECS.Entity.handle &bullet-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-            color (Color.init (Vector3.init 1.0 1.0 0.0))]
-        (do
-          (Body.set-velocity! (RigidBody.body &rb) bullet-vel)
-          (Body.set-angular-velocity! (RigidBody.body &rb) bullet-ang-vel)
-          (ECS.add-component! (Engine.world e) &bullet-ent rb)
-          (ECS.add-component! (Engine.world e) &bullet-ent col)
-          (ECS.add-component! (Engine.world e) &bullet-ent color)))))
+            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel)
+            ev (EventKind.Game (GameEvent.SpawnBullet data))]
+        (Coordinator.dispatch! (Engine.coordinator e) ev))))
 
   (defn process-input! [e]
     (let [mgr (Engine.input e)
@@ -140,6 +160,8 @@
           dt (Clock.unscaled-dt (Engine.clock e))]
       (do
         (Clock.tick! (Engine.clock e))
+        (let [_ (Coordinator.tick! (Engine.coordinator e))] ()) ;; Process pending events
+        
         (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.033)))
         (Engine.set-bg-color! e (Vector3.init 0.1 0.1 0.1))
 
