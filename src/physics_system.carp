@@ -87,7 +87,7 @@
             (ECS.query world [ent (rb RigidBody) (col Collidable)]
               (let [vel (Body.velocity (RigidBody.body rb))]
                 (match (CollisionChecker.check-pair-swept col vel fixed-dt f-col)
-                  (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb f-rb &actual-col)
+                  (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb f-rb (Collision.contact-set &actual-col))
                   _ ())))
 
             ;; 4. Resolve vs Other Entities
@@ -104,7 +104,7 @@
                             (Maybe.Just (CollisionResult.Physical actual-col)) 
                               (do
                                 (set! collision-occurred true)
-                                (Solver.solve! rb1 rb2 &actual-col)
+                                (Solver.solve! rb1 rb2 (Collision.contact-set &actual-col))
                                 
                                 ;; DYNAMIC DESTRUCTION: Spawn crater on bullet/player hit
                                 (let [is-p1 (ECS.has-component? world &ent1 PlayerTag)
@@ -122,7 +122,9 @@
                                           crater-rad (clamp 0.2 2.0 (* speed 0.05))
                                           
                                           crater (GameWorld.create-entity! world)
-                                          c-pos (Contact.point (Collision.contact &actual-col))
+                                          c-pos (let [cs (Collision.contact-set &actual-col)
+                                                      contacts (ContactSet.contacts cs)]
+                                                  (Contact.point (Array.unsafe-nth contacts 0)))
                                           c-rb (RigidBody.static @c-pos (Quaternion.identity) 0.0 0.0)
                                           c-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) crater-rad))
                                           c-col (Collidable.init @(ECS.Entity.handle &crater) c-vol (Uint32.from-long 0l) (Uint32.from-long 0l) false)
