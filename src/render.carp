@@ -33,7 +33,7 @@
       }
       struct Cell {
           header: vec4<f32>,
-          ids: array<f32, " (Int.str max-ids) ">,
+          ids: array<vec4<f32>, " (Int.str (/ max-ids 4)) ">,
       }
       struct Uniforms { 
           time: f32, 
@@ -106,9 +106,9 @@
 
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
-              let count = min(i32(cell.header.x), " (Int.str max-ids) ");
+              let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
               for(var i = 0; i < count; i = i + 1) {
-                  let s_idx = i32(cell.ids[i]);
+                  let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
                     let s_data = u.spheres[s_idx];
                     let dist = sdSphere(p - s_data.pos.xyz, abs(s_data.pos.w));

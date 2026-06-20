@@ -128,8 +128,8 @@
             look-rot (Quaternion.mul &q-yaw &q-pitch)
             p-dir (Transform.forward-quat &look-rot)
             
-            ;; Spawn slightly in front of player
-            bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir 1.0))
+            ;; Spawn slightly in front of player (distance > player_rad + bullet_rad)
+            bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir 1.6))
             bullet-vel (Vector3.mul &p-dir 30.0)
             
             rand-x (Double.random-between -10.0 10.0)
@@ -186,7 +186,37 @@
               (Camera.set-pos! cam @(RigidBody.position p-rb))
               (Camera.set-front! cam (Transform.forward-quat &look-rot))
               (Camera.set-right! cam (Transform.right-quat &look-rot))
-              (Camera.set-up! cam (Transform.up-quat &look-rot))))))))
+              (Camera.set-up! cam (Transform.up-quat &look-rot))))))
+
+        ;; Cleanup old bullets and craters to keep entity IDs recycled and low (<128)
+        (let [p-pos (Vector3.init 0.0 0.0 0.0)
+              p-found false]
+          (do
+            (ECS.query world [p-ent (p-rb RigidBody) (p-tag PlayerTag)]
+              (do
+                (set! p-pos @(RigidBody.position p-rb))
+                (set! p-found true)))
+            (when p-found
+              (let [to-destroy []
+                    craters []]
+                (do
+                  (ECS.query world [ent (rb RigidBody)]
+                    (let [id (ECS.Entity.id &ent)]
+                      (when (and (> id (Uint32.from-long 4l)) (not (ECS.has-component? world &ent PlayerTag)))
+                        (if (ECS.has-component? world &ent NegativeSDF)
+                          (Array.push-back! &craters ent)
+                          (let [pos (RigidBody.position rb)
+                                dist (Vector3.dist pos &p-pos)]
+                            (when (or (> dist 80.0) (< @(Vector3.y pos) -10.0))
+                              (Array.push-back! &to-destroy ent)))))))
+                  
+                  (let [crater-count (Array.length &craters)]
+                    (when (> crater-count 32)
+                      (for [i 0 (- crater-count 32)]
+                        (Array.push-back! &to-destroy @(Array.unsafe-nth &craters i)))))
+                  
+                  (for [i 0 (Array.length &to-destroy)]
+                    (GameWorld.destroy-entity! world @(Array.unsafe-nth &to-destroy i))))))))))
 
   (defn submit-render-commands! [e ren]
     (let [world (Engine.world e)]
