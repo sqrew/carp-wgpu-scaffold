@@ -87,7 +87,7 @@
       }
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
-          var d = vec2<f32>(sdPlane(p, vec3<f32>(0.0, 1.0, 0.0), 0.0), -1.0);
+          var d = vec2<f32>(p.y, -1.0);
           let p_local = p - u.grid_origin.xyz;
           let gx = i32(floor(p_local.x / u.cell_size));
           let gy = i32(floor(p_local.y / u.cell_size));
@@ -111,17 +111,15 @@
                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
                     let s_data = u.spheres[s_idx];
-                    let dist = sdSphere(p - s_data.pos.xyz, abs(s_data.pos.w));
                     if (s_data.pos.w > 0.0) {
-                      if (dist < d.x) { d = vec2<f32>(dist, f32(s_idx)); }
-                    } else {
-                      d.x = max(d.x, -dist);
+                      let sphere_dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
+                      if (sphere_dist < d.x) { d = vec2<f32>(sphere_dist, f32(s_idx)); }
                     }
                   }
               }
               return vec2<f32>(min(d.x, max(t_exit + 0.01, 0.05)), d.y);
           } else {
-             return d;
+              return d;
           }
       }
 
@@ -155,14 +153,17 @@
                   let base_col = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
                   color = base_col * max(dot(sn, light_dir), 0.2);
               } else {
-                  if (p.y < 0.1) {
-                      let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
-                      let check = smoothstep(-0.1, 0.1, grid_v);
-                      let floor_col = mix(vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(0.3, 0.3, 0.3), check);
-                      color = floor_col * max(dot(normal_floor, light_dir), 0.2);
-                  } else {
-                      color = vec3<f32>(0.5, 0.5, 0.5) * max(dot(normal_floor, light_dir), 0.2);
-                  }
+                  let eps = vec3<f32>(0.05, 0.0, 0.0);
+                  let tx_grad = vec3<f32>(
+                      worldSDF(p + eps.xyy, rd).x - worldSDF(p - eps.xyy, rd).x,
+                      worldSDF(p + eps.yxy, rd).x - worldSDF(p - eps.yxy, rd).x,
+                      worldSDF(p + eps.yyx, rd).x - worldSDF(p - eps.yyx, rd).x
+                  );
+                  let terrain_normal = normalize(tx_grad);
+                  let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
+                  let check = smoothstep(-0.1, 0.1, grid_v);
+                  let floor_col = mix(vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(0.3, 0.3, 0.3), check);
+                  color = floor_col * max(dot(terrain_normal, light_dir), 0.2);
               }
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
           }
@@ -171,7 +172,7 @@
     "))
 
   (defn create [ctx format width height grid]
-    (let [u-size (+ (+ WGPURenderer.header-size 0) (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
+    (let [u-size (+ WGPURenderer.header-size (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
           shader (shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
           s-size (* (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell) 4)]
       (match (WGPURender.create-uniform-buffer ctx u-size)
@@ -265,18 +266,19 @@
                        (not (ECS.has-component? world &ent PlayerTag)))
               (let [pos (RigidBody.position rb)
                     rot (RigidBody.rotation rb)
-                    base-rad (match-ref (Collidable.volume col) (Volume.Ball b) @(Sphere.radius b) _ 0.0)
-                    rad (if (ECS.has-component? world &ent NegativeSDF) (* base-rad -1.0) base-rad)
-                    base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
-                (do
-                  (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
-                  (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                  (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                  (Array.aset! &data (+ base 3) (Double.to-float rad))
-                  (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                  (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                  (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                  (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot))))))))
+                    rad (match-ref (Collidable.volume col)
+                          (Volume.Ball b) @(Sphere.radius b)
+                          _ 0.0)]
+                (let [base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
+                  (do
+                    (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
+                    (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                    (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                    (Array.aset! &data (+ base 3) (Double.to-float rad))
+                    (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                    (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                    (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                    (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot)))))))))
 
         (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) &data)
         (let [flat-grid (GPUSpatial.flatten grid 16)]

@@ -113,6 +113,8 @@
                     (ECS.add-component! (Engine.world e) &bullet-ent col)
                     (ECS.add-component! (Engine.world e) &bullet-ent color)
                     (Result.Success ())))
+              (GameEvent.SpawnCrater data)
+                (Result.Success ())
               _ (Result.Success ()))
           _ (Result.Success ())))))
 
@@ -167,7 +169,7 @@
 
         (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
           (do
-            (when (PhysicsSystem.step-ecs! world grid f-rb f-col)
+            (when (PhysicsSystem.step-ecs! world grid f-rb f-col (Engine.coordinator e))
                   (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 
@@ -197,23 +199,15 @@
                 (set! p-pos @(RigidBody.position p-rb))
                 (set! p-found true)))
             (when p-found
-              (let [to-destroy []
-                    craters []]
+              (let [to-destroy []]
                 (do
                   (ECS.query world [ent (rb RigidBody)]
                     (let [id (ECS.Entity.id &ent)]
                       (when (and (> id (Uint32.from-long 4l)) (not (ECS.has-component? world &ent PlayerTag)))
-                        (if (ECS.has-component? world &ent NegativeSDF)
-                          (Array.push-back! &craters ent)
-                          (let [pos (RigidBody.position rb)
-                                dist (Vector3.dist pos &p-pos)]
-                            (when (or (> dist 80.0) (< @(Vector3.y pos) -10.0))
-                              (Array.push-back! &to-destroy ent)))))))
-                  
-                  (let [crater-count (Array.length &craters)]
-                    (when (> crater-count 32)
-                      (for [i 0 (- crater-count 32)]
-                        (Array.push-back! &to-destroy @(Array.unsafe-nth &craters i)))))
+                        (let [pos (RigidBody.position rb)
+                              dist (Vector3.dist pos &p-pos)]
+                          (when (or (> dist 80.0) (< @(Vector3.y pos) -10.0))
+                            (Array.push-back! &to-destroy ent))))))
                   
                   (for [i 0 (Array.length &to-destroy)]
                     (GameWorld.destroy-entity! world @(Array.unsafe-nth &to-destroy i))))))))))

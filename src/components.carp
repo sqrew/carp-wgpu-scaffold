@@ -12,18 +12,6 @@
   (implements zero RotationState.zero)
 )
 
-(deftype Parent [parent-handle (Handle ()) local-pos (Vector3 Double) local-rot Quaternion])
-(defmodule Parent
-  (defn zero [] (Parent.init (Handle.null) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-  (implements zero Parent.zero)
-)
-
-(deftype NegativeSDF [])
-(defmodule NegativeSDF
-  (defn zero [] (NegativeSDF.init))
-  (implements zero NegativeSDF.zero)
-)
-
 (defmodule RigidBody
   (defn zero [] (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.0 0.0))
   (implements zero RigidBody.zero)
@@ -45,4 +33,4 @@
   (implements zero Color.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Parent NegativeSDF)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState)

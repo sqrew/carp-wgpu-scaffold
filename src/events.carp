@@ -9,10 +9,15 @@
 (deftype SystemEvent
   (Quit [])
   (WindowResize [Int Int]))
+(deftype CraterSpawnData [
+  pos (Vector3 Double)
+  radius Double
+])
 
 (deftype GameEvent
   (SpawnBullet [BulletSpawnData])
-  (EntityDestroyed [Uint32]))
+  (EntityDestroyed [Uint32])
+  (SpawnCrater [CraterSpawnData]))
 
 (deftype InputEvent
   (Action [String Double])) ;; Name and value

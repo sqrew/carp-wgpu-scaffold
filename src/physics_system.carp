@@ -9,7 +9,6 @@
   (use ECS)
   (use InputManager)
   (use RotationState)
-  (use Parent)
 
   (def fixed-dt 0.00833)
   (def gravity (Vector3.init 0.0 -9.81 0.0))
@@ -44,22 +43,9 @@
         (RigidBody.set-rotation! p-rb look-rot))))
 
   (defn sync-transforms! [world]
-    (ECS.query world [ent (p Parent) (rb RigidBody)]
-      (let [parent-h (Parent.parent-handle p)
-            parent-ent (ECS.Entity.init @parent-h)]
-        (ECS.with-components world parent-ent [pe (p-rb RigidBody)]
-          (let [p-pos (RigidBody.position p-rb)
-                p-rot (RigidBody.rotation p-rb)
-                l-pos (Parent.local-pos p)
-                l-rot (Parent.local-rot p)
-                world-offset (Quaternion.rotate p-rot l-pos)
-                new-pos (Vector3.add p-pos &world-offset)
-                new-rot (Quaternion.mul p-rot l-rot)]
-            (do
-              (RigidBody.set-position! rb new-pos)
-              (RigidBody.set-rotation! rb new-rot)))))))
+    ())
 
-  (defn step-ecs! [world grid f-rb f-col]
+  (defn step-ecs! [world grid f-rb f-col coord]
     (let [collision-occurred false]
       (do
         (sync-transforms! world)
@@ -70,7 +56,7 @@
             (RigidBody.apply-force! rb &gravity)
             (RigidBody.step-custom! rb fixed-dt fixed-dt)))
 
-        ;; 2. Rebuild Spatial Grid ONCE per frame (Massive CPU Speedup)
+        ;; 2. Rebuild Spatial Grid ONCE per frame
         (SpatialGrid.clear! grid)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [vol (Collidable.volume col)
@@ -87,7 +73,8 @@
             (ECS.query world [ent (rb RigidBody) (col Collidable)]
               (let [vel (Body.velocity (RigidBody.body rb))]
                 (match (CollisionChecker.check-pair-swept col vel fixed-dt f-col)
-                  (Maybe.Just (CollisionResult.Physical actual-col)) (Solver.solve! rb f-rb (Collision.contact-set &actual-col))
+                  (Maybe.Just (CollisionResult.Physical actual-col))
+                    (Solver.solve! rb f-rb (Collision.contact-set &actual-col))
                   _ ())))
 
             ;; 4. Resolve vs Other Entities
@@ -97,46 +84,15 @@
                 (for [c 0 (Array.length &candidates)]
                   (let [id2 (Array.unsafe-nth &candidates c)
                         ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
-                    (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1))) (not (ECS.has-component? world &ent2 NegativeSDF)))
+                    (when (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
                       (ECS.with-components world ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
                         (let [vel1 (Body.velocity (RigidBody.body rb1))]
                           (match (CollisionChecker.check-pair-swept col1 vel1 fixed-dt col2)
-                            (Maybe.Just (CollisionResult.Physical actual-col)) 
+                            (Maybe.Just (CollisionResult.Physical actual-col))
                               (do
                                 (set! collision-occurred true)
-                                (Solver.solve! rb1 rb2 (Collision.contact-set &actual-col))
-                                
-                                ;; DYNAMIC DESTRUCTION: Spawn crater on bullet/player hit
-                                (let [is-p1 (ECS.has-component? world &ent1 PlayerTag)
-                                      is-p2 (ECS.has-component? world &e2 PlayerTag)]
-                                  (when (and (and (or is-p1 is-p2) (not (and is-p1 is-p2))) (= iter-idx 0))
-                                    (let [target-ent-id (if is-p1 @id2 (ECS.Entity.id &ent1))
-                                          target-handle (if is-p1 (ECS.Entity.handle &e2) (ECS.Entity.handle &ent1))
-                                          target-rb (if is-p1 rb2 rb1)
-                                          
-                                          ;; IMPACT VELOCITY: Scale crater by relative speed
-                                          v1 (Body.velocity (RigidBody.body rb1))
-                                          v2 (Body.velocity (RigidBody.body rb2))
-                                          rel-v (Vector3.sub v1 v2)
-                                          speed (Vector3.mag &rel-v)
-                                          crater-rad (clamp 0.2 2.0 (* speed 0.05))
-                                          
-                                          crater (GameWorld.create-entity! world)
-                                          c-pos (let [cs (Collision.contact-set &actual-col)
-                                                      contacts (ContactSet.contacts cs)]
-                                                  (Contact.point (Array.unsafe-nth contacts 0)))
-                                          c-rb (RigidBody.static @c-pos (Quaternion.identity) 0.0 0.0)
-                                          c-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) crater-rad))
-                                          c-col (Collidable.init @(ECS.Entity.handle &crater) c-vol (Uint32.from-long 0l) (Uint32.from-long 0l) false)
-                                          
-                                          p-pos (RigidBody.position target-rb)
-                                          p-rot (RigidBody.rotation target-rb)
-                                          local-pos (Quaternion.rotate &(Quaternion.inverse p-rot) &(Vector3.sub c-pos p-pos))]
-                                      (do
-                                        (ECS.add-component! world &crater c-rb)
-                                        (ECS.add-component! world &crater c-col)
-                                        (ECS.add-component! world &crater (NegativeSDF.init))
-                                        (ECS.add-component! world &crater (Parent.init @target-handle local-pos (Quaternion.identity))))))))
+                                (Solver.solve! rb1 rb2 (Collision.contact-set &actual-col)))
                             _ ()))))))))))
+        
         collision-occurred)))
 )
