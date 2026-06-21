@@ -17,19 +17,22 @@
   depth-texture (Ptr WGPUDepthTexture)
   line-pass LinePassRenderer
   commands (Array RenderCommand)
+  u-data (Array Float)
+  s-data (Array Float)
 ])
 
 (defmodule WGPURenderer
   (def max-spheres 128)
   (def max-ids-per-cell 16)
   (def header-size 128)
-  (def sphere-data-size 32)
+  (def sphere-data-size 48)
 
   (defn shader-wgsl [limit max-ids]
     (str*
       "struct SphereData {
           pos: vec4<f32>,
           rot: vec4<f32>,
+          color: vec4<f32>,
       }
       struct Cell {
           header: vec4<f32>,
@@ -93,12 +96,73 @@
           return length(p - vec3<f32>(0.0, py, 0.0)) - r;
       }
 
+      fn sdTorus(p: vec3<f32>, t: vec2<f32>) -> f32 {
+          let q = vec2<f32>(length(p.xz) - t.x, p.y);
+          return length(q) - t.y;
+      }
+
+      fn sdOctahedron(p: vec3<f32>, s: f32) -> f32 {
+          let q = abs(p);
+          return (q.x + q.y + q.z - s) * 0.57735027;
+      }
+
       fn rotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
           return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
       }
 
       fn q_inv(q: vec4<f32>) -> vec4<f32> {
           return vec4<f32>(-q.xyz, q.w);
+      }
+
+      fn get_wireframe_edge(lp: vec3<f32>, raw_w: f32, thickness: f32) -> f32 {
+          if (raw_w > 0.0 && raw_w < 500.0) {
+              // Sphere: 3 orthogonal rings along axis planes
+              let rx = smoothstep(thickness, thickness - 0.01, abs(lp.x));
+              let ry = smoothstep(thickness, thickness - 0.01, abs(lp.y));
+              let rz = smoothstep(thickness, thickness - 0.01, abs(lp.z));
+              return max(rx, max(ry, rz));
+          } else if (raw_w < 0.0 && raw_w > -1000.0) {
+              // Box: edges where faces meet (using branchless 3-element median)
+              let size = -raw_w;
+              let q = abs(lp) - vec3<f32>(size);
+              let second_max = max(min(q.x, q.y), max(min(q.x, q.z), min(q.y, q.z)));
+              return smoothstep(-thickness, -thickness + 0.01, second_max);
+          } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
+              // Capsule: 4 longitudinal ribs + rings at center and cap junctions
+              let size = -raw_w - 1000.0;
+              let r = size;
+              let h = size;
+              let angle = atan2(lp.z, lp.x);
+              let long_line = smoothstep(0.95, 0.98, abs(sin(angle * 4.0)));
+              let ring_y = smoothstep(thickness, thickness - 0.01, abs(lp.y));
+              let ring_cap = smoothstep(thickness, thickness - 0.01, abs(abs(lp.y) - h));
+              return max(long_line, max(ring_y, ring_cap));
+          } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
+              // Cylinder: 6 vertical ribs + top/bottom circular rims
+              let size = raw_w - 1000.0;
+              let r = size;
+              let h = size;
+              let rad = length(lp.xz);
+              let rim = smoothstep(-thickness, -thickness + 0.01, min(rad - r, abs(lp.y) - h));
+              let angle = atan2(lp.z, lp.x);
+              let vertical_line = smoothstep(0.95, 0.98, abs(sin(angle * 6.0))) * step(abs(lp.y), h);
+              return max(rim, vertical_line);
+          } else if (raw_w >= 2000.0) {
+              // Torus: 8 vertical hoops + 6 rings around the tube
+              let size = raw_w - 2000.0;
+              let R = size;
+              let major_angle = atan2(lp.z, lp.x);
+              let ring_major = smoothstep(0.95, 0.98, abs(sin(major_angle * 8.0)));
+              let local_angle = atan2(lp.y, length(lp.xz) - R);
+              let ring_tube = smoothstep(0.95, 0.98, abs(sin(local_angle * 6.0)));
+              return max(ring_major, ring_tube);
+          } else {
+              // Octahedron: 12 edges where coordinates cross 0.0
+              let ex = smoothstep(thickness, thickness - 0.01, abs(lp.x));
+              let ey = smoothstep(thickness, thickness - 0.01, abs(lp.y));
+              let ez = smoothstep(thickness, thickness - 0.01, abs(lp.z));
+              return max(ex, max(ey, ez));
+          }
       }
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
@@ -135,12 +199,18 @@
                       } else if (raw_w < 0.0 && raw_w > -1000.0) {
                         let size = -raw_w;
                         local_dist = sdBox(local_p, vec3<f32>(size));
-                      } else if (raw_w <= -1000.0) {
+                      } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
                         let size = -raw_w - 1000.0;
                         local_dist = sdCapsule(local_p, size, size);
-                      } else {
+                      } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
                         let size = raw_w - 1000.0;
                         local_dist = sdCylinder(local_p, size, size);
+                      } else if (raw_w >= 2000.0) {
+                        let size = raw_w - 2000.0;
+                        local_dist = sdTorus(local_p, vec2<f32>(size, 0.25 * size));
+                      } else { // raw_w <= -2000.0
+                        let size = -raw_w - 2000.0;
+                        local_dist = sdOctahedron(local_p, size);
                       }
                       if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
                     }
@@ -188,7 +258,7 @@
           let aspect = u.width / u.height;
           let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
           let ro = u.cam_pos.xyz;
-          let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.5);
+          let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
           var t = 0.0;
           var hitId = -1.0;
           for(var i = 0; i < 80; i = i + 1) {
@@ -203,13 +273,22 @@
               let p = ro + rd * t;
               let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
               var normal = vec3<f32>(0.0, 1.0, 0.0);
-              
+              var is_sphere = false;
               if (hitId != -1.0) {
+                  let s_idx = i32(hitId);
+                  let s_data = u.spheres[s_idx];
+                  let raw_w = s_data.pos.w;
+                  if (raw_w > 0.0 && raw_w < 500.0) {
+                      is_sphere = true;
+                  }
+              }
+
+              if (is_sphere) {
                   let s_idx = i32(hitId);
                   let s_data = u.spheres[s_idx];
                   normal = normalize(p - s_data.pos.xyz);
               } else {
-                  let eps = vec3<f32>(0.05, 0.0, 0.0);
+                  let eps = vec3<f32>(0.01, 0.0, 0.0);
                   let tx_grad = vec3<f32>(
                       worldSDF(p + eps.xyy, rd).x - worldSDF(p - eps.xyy, rd).x,
                       worldSDF(p + eps.yxy, rd).x - worldSDF(p - eps.yxy, rd).x,
@@ -230,21 +309,25 @@
 
               // Base Color Retrieval
               var base_col = vec3<f32>(0.2, 0.2, 0.2);
+              var edge = 0.0;
               if (hitId != -1.0) {
                   let s_idx = i32(hitId);
                   let s_data = u.spheres[s_idx];
+                  base_col = s_data.color.rgb;
+                  
+                  // Calculate wireframe edge factor
                   let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                  let stripe = sin(lp.y * 10.0);
-                  let check = smoothstep(-0.1, 0.1, stripe);
-                  base_col = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
-              } else {
-                  let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
-                  let check = smoothstep(-0.1, 0.1, grid_v);
-                  base_col = mix(vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(0.3, 0.3, 0.3), check);
+                  edge = get_wireframe_edge(lp, s_data.pos.w, 0.08);
               }
 
               // Combine diffuse, shadows, ambient term, and ambient occlusion
               color = base_col * (lit + 0.15) * ao;
+
+              // Apply glowing wireframe overlay
+              if (edge > 0.0) {
+                  let glow_col = base_col * 2.5 + vec3<f32>(0.25);
+                  color = mix(color, glow_col, edge);
+              }
 
               // Fog
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
@@ -256,7 +339,9 @@
   (defn create [ctx format width height grid]
     (let [u-size (+ WGPURenderer.header-size (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
           shader (shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
-          s-size (* (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell) 4)]
+          s-size (* (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell) 4)
+          u-data (the (Array Float) (replicate (/ u-size 4) &0.0f))
+          s-data (the (Array Float) (replicate (/ s-size 4) &0.0f))]
       (match (WGPURender.create-uniform-buffer ctx u-size)
         (Result.Error e) (Result.Error (str* "Uniform failed: " e))
         (Result.Success ub)
@@ -272,10 +357,10 @@
                       (match (WGPURender.create-depth-texture ctx width height)
                         (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Depth failed: " e)))
                         (Result.Success dt)
-                          (match (LinePass.create ctx format 1000)
+                          (match (LinePass.create ctx format 10000)
                             (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-pipeline pipe) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "LinePass failed: " e)))
                             (Result.Success lp)
-                              (Result.Success (WGPURenderer.init pipe ub sb bg dt lp []))))))))))
+                              (Result.Success (WGPURenderer.init pipe ub sb bg dt lp [] u-data s-data))))))))))
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]
@@ -299,55 +384,65 @@
           rows (Double.from-int @(SpatialGrid.rows grid))
           layers (Double.from-int @(SpatialGrid.layers grid))
           origin (SpatialGrid.origin grid)
-          data (the (Array Float) (replicate (/ (+ WGPURenderer.header-size (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size)) 4) &0.0f))]
+          data (WGPURenderer.u-data ren)
+          flat-grid (WGPURenderer.s-data ren)]
       (do
+        ;; Zero out the dynamic spheres part of uniforms (indices 32 onwards) to clear stale data in-place
+        (for [i 32 (Array.length data)]
+          (Array.aset! data i 0.0f))
+
+        ;; Zero out the flat-grid spatial buffer entirely in-place
+        (for [i 0 (Array.length flat-grid)]
+          (Array.aset! flat-grid i 0.0f))
+
         ;; 1. Populate Header (0-127 bytes)
-        (Array.aset! &data 0 (Double.to-float time))
-        (Array.aset! &data 1 (Double.to-float (Double.from-int width)))
-        (Array.aset! &data 2 (Double.to-float (Double.from-int height)))
-        (Array.aset! &data 3 (Double.to-float cell-size))
-        (Array.aset! &data 4 (Double.to-float @(Vector3.x cam-pos)))
-        (Array.aset! &data 5 (Double.to-float @(Vector3.y cam-pos)))
-        (Array.aset! &data 6 (Double.to-float @(Vector3.z cam-pos)))
-        (Array.aset! &data 7 1.0f)
-        (Array.aset! &data 8 (Double.to-float @(Vector3.x cam-dir)))
-        (Array.aset! &data 9 (Double.to-float @(Vector3.y cam-dir)))
-        (Array.aset! &data 10 (Double.to-float @(Vector3.z cam-dir)))
-        (Array.aset! &data 11 0.0f)
-        (Array.aset! &data 12 (Double.to-float @(Vector3.x cam-right)))
-        (Array.aset! &data 13 (Double.to-float @(Vector3.y cam-right)))
-        (Array.aset! &data 14 (Double.to-float @(Vector3.z cam-right)))
-        (Array.aset! &data 15 0.0f)
-        (Array.aset! &data 16 (Double.to-float @(Vector3.x cam-up)))
-        (Array.aset! &data 17 (Double.to-float @(Vector3.y cam-up)))
-        (Array.aset! &data 18 (Double.to-float @(Vector3.z cam-up)))
-        (Array.aset! &data 19 0.0f)
+        (Array.aset! data 0 (Double.to-float time))
+        (Array.aset! data 1 (Double.to-float (Double.from-int width)))
+        (Array.aset! data 2 (Double.to-float (Double.from-int height)))
+        (Array.aset! data 3 (Double.to-float cell-size))
+        (Array.aset! data 4 (Double.to-float @(Vector3.x cam-pos)))
+        (Array.aset! data 5 (Double.to-float @(Vector3.y cam-pos)))
+        (Array.aset! data 6 (Double.to-float @(Vector3.z cam-pos)))
+        (Array.aset! data 7 1.0f)
+        (Array.aset! data 8 (Double.to-float @(Vector3.x cam-dir)))
+        (Array.aset! data 9 (Double.to-float @(Vector3.y cam-dir)))
+        (Array.aset! data 10 (Double.to-float @(Vector3.z cam-dir)))
+        (Array.aset! data 11 0.0f)
+        (Array.aset! data 12 (Double.to-float @(Vector3.x cam-right)))
+        (Array.aset! data 13 (Double.to-float @(Vector3.y cam-right)))
+        (Array.aset! data 14 (Double.to-float @(Vector3.z cam-right)))
+        (Array.aset! data 15 0.0f)
+        (Array.aset! data 16 (Double.to-float @(Vector3.x cam-up)))
+        (Array.aset! data 17 (Double.to-float @(Vector3.y cam-up)))
+        (Array.aset! data 18 (Double.to-float @(Vector3.z cam-up)))
+        (Array.aset! data 19 0.0f)
 
         ;; 2. Populate BG Color and Grid Dims (80-127 bytes)
         (for [i 0 (Array.length commands)]
           (match-ref (Array.unsafe-nth commands i)
             (RenderCommand.SetBg bg) (set! bg-color @bg)
             _ ()))
-        (Array.aset! &data 20 (Double.to-float @(Vector3.x &bg-color)))
-        (Array.aset! &data 21 (Double.to-float @(Vector3.y &bg-color)))
-        (Array.aset! &data 22 (Double.to-float @(Vector3.z &bg-color)))
-        (Array.aset! &data 23 1.0f)
-        (Array.aset! &data 24 (Double.to-float cols))
-        (Array.aset! &data 25 (Double.to-float rows))
-        (Array.aset! &data 26 (Double.to-float layers))
-        (Array.aset! &data 27 0.0f)
-        (Array.aset! &data 28 (Double.to-float @(Vector3.x origin)))
-        (Array.aset! &data 29 (Double.to-float @(Vector3.y origin)))
-        (Array.aset! &data 30 (Double.to-float @(Vector3.z origin)))
-        (Array.aset! &data 31 0.0f)
+        (Array.aset! data 20 (Double.to-float @(Vector3.x &bg-color)))
+        (Array.aset! data 21 (Double.to-float @(Vector3.y &bg-color)))
+        (Array.aset! data 22 (Double.to-float @(Vector3.z &bg-color)))
+        (Array.aset! data 23 1.0f)
+        (Array.aset! data 24 (Double.to-float cols))
+        (Array.aset! data 25 (Double.to-float rows))
+        (Array.aset! data 26 (Double.to-float layers))
+        (Array.aset! data 27 0.0f)
+        (Array.aset! data 28 (Double.to-float @(Vector3.x origin)))
+        (Array.aset! data 29 (Double.to-float @(Vector3.y origin)))
+        (Array.aset! data 30 (Double.to-float @(Vector3.z origin)))
+        (Array.aset! data 31 0.0f)
 
         ;; 3. Populate Spheres using Entity ID as index (128+ bytes)
-        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+        (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
           (let [id (ECS.Entity.id &ent)]
             (when (and (< id (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
                        (not (ECS.has-component? world &ent PlayerTag)))
               (let [pos (RigidBody.position rb)
                     rot (RigidBody.rotation rb)
+                    c-val (Color.v color)
                     rad (match-ref (Collidable.volume col)
                           (Volume.Ball b) @(Sphere.radius b)
                           (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
@@ -358,22 +453,28 @@
                                   (BaseShape.Box e) (- 0.0 (* @(Vector3.x e) scale))
                                   (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
                                   (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
+                                  (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
+                                  (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
                                   _ 0.0))
                            _ 0.0)]
-                (let [base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
+                (let [base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 12))]
                   (do
-                    (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
-                    (Array.aset! &data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                    (Array.aset! &data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                    (Array.aset! &data (+ base 3) (Double.to-float rad))
-                    (Array.aset! &data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                    (Array.aset! &data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                    (Array.aset! &data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                    (Array.aset! &data (+ base 7) (Double.to-float @(Quaternion.w rot)))))))))
+                    (Array.aset! data base (Double.to-float @(Vector3.x pos)))
+                    (Array.aset! data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                    (Array.aset! data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                    (Array.aset! data (+ base 3) (Double.to-float rad))
+                    (Array.aset! data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                    (Array.aset! data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                    (Array.aset! data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                    (Array.aset! data (+ base 7) (Double.to-float @(Quaternion.w rot)))
+                    (Array.aset! data (+ base 8) (Double.to-float @(Vector3.x c-val)))
+                    (Array.aset! data (+ base 9) (Double.to-float @(Vector3.y c-val)))
+                    (Array.aset! data (+ base 10) (Double.to-float @(Vector3.z c-val)))
+                    (Array.aset! data (+ base 11) 1.0f)))))))
 
-        (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) &data)
-        (let [flat-grid (GPUSpatial.flatten grid 16)]
-          (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) &flat-grid))
+        (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
+        (GPUSpatial.flatten-in-place! grid 16 flat-grid)
+        (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) flat-grid)
         (LinePass.update! ctx (WGPURenderer.line-pass ren) vp-data commands))))
 
   (defn draw [surf ctx ren line-count]

@@ -1,0 +1,55 @@
+;; prefab.carp
+;; Encapsulates entity templates/prefabs creation logic.
+
+(defmodule Prefab
+  (use Vector3)
+  (use Quaternion)
+  (use Random)
+  (use ECS)
+  (use RigidBody)
+  (use Body)
+  (use Collision)
+  (use BaseShape)
+  (use Volume)
+  (use SDF)
+  (use Color)
+  (use Lifetime)
+
+  (defn spawn-bullet! [world pos vel ang-vel scale]
+    (let [bullet-ent (GameWorld.create-entity! world)
+          rb (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
+          shape-type (Int.random-between 0 6)
+          vol (let [c-sdf (if (= shape-type 0)
+                              (SDF.init-sphere 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                              (if (= shape-type 1)
+                                  (SDF.init-box (Vector3.init 0.4 0.4 0.4) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                  (if (= shape-type 2)
+                                      (SDF.init-cylinder 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                      (if (= shape-type 3)
+                                          (SDF.init-capsule 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                          (if (= shape-type 4)
+                                              (SDF.init-torus 0.4 0.1 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                              (SDF.init-octahedron 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))))))]
+                (do
+                  (SDF.set-scale! &c-sdf scale)
+                  (Volume.Sdf c-sdf)))
+          col (Collidable.init @(ECS.Entity.handle &bullet-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          color (Color.init (if (= shape-type 0)
+                               (Vector3.init 1.0 1.0 0.0)
+                               (if (= shape-type 1)
+                                   (Vector3.init 0.0 1.0 1.0)
+                                   (if (= shape-type 2)
+                                       (Vector3.init 1.0 0.0 1.0)
+                                       (if (= shape-type 3)
+                                           (Vector3.init 1.0 0.5 0.0)
+                                           (if (= shape-type 4)
+                                               (Vector3.init 0.0 1.0 0.0)
+                                               (Vector3.init 0.5 0.5 1.0)))))))]
+      (do
+        (Body.set-velocity! (RigidBody.body &rb) @vel)
+        (Body.set-angular-velocity! (RigidBody.body &rb) @ang-vel)
+        (ECS.add-component! world &bullet-ent rb)
+        (ECS.add-component! world &bullet-ent col)
+        (ECS.add-component! world &bullet-ent color)
+        (ECS.add-component! world &bullet-ent (Lifetime.init 5.0)))))
+)

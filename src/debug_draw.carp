@@ -1,0 +1,289 @@
+;; debug_draw.carp
+;; Encapsulates 3D wireframe debug drawing helpers.
+
+(defmodule DebugDraw
+  (use Double)
+  (use Vector3)
+  (use Quaternion)
+  (use Geometry)
+  (use WGPURenderer)
+
+  (defn submit-line! [ren start end color]
+    (WGPURenderer.submit! ren (RenderCommand.DrawLine @start @end @color)))
+
+  (defn circle! [ren center radius rot axis1 axis2 color]
+    (let [segments 16
+          step (/ (* 2.0 3.1415926535) (Double.from-int segments))
+          prev (the (Vector3 Double) (Vector3.init 0.0 0.0 0.0))]
+      (do
+        (for [i 0 (inc segments)]
+          (let [angle (* (Double.from-int i) step)
+                c (cos angle)
+                s (sin angle)
+                lp (Vector3.add &(Vector3.mul &axis1 (* radius c)) &(Vector3.mul &axis2 (* radius s)))
+                wp (Vector3.add center &(Quaternion.rotate rot &lp))]
+            (do
+              (when (> i 0)
+                (submit-line! ren &prev &wp color))
+              (set! prev wp)))))))
+
+  (defn ball! [ren center radius rot scale color]
+    (let [r (* radius scale)]
+      (do
+        (circle! ren center r rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 1.0 0.0) color)
+        (circle! ren center r rot (Vector3.init 0.0 1.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (circle! ren center r rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color))))
+
+  (defn aabb! [ren aabb color]
+    (let [min-pt (AABB.min aabb)
+          max-pt (AABB.max aabb)
+          min-x @(Vector3.x min-pt)
+          min-y @(Vector3.y min-pt)
+          min-z @(Vector3.z min-pt)
+          max-x @(Vector3.x max-pt)
+          max-y @(Vector3.y max-pt)
+          max-z @(Vector3.z max-pt)
+          w0 (Vector3.init min-x min-y min-z)
+          w1 (Vector3.init max-x min-y min-z)
+          w2 (Vector3.init max-x max-y min-z)
+          w3 (Vector3.init min-x max-y min-z)
+          w4 (Vector3.init min-x min-y max-z)
+          w5 (Vector3.init max-x min-y max-z)
+          w6 (Vector3.init max-x max-y max-z)
+          w7 (Vector3.init min-x max-y max-z)]
+      (do
+        (submit-line! ren &w0 &w1 color)
+        (submit-line! ren &w1 &w2 color)
+        (submit-line! ren &w2 &w3 color)
+        (submit-line! ren &w3 &w0 color)
+        (submit-line! ren &w4 &w5 color)
+        (submit-line! ren &w5 &w6 color)
+        (submit-line! ren &w6 &w7 color)
+        (submit-line! ren &w7 &w4 color)
+        (submit-line! ren &w0 &w4 color)
+        (submit-line! ren &w1 &w5 color)
+        (submit-line! ren &w2 &w6 color)
+        (submit-line! ren &w3 &w7 color))))
+
+  (defn box-sdf! [ren center rot e scale color]
+    (let [ex @(Vector3.x e)
+          ey @(Vector3.y e)
+          ez @(Vector3.z e)
+          v0 (Vector3.init (- 0.0 ex) (- 0.0 ey) (- 0.0 ez))
+          v1 (Vector3.init ex (- 0.0 ey) (- 0.0 ez))
+          v2 (Vector3.init ex ey (- 0.0 ez))
+          v3 (Vector3.init (- 0.0 ex) ey (- 0.0 ez))
+          v4 (Vector3.init (- 0.0 ex) (- 0.0 ey) ez)
+          v5 (Vector3.init ex (- 0.0 ey) ez)
+          v6 (Vector3.init ex ey ez)
+          v7 (Vector3.init (- 0.0 ex) ey ez)
+          w0 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v0) scale))
+          w1 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v1) scale))
+          w2 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v2) scale))
+          w3 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v3) scale))
+          w4 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v4) scale))
+          w5 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v5) scale))
+          w6 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v6) scale))
+          w7 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v7) scale))]
+      (do
+        (submit-line! ren &w0 &w1 color)
+        (submit-line! ren &w1 &w2 color)
+        (submit-line! ren &w2 &w3 color)
+        (submit-line! ren &w3 &w0 color)
+        (submit-line! ren &w4 &w5 color)
+        (submit-line! ren &w5 &w6 color)
+        (submit-line! ren &w6 &w7 color)
+        (submit-line! ren &w7 &w4 color)
+        (submit-line! ren &w0 &w4 color)
+        (submit-line! ren &w1 &w5 color)
+        (submit-line! ren &w2 &w6 color)
+        (submit-line! ren &w3 &w7 color))))
+
+  (defn plane-grid! [ren plane color]
+    (let [n @(Plane.normal plane)
+          d @(Plane.d plane)
+          t1 (if (> (abs @(Vector3.x &n)) 0.9)
+                 (Vector3.init 0.0 1.0 0.0)
+                 (Vector3.init 1.0 0.0 0.0))
+          t1-proj (Vector3.normalize &(Vector3.sub &t1 &(Vector3.mul &n (Vector3.dot &t1 &n))))
+          t2 (Vector3.cross &n &t1-proj)
+          center (Vector3.mul &n (- 0.0 d))]
+      (do
+        (for [i -5 6]
+          (let [fi (Double.from-int i)
+                p1 (Vector3.add &center &(Vector3.add &(Vector3.mul &t2 (* fi 10.0)) &(Vector3.mul &t1-proj -50.0)))
+                p2 (Vector3.add &center &(Vector3.add &(Vector3.mul &t2 (* fi 10.0)) &(Vector3.mul &t1-proj 50.0)))
+                q1 (Vector3.add &center &(Vector3.add &(Vector3.mul &t1-proj (* fi 10.0)) &(Vector3.mul &t2 -50.0)))
+                q2 (Vector3.add &center &(Vector3.add &(Vector3.mul &t1-proj (* fi 10.0)) &(Vector3.mul &t2 50.0)))]
+            (do
+              (submit-line! ren &p1 &p2 color)
+              (submit-line! ren &q1 &q2 color)))))))
+
+  (defn cylinder-wireframe! [ren center radius hh rot scale color]
+    (let [r (* radius scale)
+          h-val (* hh scale)
+          top-offset (Vector3.init 0.0 h-val 0.0)
+          bot-offset (Vector3.init 0.0 (- 0.0 h-val) 0.0)
+          top-center (Vector3.add center &(Quaternion.rotate rot &top-offset))
+          bot-center (Vector3.add center &(Quaternion.rotate rot &bot-offset))]
+      (do
+        (circle! ren &top-center r rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (circle! ren &bot-center r rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (let [p0-bot (Vector3.init radius (- 0.0 hh) 0.0)
+              p0-top (Vector3.init radius hh 0.0)
+              p1-bot (Vector3.init 0.0 (- 0.0 hh) radius)
+              p1-top (Vector3.init 0.0 hh radius)
+              p2-bot (Vector3.init (- 0.0 radius) (- 0.0 hh) 0.0)
+              p2-top (Vector3.init (- 0.0 radius) hh 0.0)
+              p3-bot (Vector3.init 0.0 (- 0.0 hh) (- 0.0 radius))
+              p3-top (Vector3.init 0.0 hh (- 0.0 radius))
+              w0-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p0-bot) scale))
+              w0-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p0-top) scale))
+              w1-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p1-bot) scale))
+              w1-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p1-top) scale))
+              w2-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p2-bot) scale))
+              w2-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p2-top) scale))
+              w3-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p3-bot) scale))
+              w3-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p3-top) scale))]
+          (do
+            (submit-line! ren &w0-bot &w0-top color)
+            (submit-line! ren &w1-bot &w1-top color)
+            (submit-line! ren &w2-bot &w2-top color)
+            (submit-line! ren &w3-bot &w3-top color))))))
+
+  (defn capsule-wireframe! [ren center radius hh rot scale color]
+    (let [r (* radius scale)
+          h-val (* hh scale)
+          top-offset (Vector3.init 0.0 h-val 0.0)
+          bot-offset (Vector3.init 0.0 (- 0.0 h-val) 0.0)
+          top-center (Vector3.add center &(Quaternion.rotate rot &top-offset))
+          bot-center (Vector3.add center &(Quaternion.rotate rot &bot-offset))]
+      (do
+        (circle! ren &top-center r rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (circle! ren &bot-center r rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (let [p0-bot (Vector3.init radius (- 0.0 hh) 0.0)
+              p0-top (Vector3.init radius hh 0.0)
+              p1-bot (Vector3.init 0.0 (- 0.0 hh) radius)
+              p1-top (Vector3.init 0.0 hh radius)
+              p2-bot (Vector3.init (- 0.0 radius) (- 0.0 hh) 0.0)
+              p2-top (Vector3.init (- 0.0 radius) hh 0.0)
+              p3-bot (Vector3.init 0.0 (- 0.0 hh) (- 0.0 radius))
+              p3-top (Vector3.init 0.0 hh (- 0.0 radius))
+              w0-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p0-bot) scale))
+              w0-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p0-top) scale))
+              w1-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p1-bot) scale))
+              w1-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p1-top) scale))
+              w2-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p2-bot) scale))
+              w2-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p2-top) scale))
+              w3-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p3-bot) scale))
+              w3-top (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &p3-top) scale))]
+          (do
+            (submit-line! ren &w0-bot &w0-top color)
+            (submit-line! ren &w1-bot &w1-top color)
+            (submit-line! ren &w2-bot &w2-top color)
+            (submit-line! ren &w3-bot &w3-top color)))
+        (let [steps 8
+              step-angle (/ 3.1415926535 (Double.from-int steps))
+              prev-xy (the (Vector3 Double) (Vector3.init 0.0 0.0 0.0))
+              prev-zy (the (Vector3 Double) (Vector3.init 0.0 0.0 0.0))
+              prev-xy-bot (the (Vector3 Double) (Vector3.init 0.0 0.0 0.0))
+              prev-zy-bot (the (Vector3 Double) (Vector3.init 0.0 0.0 0.0))]
+          (do
+            (for [i 0 (inc steps)]
+              (let [angle (* (Double.from-int i) step-angle)
+                    c (cos angle)
+                    s (sin angle)
+                    lp-xy (Vector3.init (* radius c) (+ hh (* radius s)) 0.0)
+                    wp-xy (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &lp-xy) scale))
+                    lp-zy (Vector3.init 0.0 (+ hh (* radius s)) (* radius c))
+                    wp-zy (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &lp-zy) scale))
+                    lp-xy-bot (Vector3.init (* radius c) (- (- 0.0 hh) (* radius s)) 0.0)
+                    wp-xy-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &lp-xy-bot) scale))
+                    lp-zy-bot (Vector3.init 0.0 (- (- 0.0 hh) (* radius s)) (* radius c))
+                    wp-zy-bot (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &lp-zy-bot) scale))]
+                (do
+                  (when (> i 0)
+                    (do
+                      (submit-line! ren &prev-xy &wp-xy color)
+                      (submit-line! ren &prev-zy &wp-zy color)
+                      (submit-line! ren &prev-xy-bot &wp-xy-bot color)
+                      (submit-line! ren &prev-zy-bot &wp-zy-bot color)))
+                  (set! prev-xy wp-xy)
+                  (set! prev-zy wp-zy)
+                  (set! prev-xy-bot wp-xy-bot)
+                  (set! prev-zy-bot wp-zy-bot)))))))))
+
+  (defn torus-wireframe! [ren center rad-maj rad-min rot scale color]
+    (let [minor-count 8
+          phi-step (/ (* 2.0 3.1415926535) (Double.from-int minor-count))]
+      (do
+        (circle! ren center (* rad-maj scale) rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (circle! ren center (* (+ rad-maj rad-min) scale) rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (circle! ren center (* (- rad-maj rad-min) scale) rot (Vector3.init 1.0 0.0 0.0) (Vector3.init 0.0 0.0 1.0) color)
+        (for [m 0 minor-count]
+          (let [phi (* (Double.from-int m) phi-step)
+                c-phi (cos phi)
+                s-phi (sin phi)
+                m-center-loc (Vector3.init (* rad-maj c-phi) 0.0 (* rad-maj s-phi))
+                m-center-world (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &m-center-loc) scale))
+                radial (Vector3.init c-phi 0.0 s-phi)
+                up (Vector3.init 0.0 1.0 0.0)]
+            (circle! ren &m-center-world (* rad-min scale) rot radial up color))))))
+
+  (defn octahedron-wireframe! [ren center size rot scale color]
+    (let [v0 (Vector3.init size 0.0 0.0)
+          v1 (Vector3.init (- 0.0 size) 0.0 0.0)
+          v2 (Vector3.init 0.0 size 0.0)
+          v3 (Vector3.init 0.0 (- 0.0 size) 0.0)
+          v4 (Vector3.init 0.0 0.0 size)
+          v5 (Vector3.init 0.0 0.0 (- 0.0 size))
+          w0 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v0) scale))
+          w1 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v1) scale))
+          w2 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v2) scale))
+          w3 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v3) scale))
+          w4 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v4) scale))
+          w5 (Vector3.add center &(Vector3.mul &(Quaternion.rotate rot &v5) scale))]
+      (do
+        (submit-line! ren &w2 &w0 color)
+        (submit-line! ren &w2 &w4 color)
+        (submit-line! ren &w2 &w1 color)
+        (submit-line! ren &w2 &w5 color)
+        (submit-line! ren &w3 &w0 color)
+        (submit-line! ren &w3 &w4 color)
+        (submit-line! ren &w3 &w1 color)
+        (submit-line! ren &w3 &w5 color)
+        (submit-line! ren &w0 &w4 color)
+        (submit-line! ren &w4 &w1 color)
+        (submit-line! ren &w1 &w5 color)
+        (submit-line! ren &w5 &w0 color))))
+
+  (defn volume! [ren pos rot vol color]
+    (match-ref vol
+      (Volume.Ball sphere)
+        (let [center (Sphere.center sphere)
+              radius @(Sphere.radius sphere)]
+          (ball! ren center radius rot 1.0 color))
+      (Volume.Box aabb)
+        (aabb! ren aabb color)
+      (Volume.Surface plane)
+        (plane-grid! ren plane color)
+      (Volume.Sdf sdf)
+        (let [sdf-pos (SDF.position sdf)
+              sdf-rot (SDF.rotation sdf)
+              scale @(SDF.scale sdf)]
+          (match-ref (SDF.base sdf)
+            (BaseShape.Ball r)
+              (ball! ren sdf-pos @r sdf-rot scale color)
+            (BaseShape.Box e)
+              (box-sdf! ren sdf-pos sdf-rot e scale color)
+            (BaseShape.Cylinder rad hh)
+              (cylinder-wireframe! ren sdf-pos @rad @hh sdf-rot scale color)
+            (BaseShape.Capsule rad hh)
+              (capsule-wireframe! ren sdf-pos @rad @hh sdf-rot scale color)
+            (BaseShape.Torus rad-maj rad-min)
+              (torus-wireframe! ren sdf-pos @rad-maj @rad-min sdf-rot scale color)
+            (BaseShape.Octahedron s)
+              (octahedron-wireframe! ren sdf-pos @s sdf-rot scale color)
+            (BaseShape.Surface plane)
+              (plane-grid! ren plane color)))))
+)

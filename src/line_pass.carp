@@ -9,6 +9,7 @@
   v-buffer (Ptr WGPUVertexBufferWrapper)
   bind-group WGPUBindGroup
   max-lines Int
+  v-data (Array Float)
 ])
 
 (defmodule LinePass
@@ -46,7 +47,8 @@
   (defn create [ctx format max-lines]
     (let [u-size 64 ;; 4x4 mat
           v-size (* max-lines (* 2 24))
-          dummy-data (the (Array Float) (replicate (/ v-size 4) &0.0f))]
+          dummy-data (the (Array Float) (replicate (/ v-size 4) &0.0f))
+          v-data @&dummy-data]
       (match (WGPURender.create-uniform-buffer ctx u-size)
         (Result.Error e) (Result.Error (str* "Line Uniform failed: " e))
         (Result.Success ub)
@@ -59,40 +61,41 @@
                   (match (WGPURender.create-uniform-bind-group ctx pipe ub)
                     (Result.Error e) (do (WGPURender.free-geom-pipeline pipe) (WGPURender.free-uniform-buffer ub) (WGPURender.free-vertex-buffer vb) (Result.Error (str* "Line Bind group failed: " e)))
                     (Result.Success bg)
-                      (Result.Success (LinePassRenderer.init pipe ub vb bg max-lines))))))))
+                      (Result.Success (LinePassRenderer.init pipe ub vb bg max-lines v-data))))))))
 
   (defn update! [ctx lp view-proj commands]
-    (let [v-data (the (Array Float) [])
+    (let [v-data (LinePassRenderer.v-data lp)
           line-count 0
           max @(LinePassRenderer.max-lines lp)]
       (do
         ;; 1. Update Uniforms (ViewProj Matrix)
         (WGPURender.update-uniform-buffer ctx @(LinePassRenderer.u-buffer lp) view-proj)
         
-        ;; 2. Pack Vertex Data from commands
+        ;; 2. Pack Vertex Data from commands in-place
         (for [i 0 (Array.length commands)]
           (when (< line-count max)
             (match-ref (Array.unsafe-nth commands i)
               (RenderCommand.DrawLine start end color)
-                (do
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.x start)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.y start)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.z start)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.x color)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.y color)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.z color)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.x end)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.y end)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.z end)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.x color)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.y color)))
-                  (Array.push-back! &v-data (Double.to-float @(Vector3.z color)))
-                  (set! line-count (inc line-count)))
+                (let [base-idx (* line-count 12)]
+                  (do
+                    (Array.aset! v-data base-idx (Double.to-float @(Vector3.x start)))
+                    (Array.aset! v-data (+ base-idx 1) (Double.to-float @(Vector3.y start)))
+                    (Array.aset! v-data (+ base-idx 2) (Double.to-float @(Vector3.z start)))
+                    (Array.aset! v-data (+ base-idx 3) (Double.to-float @(Vector3.x color)))
+                    (Array.aset! v-data (+ base-idx 4) (Double.to-float @(Vector3.y color)))
+                    (Array.aset! v-data (+ base-idx 5) (Double.to-float @(Vector3.z color)))
+                    (Array.aset! v-data (+ base-idx 6) (Double.to-float @(Vector3.x end)))
+                    (Array.aset! v-data (+ base-idx 7) (Double.to-float @(Vector3.y end)))
+                    (Array.aset! v-data (+ base-idx 8) (Double.to-float @(Vector3.z end)))
+                    (Array.aset! v-data (+ base-idx 9) (Double.to-float @(Vector3.x color)))
+                    (Array.aset! v-data (+ base-idx 10) (Double.to-float @(Vector3.y color)))
+                    (Array.aset! v-data (+ base-idx 11) (Double.to-float @(Vector3.z color)))
+                    (set! line-count (inc line-count))))
               _ ())))
         
         ;; 3. Upload to GPU (QueueWrite)
         (if (> line-count 0)
-            (WGPURender.update-vertex-buffer ctx @(LinePassRenderer.v-buffer lp) &v-data)
+            (WGPURender.update-vertex-buffer ctx @(LinePassRenderer.v-buffer lp) v-data)
             ())
         line-count)))
 

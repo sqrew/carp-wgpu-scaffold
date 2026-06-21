@@ -1,0 +1,72 @@
+;; player_system.carp
+;; Encapsulates player controller & camera alignment systems.
+
+(defmodule PlayerSystem
+  (use Double)
+  (use Vector3)
+  (use Quaternion)
+  (use Transform)
+  (use Body)
+  (use RigidBody)
+  (use Collision)
+  (use InputManager)
+  (use RotationState)
+  (use Camera)
+  (use ECS)
+
+  (defn apply-movement! [p-rb p-rot p-scale mgr dt]
+    (let [move-speed (* 20.0 p-scale)
+          yaw @(RotationState.yaw p-rot)
+          pitch @(RotationState.pitch p-rot)
+          dx (InputManager.action-analog mgr "LookX")
+          dy (InputManager.action-analog mgr "LookY")
+          new-yaw (+ yaw dx)
+          new-pitch (clamp -1.5 1.5 (+ pitch dy))
+          yaw-axis (Vector3.init 0.0 1.0 0.0)
+          pitch-axis (Vector3.init 1.0 0.0 0.0)
+          q-yaw (Quaternion.from-axis-angle yaw-axis new-yaw)
+          q-pitch (Quaternion.from-axis-angle pitch-axis new-pitch)
+          look-rot (Quaternion.mul &q-yaw &q-pitch)
+          forward (Transform.forward-quat &look-rot)
+          right (Transform.right-quat &look-rot)
+          move-dir (Vector3.init 0.0 0.0 0.0)]
+      (do
+        (RotationState.set-yaw! p-rot new-yaw)
+        (RotationState.set-pitch! p-rot new-pitch)
+        (when (InputManager.action-digital? mgr "Forward") (set! move-dir (Vector3.add &move-dir &forward)))
+        (when (InputManager.action-digital? mgr "Backward") (set! move-dir (Vector3.sub &move-dir &forward)))
+        (when (InputManager.action-digital? mgr "Left") (set! move-dir (Vector3.sub &move-dir &right)))
+        (when (InputManager.action-digital? mgr "Right") (set! move-dir (Vector3.add &move-dir &right)))
+        (when (not (< (Vector3.mag-sq &move-dir) 0.001))
+          (let [accel (Vector3.mul &(Vector3.normalize &move-dir) move-speed)]
+            (RigidBody.apply-force! p-rb &accel)))
+        (RigidBody.set-rotation! p-rb look-rot))))
+
+  (defn update-camera-and-bounds! [world cam dt]
+    (ECS.query world [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
+      (let [yaw @(RotationState.yaw p-rot)
+            pitch @(RotationState.pitch p-rot)
+            
+            ;; Reconstruct rotation for camera (unaffected by body roll)
+            yaw-axis (Vector3.init 0.0 1.0 0.0)
+            pitch-axis (Vector3.init 1.0 0.0 0.0)
+            q-yaw (Quaternion.from-axis-angle yaw-axis yaw)
+            q-pitch (Quaternion.from-axis-angle pitch-axis pitch)
+            look-rot (Quaternion.mul &q-yaw &q-pitch)
+            r (match-ref (Collidable.volume p-col)
+                (Volume.Ball sphere) @(Sphere.radius sphere)
+                _ 1.0)
+            eye-pos (Vector3.add (RigidBody.position p-rb) &(Vector3.init 0.0 (* 0.8 r) 0.0))]
+        (do
+          ;; Void Bounds Check: Reset player if they fall off the block
+          (when (< @(Vector3.y (RigidBody.position p-rb)) -30.0)
+            (do
+              (RigidBody.set-position! p-rb (Vector3.init 5.0 1.0 5.0))
+              (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+              (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+          
+          (Camera.set-pos! cam eye-pos)
+          (Camera.set-front! cam (Transform.forward-quat &look-rot))
+          (Camera.set-right! cam (Transform.right-quat &look-rot))
+          (Camera.set-up! cam (Transform.up-quat &look-rot))))))
+)
