@@ -156,12 +156,13 @@
           var res = 1.0;
           var t = mint;
           for (var i = 0; i < 30; i = i + 1) {
-              let h = worldSDF(ro + rd * t, rd).x;
-              if (h < 0.001) {
+              let h_step = worldSDF(ro + rd * t, rd).x;
+              if (h_step < 0.001) {
                   return 0.0;
               }
-              res = min(res, k * h / t);
-              t += clamp(h, 0.01, 0.3);
+              let h_true = worldSDF(ro + rd * t, vec3<f32>(0.0)).x;
+              res = min(res, k * h_true / t);
+              t += clamp(h_step, 0.01, 0.3);
               if (t > maxt) {
                   break;
               }
@@ -175,7 +176,7 @@
           for (var i = 0; i < 5; i = i + 1) {
               let hr = 0.01 + 0.12 * f32(i) / 4.0;
               let aopos = p + n * hr;
-              let d = worldSDF(aopos, n).x;
+              let d = worldSDF(aopos, vec3<f32>(0.0)).x;
               occ += -(d - hr) * sca;
               sca *= 0.95;
           }
