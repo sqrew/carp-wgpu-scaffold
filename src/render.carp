@@ -247,33 +247,40 @@
           return d * scale;
       }
 
-        fn evaluateCsgTree(local_p: vec3<f32>, root_idx: i32) -> f32 {
-          var path: array<i32, 6>;
-          var path_len = 0;
-          var curr = root_idx;
-          for (var step = 0; step < 6; step = step + 1) {
-              let node = csg_nodes[curr];
+      fn evaluateNoise(p: vec3<f32>) -> f32 {
+          let n1 = sin(p.x * 3.5) * cos(p.y * 3.5) * sin(p.z * 3.5);
+          let n2 = sin(p.x * 7.0 + n1 * 2.0) * cos(p.y * 7.0 + n1 * 2.0) * sin(p.z * 7.0 + n1 * 2.0);
+          return n1 * 0.12 + n2 * 0.06;
+      }
+
+      fn evaluateCsgTree(local_p: vec3<f32>, root_idx: i32) -> f32 {
+          var base_idx = root_idx;
+          while (true) {
+              let node = csg_nodes[base_idx];
               let shape_type = u32(round(node.info.x));
               if (shape_type > 0u) {
                   break;
               }
-              path[path_len] = curr;
-              path_len = path_len + 1;
-              curr = i32(round(node.info.z));
+              base_idx = i32(round(node.info.z)); // left_child
           }
           
-          let base_node = csg_nodes[curr];
+          let base_node = csg_nodes[base_idx];
           var d = evaluateCsgPrimitive(local_p, u32(round(base_node.info.x)), base_node.pos.xyz, base_node.pos.w, base_node.rot, base_node.params);
-          for (var i = path_len - 1; i >= 0; i = i - 1) {
-              let op_node = csg_nodes[path[i]];
+          for (var idx = base_idx + 2; idx <= root_idx; idx = idx + 2) {
+              let op_node = csg_nodes[idx];
               let right_child = i32(round(op_node.info.w));
               let right_node = csg_nodes[right_child];
-              let d_right = evaluateCsgPrimitive(local_p, u32(round(right_node.info.x)), right_node.pos.xyz, right_node.pos.w, right_node.rot, right_node.params);
+              var d_right = 10000.0;
+              let diff = local_p - right_node.pos.xyz;
+              if (dot(diff, diff) < 9.0) {
+                  d_right = evaluateCsgPrimitive(local_p, u32(round(right_node.info.x)), right_node.pos.xyz, right_node.pos.w, right_node.rot, right_node.params);
+              }
               let op = u32(round(op_node.info.y));
               if (op == 0u) {
                   d = min(d, d_right);
               } else if (op == 1u) {
-                  d = max(d, -d_right);
+                  let d_right_noisy = d_right + evaluateNoise(local_p);
+                  d = max(d, -d_right_noisy);
               } else {
                   d = max(d, d_right);
               }
@@ -328,6 +335,21 @@
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
           var d = vec2<f32>(10000.0, -1.0);
+          let floor_data = u.spheres[0];
+          if (floor_data.pos.w != 0.0) {
+              let local_p = rotateVector(p - floor_data.pos.xyz, q_inv(floor_data.rot));
+              let csg_root_idx = i32(round(floor_data.color.w));
+              var local_dist = 10000.0;
+              if (csg_root_idx >= 0) {
+                  local_dist = evaluateCsgTree(local_p, csg_root_idx);
+              } else {
+                  let size = -floor_data.pos.w;
+                  local_dist = sdBox(local_p, vec3<f32>(size));
+              }
+              if (local_dist < d.x) {
+                  d = vec2<f32>(local_dist, 0.0);
+              }
+          }
           let p_local = p - u.grid_origin.xyz;
           let gx = i32(floor(p_local.x / u.cell_size));
           let gy = i32(floor(p_local.y / u.cell_size));

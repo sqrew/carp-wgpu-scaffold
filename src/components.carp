@@ -50,4 +50,10 @@
   (implements zero CsgNode.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode)
+(deftype BouncyTag [])
+(defmodule BouncyTag
+  (defn zero [] (BouncyTag.init))
+  (implements zero BouncyTag.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag)

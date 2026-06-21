@@ -30,7 +30,7 @@
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -100.0 -100.0 -100.0)
-          grid (SpatialGrid.new-with-origin 20.0 10 10 10 grid-origin)
+          grid (SpatialGrid.new-with-origin 5.0 40 40 40 grid-origin)
           world (GameWorld.new)
           coord (Coordinator.new)]
       (do
@@ -44,6 +44,7 @@
         (InputManager.add-binding! &mgr "LookY" (InputSource.MouseDeltaY) 0.002)
         (InputManager.add-binding! &mgr "Reset" (InputSource.Key GLFW.Keycode.R) 1.0)
         (InputManager.add-binding! &mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
+        (InputManager.add-binding! &mgr "FireBouncy" (InputSource.Key GLFW.Keycode.F) 1.0)
         (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
         (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
 
@@ -159,7 +160,7 @@
                                 (when (and (Handle.equal? (Parent.handle c-p) parent-handle)
                                            (not (ECS.has-component? world &c-ent Collidable)))
                                   (Array.push-back! &child-handles @(ECS.Entity.handle &c-ent))))
-                              (when (>= (Array.length &child-handles) 5)
+                              (when (>= (Array.length &child-handles) 64)
                                 (let [oldest-handle (Array.unsafe-nth &child-handles 0)
                                       oldest-ent (ECS.Entity.init @oldest-handle)]
                                   (GameWorld.destroy-entity! world &oldest-ent)))
@@ -183,9 +184,10 @@
                 (let [pos (BulletSpawnData.pos data)
                       vel (BulletSpawnData.vel data)
                       ang-vel (BulletSpawnData.ang-vel data)
-                      scale @(BulletSpawnData.scale data)]
+                      scale @(BulletSpawnData.scale data)
+                      bouncy @(BulletSpawnData.bouncy data)]
                   (do
-                    (Prefab.spawn-bullet! (Engine.world e) pos vel ang-vel scale)
+                    (Prefab.spawn-bullet! (Engine.world e) pos vel ang-vel scale bouncy)
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)
                 (let [pos (CraterSpawnData.pos data)
@@ -196,7 +198,7 @@
               _ (Result.Success ()))
           _ (Result.Success ())))))
 
-  (defn spawn-bullet! [e]
+  (defn spawn-bullet! [e bouncy]
     (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
       (let [p-pos (RigidBody.position p-rb)
             p-scale (match-ref (Collidable.volume p-col)
@@ -220,7 +222,7 @@
             rand-z (Double.random-between -10.0 10.0)
             bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
             
-            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel p-scale)
+            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel p-scale bouncy)
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
         (Coordinator.dispatch! (Engine.coordinator e) ev))))
 
@@ -247,7 +249,9 @@
                           _ 1.0)]
             (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)))
         (when (InputManager.action-pressed? mgr "Fire")
-          (spawn-bullet! e))
+          (spawn-bullet! e false))
+        (when (InputManager.action-pressed? mgr "FireBouncy")
+          (spawn-bullet! e true))
         (when (InputManager.action-pressed? mgr "ScaleUp")
           (scale-player! e 1.1))
         (when (InputManager.action-pressed? mgr "ScaleDown")

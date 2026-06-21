@@ -14,8 +14,9 @@
   (use SDF)
   (use Color)
   (use Lifetime)
+  (use BouncyTag)
 
-  (defn spawn-bullet! [world pos vel ang-vel scale]
+  (defn spawn-bullet! [world pos vel ang-vel scale bouncy]
     (let [bullet-ent (GameWorld.create-entity! world)
           rb (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
           shape-type (Int.random-between 0 6)
@@ -51,5 +52,7 @@
         (ECS.add-component! world &bullet-ent rb)
         (ECS.add-component! world &bullet-ent col)
         (ECS.add-component! world &bullet-ent color)
-        (ECS.add-component! world &bullet-ent (Lifetime.init 5.0)))))
+        (ECS.add-component! world &bullet-ent (Lifetime.init 5.0))
+        (when bouncy
+          (ECS.add-component! world &bullet-ent (BouncyTag.init))))))
 )
