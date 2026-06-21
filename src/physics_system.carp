@@ -14,8 +14,8 @@
   (def gravity (Vector3.init 0.0 -9.81 0.0))
   (def iterations 8)
 
-  (defn apply-player-movement! [p-rb p-rot mgr dt]
-    (let [move-speed 20.0
+  (defn apply-player-movement! [p-rb p-rot p-scale mgr dt]
+    (let [move-speed (* 20.0 p-scale)
           yaw @(RotationState.yaw p-rot)
           pitch @(RotationState.pitch p-rot)
           dx (InputManager.action-analog mgr "LookX")
@@ -46,7 +46,8 @@
     ())
 
   (defn step-ecs! [world grid f-rb f-col coord]
-    (let [collision-occurred false]
+    (let [collision-occurred false
+          manifolds []]
       (do
         (sync-transforms! world)
         
@@ -56,7 +57,7 @@
             (RigidBody.apply-force! rb &gravity)
             (RigidBody.step-custom! rb fixed-dt fixed-dt)))
 
-        ;; 2. Rebuild Spatial Grid ONCE per frame
+        ;; 2. Rebuild Spatial Grid
         (SpatialGrid.clear! grid)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [vol (Collidable.volume col)
@@ -74,32 +75,45 @@
                     swept (Collision.get-swept-aabb vol vel fixed-dt)]
                 (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent))))))
 
-        (for [iter-idx 0 iterations]
-          (do
-            ;; 3. Resolve vs Floor
-            (ECS.query world [ent (rb RigidBody) (col Collidable)]
-              (let [vel (Body.velocity (RigidBody.body rb))]
-                (match (CollisionChecker.check-pair-swept col vel fixed-dt f-col)
-                  (Maybe.Just (CollisionResult.Physical actual-col))
-                    (Solver.solve! rb f-rb (Collision.contact-set &actual-col))
-                  _ ())))
+        ;; 3. Detect Collisions (versus Floor and between Entities)
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+          (match (CollisionChecker.check-pair col f-col)
+            (Maybe.Just (CollisionResult.Physical actual-col))
+              (do
+                (set! collision-occurred true)
+                (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))
+            _ ()))
 
-            ;; 4. Resolve vs Other Entities
-            (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
-              (let [aabb (Collision.get-aabb (Collidable.volume col1))
-                    candidates (SpatialGrid.query-unique grid &aabb)]
-                (for [c 0 (Array.length &candidates)]
-                  (let [id2 (Array.unsafe-nth &candidates c)
-                        ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
-                    (when (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
-                      (ECS.with-components world ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
-                        (let [vel1 (Body.velocity (RigidBody.body rb1))]
-                          (match (CollisionChecker.check-pair-swept col1 vel1 fixed-dt col2)
-                            (Maybe.Just (CollisionResult.Physical actual-col))
-                              (do
-                                (set! collision-occurred true)
-                                (Solver.solve! rb1 rb2 (Collision.contact-set &actual-col)))
-                            _ ()))))))))))
-        
+        (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
+          (let [aabb (Collision.get-aabb (Collidable.volume col1))
+                candidates (SpatialGrid.query-unique grid &aabb)]
+            (for [c 0 (Array.length &candidates)]
+              (let [id2 (Array.unsafe-nth &candidates c)
+                    ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
+                (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
+                           (Handle.less-than? (Collidable.handle col1) (ECS.Entity.handle &ent2)))
+                  (ECS.with-components world ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
+                    (match (CollisionChecker.check-pair col1 col2)
+                      (Maybe.Just (CollisionResult.Physical actual-col))
+                        (do
+                          (set! collision-occurred true)
+                          (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))
+                      _ ())))))))
+
+        ;; 4. Solve Constraints Iteratively over Cached Manifolds
+        (for [iter-idx 0 iterations]
+          (for [m-idx 0 (Array.length &manifolds)]
+            (let [m (Array.unsafe-nth &manifolds m-idx)
+                  h-a (ContactSet.a m)
+                  h-b (ContactSet.b m)
+                  ent-a (ECS.Entity.init @h-a)
+                  ent-b (ECS.Entity.init @h-b)]
+              (if (Handle.equal? h-b (Collidable.handle f-col))
+                  (ECS.with-components world ent-a [e-a (rb-a RigidBody) (col-a Collidable)]
+                    (Solver.solve! rb-a f-rb m fixed-dt))
+                  (ECS.with-components world ent-a [e-a (rb-a RigidBody) (col-a Collidable)]
+                    (ECS.with-components world ent-b [e-b (rb-b RigidBody) (col-b Collidable)]
+                      (Solver.solve! rb-a rb-b m fixed-dt)))))))
+
         collision-occurred)))
 )

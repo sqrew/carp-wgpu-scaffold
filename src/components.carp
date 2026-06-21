@@ -33,4 +33,10 @@
   (implements zero Color.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState)
+(deftype Lifetime [time Double])
+(defmodule Lifetime
+  (defn zero [] (Lifetime.init 0.0))
+  (implements zero Lifetime.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime)

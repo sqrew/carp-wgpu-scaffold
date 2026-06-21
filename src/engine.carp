@@ -50,6 +50,8 @@
         (InputManager.add-binding! &mgr "LookY" (InputSource.MouseDeltaY) 0.002)
         (InputManager.add-binding! &mgr "Reset" (InputSource.Key GLFW.Keycode.R) 1.0)
         (InputManager.add-binding! &mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
+        (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
+        (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
 
         ;; Create Player Entity
         (let [p-ent (GameWorld.create-entity! &world)
@@ -103,14 +105,18 @@
                       ang-vel (BulletSpawnData.ang-vel data)
                       bullet-ent (GameWorld.create-entity! (Engine.world e))
                       rb (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
+                      b-scale @(BulletSpawnData.scale data)
                       shape-type (Int.random-between 0 4)
-                      vol (if (= shape-type 0)
-                              (Volume.Sdf (SDF.init-sphere 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-                              (if (= shape-type 1)
-                                  (Volume.Sdf (SDF.init-box (Vector3.init 0.4 0.4 0.4) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-                                  (if (= shape-type 2)
-                                      (Volume.Sdf (SDF.init-cylinder 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-                                      (Volume.Sdf (SDF.init-capsule 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))))))
+                      vol (let [c-sdf (if (= shape-type 0)
+                                          (SDF.init-sphere 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                          (if (= shape-type 1)
+                                              (SDF.init-box (Vector3.init 0.4 0.4 0.4) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                              (if (= shape-type 2)
+                                                  (SDF.init-cylinder 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
+                                                  (SDF.init-capsule 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))))]
+                            (do
+                              (SDF.set-scale! &c-sdf b-scale)
+                              (Volume.Sdf c-sdf)))
                       col (Collidable.init @(ECS.Entity.handle &bullet-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
                       color (Color.init (if (= shape-type 0)
                                            (Vector3.init 1.0 1.0 0.0)
@@ -125,6 +131,7 @@
                     (ECS.add-component! (Engine.world e) &bullet-ent rb)
                     (ECS.add-component! (Engine.world e) &bullet-ent col)
                     (ECS.add-component! (Engine.world e) &bullet-ent color)
+                    (ECS.add-component! (Engine.world e) &bullet-ent (Lifetime.init 5.0))
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)
                 (Result.Success ())
@@ -132,8 +139,11 @@
           _ (Result.Success ())))))
 
   (defn spawn-bullet! [e]
-    (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-rot RotationState) (p-tag PlayerTag)]
+    (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
       (let [p-pos (RigidBody.position p-rb)
+            p-scale (match-ref (Collidable.volume p-col)
+                      (Volume.Ball sphere) @(Sphere.radius sphere)
+                      _ 1.0)
             
             ;; Use RotationState to determine bullet direction
             yaw-axis (Vector3.init 0.0 1.0 0.0)
@@ -144,7 +154,7 @@
             p-dir (Transform.forward-quat &look-rot)
             
             ;; Spawn slightly in front of player (distance > player_rad + bullet_rad)
-            bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir 1.6))
+            bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir (* 1.6 p-scale)))
             bullet-vel (Vector3.mul &p-dir 30.0)
             
             rand-x (Double.random-between -10.0 10.0)
@@ -152,19 +162,36 @@
             rand-z (Double.random-between -10.0 10.0)
             bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
             
-            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel)
+            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel p-scale)
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
         (Coordinator.dispatch! (Engine.coordinator e) ev))))
+
+  (defn scale-player! [e factor]
+    (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-tag PlayerTag)]
+      (match-ref (Collidable.volume p-col)
+        (Volume.Ball sphere)
+          (let [old-r @(Sphere.radius sphere)
+                new-r (let [r (* old-r factor)]
+                        (if (< r 0.2) 0.2 (if (> r 5.0) 5.0 r)))]
+            (Sphere.set-radius! sphere new-r))
+        _ ())))
 
   (defn process-input! [e]
     (let [mgr (Engine.input e)
           dt (Clock.unscaled-dt (Engine.clock e))]
       (do
         (InputManager.update! mgr)
-        (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-rot RotationState) (p-tag PlayerTag)]
-          (PhysicsSystem.apply-player-movement! p-rb p-rot mgr dt))
+        (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
+          (let [p-scale (match-ref (Collidable.volume p-col)
+                          (Volume.Ball sphere) @(Sphere.radius sphere)
+                          _ 1.0)]
+            (PhysicsSystem.apply-player-movement! p-rb p-rot p-scale mgr dt)))
         (when (InputManager.action-pressed? mgr "Fire")
-          (spawn-bullet! e)))))
+          (spawn-bullet! e))
+        (when (InputManager.action-pressed? mgr "ScaleUp")
+          (scale-player! e 1.1))
+        (when (InputManager.action-pressed? mgr "ScaleDown")
+          (scale-player! e 0.9)))))
 
   (defn tick! [e]
     (let [cam (Engine.camera e)
@@ -187,7 +214,7 @@
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 
         ;; Update Camera using live RotationState to decouple from physics roll
-        (ECS.query world [p-ent (p-rb RigidBody) (p-rot RotationState) (p-tag PlayerTag)]
+        (ECS.query world [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
           (let [yaw @(RotationState.yaw p-rot)
                 pitch @(RotationState.pitch p-rot)
                 
@@ -196,12 +223,28 @@
                 pitch-axis (Vector3.init 1.0 0.0 0.0)
                 q-yaw (Quaternion.from-axis-angle yaw-axis yaw)
                 q-pitch (Quaternion.from-axis-angle pitch-axis pitch)
-                look-rot (Quaternion.mul &q-yaw &q-pitch)]
+                look-rot (Quaternion.mul &q-yaw &q-pitch)
+                r (match-ref (Collidable.volume p-col)
+                    (Volume.Ball sphere) @(Sphere.radius sphere)
+                    _ 1.0)
+                eye-pos (Vector3.add (RigidBody.position p-rb) &(Vector3.init 0.0 (* 0.8 r) 0.0))]
             (do
-              (Camera.set-pos! cam @(RigidBody.position p-rb))
+              (Camera.set-pos! cam eye-pos)
               (Camera.set-front! cam (Transform.forward-quat &look-rot))
               (Camera.set-right! cam (Transform.right-quat &look-rot))
-              (Camera.set-up! cam (Transform.up-quat &look-rot))))))
+              (Camera.set-up! cam (Transform.up-quat &look-rot)))))
+
+        ;; Update Lifetimes & Cleanup expired entities
+        (let [expired-ents []]
+          (do
+            (ECS.query world [ent (lt Lifetime)]
+              (let [new-time (- @(Lifetime.time lt) dt)]
+                (do
+                  (Lifetime.set-time! lt new-time)
+                  (when (<= new-time 0.0)
+                    (Array.push-back! &expired-ents ent)))))
+            (for [i 0 (Array.length &expired-ents)]
+              (GameWorld.destroy-entity! world (Array.unsafe-nth &expired-ents i)))))
 
         ;; Cleanup old bullets and craters to keep entity IDs recycled and low (<128)
         (let [p-pos (Vector3.init 0.0 0.0 0.0)
@@ -223,7 +266,7 @@
                             (Array.push-back! &to-destroy ent))))))
                   
                   (for [i 0 (Array.length &to-destroy)]
-                    (GameWorld.destroy-entity! world @(Array.unsafe-nth &to-destroy i))))))))))
+                    (GameWorld.destroy-entity! world (Array.unsafe-nth &to-destroy i)))))))))))
 
   (defn submit-render-commands! [e ren]
     (let [world (Engine.world e)]

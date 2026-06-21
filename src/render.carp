@@ -152,6 +152,36 @@
           }
       }
 
+      fn getShadow(ro: vec3<f32>, rd: vec3<f32>, mint: f32, maxt: f32, k: f32) -> f32 {
+          var res = 1.0;
+          var t = mint;
+          for (var i = 0; i < 30; i = i + 1) {
+              let h = worldSDF(ro + rd * t, rd).x;
+              if (h < 0.001) {
+                  return 0.0;
+              }
+              res = min(res, k * h / t);
+              t += clamp(h, 0.01, 0.3);
+              if (t > maxt) {
+                  break;
+              }
+          }
+          return clamp(res, 0.0, 1.0);
+      }
+
+      fn getAO(p: vec3<f32>, n: vec3<f32>) -> f32 {
+          var occ = 0.0;
+          var sca = 1.0;
+          for (var i = 0; i < 5; i = i + 1) {
+              let hr = 0.01 + 0.12 * f32(i) / 4.0;
+              let aopos = p + n * hr;
+              let d = worldSDF(aopos, n).x;
+              occ += -(d - hr) * sca;
+              sca *= 0.95;
+          }
+          return clamp(1.0 - 3.0 * occ, 0.0, 1.0);
+      }
+
       @fragment
       fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
           let aspect = u.width / u.height;
@@ -170,17 +200,13 @@
           var color = u.bg_color.rgb;
           if (t <= 100.0) {
               let p = ro + rd * t;
-              let normal_floor = vec3<f32>(0.0, 1.0, 0.0);
               let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+              var normal = vec3<f32>(0.0, 1.0, 0.0);
+              
               if (hitId != -1.0) {
                   let s_idx = i32(hitId);
                   let s_data = u.spheres[s_idx];
-                  let sn = normalize(p - s_data.pos.xyz);
-                  let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                  let stripe = sin(lp.y * 10.0);
-                  let check = smoothstep(-0.1, 0.1, stripe);
-                  let base_col = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
-                  color = base_col * max(dot(sn, light_dir), 0.2);
+                  normal = normalize(p - s_data.pos.xyz);
               } else {
                   let eps = vec3<f32>(0.05, 0.0, 0.0);
                   let tx_grad = vec3<f32>(
@@ -188,12 +214,38 @@
                       worldSDF(p + eps.yxy, rd).x - worldSDF(p - eps.yxy, rd).x,
                       worldSDF(p + eps.yyx, rd).x - worldSDF(p - eps.yyx, rd).x
                   );
-                  let terrain_normal = normalize(tx_grad);
+                  normal = normalize(tx_grad);
+              }
+
+              // Calculate Diffuse Lighting
+              let diffuse = max(dot(normal, light_dir), 0.0);
+
+              // Calculate Soft Shadows
+              let shadow = getShadow(p + normal * 0.02, light_dir, 0.02, 20.0, 16.0);
+              let lit = mix(0.2, 1.0, shadow) * diffuse;
+
+              // Calculate Ambient Occlusion
+              let ao = getAO(p, normal);
+
+              // Base Color Retrieval
+              var base_col = vec3<f32>(0.2, 0.2, 0.2);
+              if (hitId != -1.0) {
+                  let s_idx = i32(hitId);
+                  let s_data = u.spheres[s_idx];
+                  let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                  let stripe = sin(lp.y * 10.0);
+                  let check = smoothstep(-0.1, 0.1, stripe);
+                  base_col = mix(vec3<f32>(0.8, 0.2, 0.2), vec3<f32>(0.9, 0.9, 0.9), check);
+              } else {
                   let grid_v = sin(p.x * 2.0) * sin(p.z * 2.0);
                   let check = smoothstep(-0.1, 0.1, grid_v);
-                  let floor_col = mix(vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(0.3, 0.3, 0.3), check);
-                  color = floor_col * max(dot(terrain_normal, light_dir), 0.2);
+                  base_col = mix(vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(0.3, 0.3, 0.3), check);
               }
+
+              // Combine diffuse, shadows, ambient term, and ambient occlusion
+              color = base_col * (lit + 0.15) * ao;
+
+              // Fog
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
           }
           return vec4<f32>(color, 1.0);
@@ -298,14 +350,15 @@
                     rad (match-ref (Collidable.volume col)
                           (Volume.Ball b) @(Sphere.radius b)
                           (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
-                           (Volume.Sdf sdf)
-                             (match-ref (SDF.base sdf)
-                               (BaseShape.Ball r) @r
-                               (BaseShape.Box e) (- 0.0 @(Vector3.x e))
-                               (BaseShape.Cylinder r h) (+ 1000.0 @r)
-                               (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 @r))
-                               _ 0.0)
-                          _ 0.0)]
+                            (Volume.Sdf sdf)
+                              (let [scale @(SDF.scale sdf)]
+                                (match-ref (SDF.base sdf)
+                                  (BaseShape.Ball r) (* @r scale)
+                                  (BaseShape.Box e) (- 0.0 (* @(Vector3.x e) scale))
+                                  (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
+                                  (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
+                                  _ 0.0))
+                           _ 0.0)]
                 (let [base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
                   (do
                     (Array.aset! &data base (Double.to-float @(Vector3.x pos)))
