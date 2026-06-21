@@ -15,6 +15,16 @@
   (defn sync-transforms! [world]
     ())
 
+  (defn build-csg-tree-rec! [world parent-handle parent-sdf]
+    (ECS.query world [child-ent (parent Parent) (node CsgNode)]
+      (when (Handle.equal? (Parent.handle parent) parent-handle)
+        (let [child-sdf (Box.peek (CsgNode.shape node))]
+          (do
+            (SDF.set-csg-nodes! child-sdf [])
+            (build-csg-tree-rec! world (ECS.Entity.handle &child-ent) child-sdf)
+            (let [boxed-shape (Box.init @child-sdf)
+                  csg-node (CsgNode.init boxed-shape @(CsgNode.op node))]
+              (SDF.add-csg-node! parent-sdf csg-node))))))))
   (defn step-ecs! [world grid coord]
     (let [collision-occurred false
           manifolds []]
@@ -54,12 +64,33 @@
                     ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
                 (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
                            (Handle.less-than? (Collidable.handle col1) (ECS.Entity.handle &ent2)))
-                  (ECS.with-components world ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
+                  (ECS.with-components world @&ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
                     (match (CollisionChecker.check-pair col1 col2)
                       (Maybe.Just (CollisionResult.Physical actual-col))
-                        (do
-                          (set! collision-occurred true)
-                          (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))
+                        (let [is-bullet-1 (ECS.has-component? world &ent1 Lifetime)
+                              is-bullet-2 (ECS.has-component? world &ent2 Lifetime)]
+                          (if (or is-bullet-1 is-bullet-2)
+                              (let [bullet-ent (if is-bullet-1 &ent1 &ent2)
+                                    other-ent (if is-bullet-1 &ent2 &ent1)
+                                    other-col (if is-bullet-1 col2 col1)]
+                                (match-ref (Collidable.volume other-col)
+                                  (Volume.Sdf sdf)
+                                    (let [c-set (Collision.contact-set &actual-col)
+                                          contacts (ContactSet.contacts c-set)]
+                                      (when (> (Array.length contacts) 0)
+                                        (let [cp @(Contact.point (Array.unsafe-nth contacts 0))
+                                              crater-data (CraterSpawnData.init cp 0.45)
+                                              event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+                                          (do
+                                            (Coordinator.dispatch! coord event)
+                                            (ECS.with-components world @bullet-ent [e (lt Lifetime)]
+                                              (Lifetime.set-time! lt 0.0))))))
+                                  _ (do
+                                      (set! collision-occurred true)
+                                      (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
+                              (do
+                                (set! collision-occurred true)
+                                (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
                       _ ())))))))
 
         ;; 4. Solve Constraints Iteratively over Cached Manifolds
@@ -75,4 +106,3 @@
                   (Solver.solve! rb-a rb-b m fixed-dt))))))
 
         collision-occurred)))
-)

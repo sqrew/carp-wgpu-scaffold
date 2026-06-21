@@ -39,4 +39,15 @@
   (implements zero Lifetime.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime)
+(deftype Parent [handle (Handle ())])
+(defmodule Parent
+  (defn zero [] (Parent.init (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l))))
+  (implements zero Parent.zero)
+)
+
+(defmodule CsgNode
+  (defn zero [] (CsgNode.init (Box.init (SDF.init-sphere 1.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))) 0))
+  (implements zero CsgNode.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode)
