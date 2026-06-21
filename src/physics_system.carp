@@ -60,9 +60,16 @@
         (SpatialGrid.clear! grid)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [vol (Collidable.volume col)
-                pos (RigidBody.position rb)]
+                pos (RigidBody.position rb)
+                rot (RigidBody.rotation rb)]
             (do
-              (match-ref vol (Volume.Ball s) (Sphere.set-center! s @pos) _ ())
+              (match-ref vol
+                (Volume.Ball s) (Sphere.set-center! s @pos)
+                (Volume.Sdf sdf)
+                  (do
+                    (SDF.set-position! sdf @pos)
+                    (SDF.set-rotation! sdf @rot))
+                _ ())
               (let [vel (Body.velocity (RigidBody.body rb))
                     swept (Collision.get-swept-aabb vol vel fixed-dt)]
                 (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent))))))

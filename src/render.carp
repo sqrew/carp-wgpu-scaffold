@@ -78,6 +78,16 @@
           return length(p) - s;
       }
 
+      fn sdBox(p: vec3<f32>, b: vec3<f32>) -> f32 {
+          let q = abs(p) - b;
+          return length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+      }
+
+      fn sdCylinder(p: vec3<f32>, r: f32, h: f32) -> f32 {
+          let d = abs(vec2<f32>(length(p.xz), p.y)) - vec2<f32>(r, h);
+          return min(max(d.x, d.y), 0.0) + length(max(d, vec2<f32>(0.0)));
+      }
+
       fn rotateVector(v: vec3<f32>, q: vec4<f32>) -> vec3<f32> {
           return v + 2.0 * cross(q.xyz, cross(q.xyz, v) + q.w * v);
       }
@@ -111,9 +121,20 @@
                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
                     let s_data = u.spheres[s_idx];
-                    if (s_data.pos.w > 0.0) {
-                      let sphere_dist = sdSphere(p - s_data.pos.xyz, s_data.pos.w);
-                      if (sphere_dist < d.x) { d = vec2<f32>(sphere_dist, f32(s_idx)); }
+                    let raw_w = s_data.pos.w;
+                    if (raw_w != 0.0) {
+                      var local_dist = 10000.0;
+                      let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                      if (raw_w > 0.0 && raw_w < 500.0) {
+                        local_dist = sdSphere(local_p, raw_w);
+                      } else if (raw_w < 0.0) {
+                        let size = -raw_w;
+                        local_dist = sdBox(local_p, vec3<f32>(size));
+                      } else {
+                        let size = raw_w - 1000.0;
+                        local_dist = sdCylinder(local_p, size, size);
+                      }
+                      if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
                     }
                   }
               }
@@ -268,6 +289,13 @@
                     rot (RigidBody.rotation rb)
                     rad (match-ref (Collidable.volume col)
                           (Volume.Ball b) @(Sphere.radius b)
+                          (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
+                          (Volume.Sdf sdf)
+                            (match-ref (SDF.base sdf)
+                              (BaseShape.Ball r) @r
+                              (BaseShape.Box e) (- 0.0 @(Vector3.x e))
+                              (BaseShape.Cylinder r h) (+ 1000.0 @r)
+                              _ 0.0)
                           _ 0.0)]
                 (let [base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 8))]
                   (do
