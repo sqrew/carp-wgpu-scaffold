@@ -45,7 +45,7 @@
   (defn sync-transforms! [world]
     ())
 
-  (defn step-ecs! [world grid f-rb f-col coord]
+  (defn step-ecs! [world grid coord]
     (let [collision-occurred false
           manifolds []]
       (do
@@ -75,15 +75,7 @@
                     swept (Collision.get-swept-aabb vol vel fixed-dt)]
                 (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent))))))
 
-        ;; 3. Detect Collisions (versus Floor and between Entities)
-        (ECS.query world [ent (rb RigidBody) (col Collidable)]
-          (match (CollisionChecker.check-pair col f-col)
-            (Maybe.Just (CollisionResult.Physical actual-col))
-              (do
-                (set! collision-occurred true)
-                (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))
-            _ ()))
-
+        ;; 3. Detect Collisions between Entities (including the static floor)
         (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
           (let [aabb (Collision.get-aabb (Collidable.volume col1))
                 candidates (SpatialGrid.query-unique grid &aabb)]
@@ -108,12 +100,9 @@
                   h-b (ContactSet.b m)
                   ent-a (ECS.Entity.init @h-a)
                   ent-b (ECS.Entity.init @h-b)]
-              (if (Handle.equal? h-b (Collidable.handle f-col))
-                  (ECS.with-components world ent-a [e-a (rb-a RigidBody) (col-a Collidable)]
-                    (Solver.solve! rb-a f-rb m fixed-dt))
-                  (ECS.with-components world ent-a [e-a (rb-a RigidBody) (col-a Collidable)]
-                    (ECS.with-components world ent-b [e-b (rb-b RigidBody) (col-b Collidable)]
-                      (Solver.solve! rb-a rb-b m fixed-dt)))))))
+              (ECS.with-components world ent-a [e-a (rb-a RigidBody) (col-a Collidable)]
+                (ECS.with-components world ent-b [e-b (rb-b RigidBody) (col-b Collidable)]
+                  (Solver.solve! rb-a rb-b m fixed-dt))))))
 
         collision-occurred)))
 )

@@ -22,8 +22,6 @@
     input InputManager
     grid (SpatialGrid Uint32)
     world GameWorld
-    floor-rb RigidBody
-    floor-collidable Collidable
     bg-color (Vector3 Double)
     accumulator Double
     coordinator Coordinator
@@ -34,10 +32,6 @@
           grid-origin (Vector3.init -100.0 -100.0 -100.0)
           grid (SpatialGrid.new-with-origin 20.0 10 10 10 grid-origin)
           world (GameWorld.new)
-          f-rb (RigidBody.static (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 0.8 0.8)
-          f-col (Collidable.init (Handle.init (Uint64.from-long 8888l) (Uint32.from-long 1l))
-                                (Volume.Surface (Plane.init (Vector3.init 0.0 1.0 0.0) 0.0))
-                                (Uint32.from-long 1l) (Uint32.from-long 1l) false)
           coord (Coordinator.new)]
       (do
         (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
@@ -52,6 +46,18 @@
         (InputManager.add-binding! &mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
         (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
         (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
+
+        ;; Create Floor Entity (Giant Box SDF)
+        (let [f-ent (GameWorld.create-entity! &world)
+              f-pos (Vector3.init 0.0 -100.0 0.0)
+              f-rb (RigidBody.static f-pos (Quaternion.identity) 0.8 0.8)
+              f-vol (Volume.Sdf (SDF.init-box (Vector3.init 100.0 100.0 100.0) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+              f-col (Collidable.init @(ECS.Entity.handle &f-ent) f-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+              f-color (Color.init (Vector3.init 0.25 0.25 0.25))]
+          (do
+            (ECS.add-component! &world &f-ent f-rb)
+            (ECS.add-component! &world &f-ent f-col)
+            (ECS.add-component! &world &f-ent f-color)))
 
         ;; Create Player Entity
         (let [p-ent (GameWorld.create-entity! &world)
@@ -87,8 +93,6 @@
           mgr
           grid
           world
-          f-rb
-          f-col
           (Vector3.init 0.1 0.1 0.1)
           0.0
           coord))))
@@ -195,8 +199,6 @@
 
   (defn tick! [e]
     (let [cam (Engine.camera e)
-          f-rb (Engine.floor-rb e)
-          f-col (Engine.floor-collidable e)
           grid (Engine.grid e)
           world (Engine.world e)
           dt (Clock.unscaled-dt (Engine.clock e))]
@@ -209,7 +211,7 @@
 
         (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
           (do
-            (when (PhysicsSystem.step-ecs! world grid f-rb f-col (Engine.coordinator e))
+            (when (PhysicsSystem.step-ecs! world grid (Engine.coordinator e))
                   (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 
@@ -229,6 +231,13 @@
                     _ 1.0)
                 eye-pos (Vector3.add (RigidBody.position p-rb) &(Vector3.init 0.0 (* 0.8 r) 0.0))]
             (do
+              ;; Void Bounds Check: Reset player if they fall off the block
+              (when (< @(Vector3.y (RigidBody.position p-rb)) -30.0)
+                (do
+                  (RigidBody.set-position! p-rb (Vector3.init 5.0 1.0 5.0))
+                  (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                  (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+              
               (Camera.set-pos! cam eye-pos)
               (Camera.set-front! cam (Transform.forward-quat &look-rot))
               (Camera.set-right! cam (Transform.right-quat &look-rot))
