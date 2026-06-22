@@ -7,7 +7,7 @@
     (* @(SpatialGrid.cols grid) (* @(SpatialGrid.rows grid) @(SpatialGrid.layers grid))))
 
   (defn stride [max-ids]
-    20) ;; (1 count + 3 pad + 16 ids) = 20 floats = 80 bytes (16-byte aligned)
+    (+ 4 max-ids))
 
   (defn required-floats [grid max-ids]
     (* (GPUSpatial.cell-count grid) (GPUSpatial.stride max-ids)))

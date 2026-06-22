@@ -34,7 +34,7 @@
 
 (defmodule WGPURenderer
   (def max-spheres 128)
-  (def max-ids-per-cell 16)
+  (def max-ids-per-cell 64)
   (def header-size 128)
   (def sphere-data-size 48)
 
@@ -185,7 +185,8 @@
               return vec2<f32>(d_aabb + 10.0, 0.0);
           }
           
-          let texel_coord = p_local / u.cell_size - vec3<f32>(0.5);
+          let voxel_cell_size = (u.grid_dims.x * u.cell_size) / 64.0;
+          let texel_coord = p_local / voxel_cell_size - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(texel_coord));
           let f = fract(texel_coord);
           
@@ -613,7 +614,7 @@
   (defn bake-voxel-grid! [ctx ren grid world]
     (let [voxel-data (WGPURenderer.voxel-data ren)
           origin (SpatialGrid.origin grid)
-          cell-size @(SpatialGrid.cell-size grid)
+          cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
           ox @(Vector3.x origin)
           oy @(Vector3.y origin)
           oz @(Vector3.z origin)
@@ -672,7 +673,7 @@
   (defn carve-voxel-grid! [ctx ren grid center radius]
     (let [voxel-data (WGPURenderer.voxel-data ren)
           origin (SpatialGrid.origin grid)
-          cell-size @(SpatialGrid.cell-size grid)
+          cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
           ox @(Vector3.x origin)
           oy @(Vector3.y origin)
           oz @(Vector3.z origin)
@@ -830,15 +831,7 @@
             (Array.aset! data 30 (Double.to-float @(Vector3.z origin)))
             (Array.aset! data 31 0.0f)
 
-            (IO.println &(str* "COLS/ROWS/LAYERS: " 
-              (Float.str @(Array.unsafe-nth data 24)) ", "
-              (Float.str @(Array.unsafe-nth data 25)) ", "
-              (Float.str @(Array.unsafe-nth data 26))))
-            (IO.println &(str* "ORIGIN: " 
-              (Float.str @(Array.unsafe-nth data 28)) ", "
-              (Float.str @(Array.unsafe-nth data 29)) ", "
-              (Float.str @(Array.unsafe-nth data 30))))
-            (IO.println &(str* "CELL SIZE: " (Float.str @(Array.unsafe-nth data 3))))
+
 
             ;; 3. Populate Spheres using Database geom-id as index (128+ bytes)
             (when (or grid-dirty csg-dirty)
@@ -912,7 +905,7 @@
             
             (when grid-dirty
               (do
-                (GPUSpatial.flatten-in-place! world grid 16 flat-grid)
+                (GPUSpatial.flatten-in-place! world grid WGPURenderer.max-ids-per-cell flat-grid)
                 (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) flat-grid)))
 
             (when csg-dirty

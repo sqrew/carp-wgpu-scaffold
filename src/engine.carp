@@ -39,7 +39,7 @@
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -100.0 -100.0 -100.0)
-          world-data (World.new grid-origin 5.0 64 64 64)
+          world-data (World.new grid-origin 20.0 16 16 16)
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)]
