@@ -631,7 +631,11 @@
                 (do
                   (SDF.set-position! sdf @(RigidBody.position rb))
                   (SDF.set-rotation! sdf @(RigidBody.rotation rb))
-                  (Array.push-back! &static-sdfs @sdf)
+                  (let [saved-nodes @(SDF.csg-nodes sdf)]
+                    (do
+                      (SDF.set-csg-nodes! sdf [])
+                      (Array.push-back! &static-sdfs @sdf)
+                      (SDF.set-csg-nodes! sdf saved-nodes)))
                   (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
               _ ())))
         (let [num-shapes (Array.length &static-sdfs)]
@@ -669,7 +673,7 @@
             0 0 0 w-dim h-dim d-dim 
             voxel-data)))))
 
-  (defn carve-voxel-grid! [ctx ren grid world-data center radius]
+  (defn carve-voxel-grid-cpu! [grid world-data center radius]
     (let [voxel-data (World.voxel-data world-data)
           origin (SpatialGrid.origin grid)
           cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
@@ -681,7 +685,6 @@
           cy @(Vector3.y center)
           cz @(Vector3.z center)
           
-          ;; Compute AABB of the crater in world space
           min-x (- cx radius)
           max-x (+ cx radius)
           min-y (- cy radius)
@@ -689,7 +692,6 @@
           min-z (- cz radius)
           max-z (+ cz radius)
           
-          ;; Convert world space AABB to grid voxel indices
           idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
           idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))
           idx-min-y (the Int (Double.to-int (Double.floor (/ (- min-y oy) cell-size))))
@@ -697,59 +699,31 @@
           idx-min-z (the Int (Double.to-int (Double.floor (/ (- min-z oz) cell-size))))
           idx-max-z (the Int (Double.to-int (Double.floor (/ (- max-z oz) cell-size))))
           
-          ;; Clamp to grid dimensions [0, 63]
           start-x (Int.clamp 0 63 idx-min-x)
           end-x (Int.clamp 0 63 idx-max-x)
           start-y (Int.clamp 0 63 idx-min-y)
           end-y (Int.clamp 0 63 idx-max-y)
           start-z (Int.clamp 0 63 idx-min-z)
-          end-z (Int.clamp 0 63 idx-max-z)
-          
-          ;; Compute size of the subregion
-          size-x (inc (- end-x start-x))
-          size-y (inc (- end-y start-y))
-          size-z (inc (- end-z start-z))]
+          end-z (Int.clamp 0 63 idx-max-z)]
       (do
-        (IO.println "CARVING VOXEL GRID...")
-        (when (and (> size-x 0) (and (> size-y 0) (> size-z 0)))
-          (let [num-floats (* (* size-x size-y) (* size-z 4))
-                sub-data (Array.replicate num-floats &0.0f)]
-            (do
-              (for [sz start-z (inc end-z)]
-                (for [sy start-y (inc end-y)]
-                  (for [sx start-x (inc end-x)]
-                    (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
-                          py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
-                          pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
-                          
-                          dx (- px cx)
-                          dy (- py cy)
-                          dz (- pz cz)
-                          dist-to-crater-center (Double.sqrt (+ (* dx dx) (+ (* dy dy) (* dz dz))))
-                          crater-dist (- dist-to-crater-center radius)
-                          
-                          idx-full (* (+ sx (+ (* sy 64) (* (* sz 64) 64))) 4)
-                          old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                          new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
-                                     (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))
-                          
-                          local-x (- sx start-x)
-                          local-y (- sy start-y)
-                          local-z (- sz start-z)
-                          idx-sub (* (+ local-x (+ (* local-y size-x) (* (* local-z size-x) size-y))) 4)
-                          mat-id @(Array.unsafe-nth voxel-data (+ idx-full 1))]
-                      (do
-                        (Array.aset! voxel-data idx-full (Double.to-float new-dist))
-                        (Array.aset! &sub-data idx-sub (Double.to-float new-dist))
-                        (Array.aset! &sub-data (+ idx-sub 1) mat-id)
-                        (Array.aset! &sub-data (+ idx-sub 2) 0.0f)
-                        (Array.aset! &sub-data (+ idx-sub 3) 0.0f))))))
-              (WGPURender.update-3d-texture-subregion-floats 
-                ctx 
-                @(WGPURenderer.voxel-texture ren) 
-                start-x start-y start-z 
-                size-x size-y size-z 
-                &sub-data)))))))
+        (for [sz start-z (inc end-z)]
+          (for [sy start-y (inc end-y)]
+            (for [sx start-x (inc end-x)]
+              (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                    py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
+                    pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
+                    
+                    dx (- px cx)
+                    dy (- py cy)
+                    dz (- pz cz)
+                    dist-to-crater-center (Double.sqrt (+ (* dx dx) (+ (* dy dy) (* dz dz))))
+                    crater-dist (- dist-to-crater-center radius)
+                    
+                    idx-full (* (+ sx (+ (* sy 64) (* (* sz 64) 64))) 4)
+                    old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                    new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
+                               (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
+                (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]
@@ -894,12 +868,19 @@
 
             (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
               (do
-                (bake-voxel-grid! ctx ren grid world world-data)
-                (for [i 0 (Array.length craters)]
-                  (let [crater (Array.unsafe-nth craters i)
-                        pos (CraterSpawnData.pos crater)
-                        rad @(CraterSpawnData.radius crater)]
-                    (carve-voxel-grid! ctx ren grid world-data pos rad)))
+                (when (Array.empty? craters)
+                  (bake-voxel-grid! ctx ren grid world world-data))
+                (when (not (Array.empty? craters))
+                  (do
+                    (for [i 0 (Array.length craters)]
+                      (let [crater (Array.unsafe-nth craters i)
+                            pos (CraterSpawnData.pos crater)
+                            rad @(CraterSpawnData.radius crater)]
+                        (carve-voxel-grid-cpu! grid world-data pos rad)))
+                    (WGPURender.update-3d-texture-subregion-floats 
+                      ctx @(WGPURenderer.voxel-texture ren) 
+                      0 0 0 64 64 64 
+                      (World.voxel-data world-data))))
                 (WGPURenderer.set-voxel-dirty! ren false)))
             
             (when grid-dirty
