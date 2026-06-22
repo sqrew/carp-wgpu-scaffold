@@ -580,8 +580,7 @@
           csg-size (* WGPURenderer.max-csg-nodes WGPURenderer.csg-node-size)
           u-data (the (Array Float) (replicate (/ u-size 4) &0.0f))
           s-data (the (Array Float) (replicate (/ s-size 4) &0.0f))
-          csg-data (the (Array Float) (replicate (/ csg-size 4) &0.0f))
-          voxel-data (the (Array Float) (replicate 1048576 &1000.0f))]
+          csg-data (the (Array Float) (replicate (/ csg-size 4) &0.0f))]
       (match (WGPURender.create-3d-texture ctx 64 64 64 "rgba16float")
         (Result.Error e) (Result.Error (str* "3D Texture failed: " e))
         (Result.Success voxel-tex)
@@ -609,10 +608,10 @@
                                       (match (LinePass.create ctx format 10000)
                                         (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
                                         (Result.Success lp)
-                                          (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp voxel-data true)))))))))))))
+                                          (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true)))))))))))))
 
-  (defn bake-voxel-grid! [ctx ren grid world]
-    (let [voxel-data (WGPURenderer.voxel-data ren)
+  (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
+    (let [voxel-data (World.voxel-data world-data)
           origin (SpatialGrid.origin grid)
           cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
           ox @(Vector3.x origin)
@@ -625,7 +624,7 @@
           static-mat-ids []]
       (do
         (IO.println "BAKING VOXEL GRID...")
-        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+        (ECS.query ecs-world [ent (rb RigidBody) (col Collidable)]
           (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
             (match-ref (Collidable.volume col)
               (Volume.Sdf sdf)
@@ -670,8 +669,8 @@
             0 0 0 w-dim h-dim d-dim 
             voxel-data)))))
 
-  (defn carve-voxel-grid! [ctx ren grid center radius]
-    (let [voxel-data (WGPURenderer.voxel-data ren)
+  (defn carve-voxel-grid! [ctx ren grid world-data center radius]
+    (let [voxel-data (World.voxel-data world-data)
           origin (SpatialGrid.origin grid)
           cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
           ox @(Vector3.x origin)
@@ -760,8 +759,9 @@
   (defn submit! [ren cmd]
     (Array.push-back! (WGPURenderer.commands ren) cmd))
 
-  (defn process-commands! [ctx ren time width height cam grid world db csg-dirty grid-dirty voxel-dirty craters]
-    (let [bg-color (Vector3.init 0.1 0.1 0.1)
+  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters]
+    (let [db (World.sdf-db world-data)
+          bg-color (Vector3.init 0.1 0.1 0.1)
           commands (WGPURenderer.commands ren)
           vp (Camera.view-projection cam)
           vp-data (CameraMat4.data &vp)
@@ -894,13 +894,12 @@
 
             (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
               (do
-                (if (Array.empty? craters)
-                  (bake-voxel-grid! ctx ren grid world)
-                  (for [i 0 (Array.length craters)]
-                    (let [crater (Array.unsafe-nth craters i)
-                          pos (CraterSpawnData.pos crater)
-                          rad @(CraterSpawnData.radius crater)]
-                      (carve-voxel-grid! ctx ren grid pos rad))))
+                (bake-voxel-grid! ctx ren grid world world-data)
+                (for [i 0 (Array.length craters)]
+                  (let [crater (Array.unsafe-nth craters i)
+                        pos (CraterSpawnData.pos crater)
+                        rad @(CraterSpawnData.radius crater)]
+                    (carve-voxel-grid! ctx ren grid world-data pos rad)))
                 (WGPURenderer.set-voxel-dirty! ren false)))
             
             (when grid-dirty

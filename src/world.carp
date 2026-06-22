@@ -66,6 +66,7 @@
   grid-width Int
   grid-height Int
   grid-depth Int
+  voxel-data (Array Float)
 ])
 
 (defmodule World
@@ -74,7 +75,8 @@
   (use SpatialGrid)
 
   (defn new [origin cell-size w h d]
-    (World.init (SdfDatabase.new) origin cell-size w h d))
+    (let [voxel-data (the (Array Float) (replicate 1048576 &1000.0f))]
+      (World.init (SdfDatabase.new) origin cell-size w h d voxel-data)))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -83,4 +85,65 @@
       @(World.grid-height w)
       @(World.grid-depth w)
       @(World.grid-origin w)))
+
+  (defn sample-voxel-grid-trilinear [world p]
+    (let [voxel-data (World.voxel-data world)
+          origin (World.grid-origin world)
+          ox @(Vector3.x origin)
+          oy @(Vector3.y origin)
+          oz @(Vector3.z origin)
+          voxel-cell-size (/ (* (Double.from-int @(World.grid-width world)) @(World.cell-size world)) 64.0)
+          
+          lx (- @(Vector3.x p) ox)
+          ly (- @(Vector3.y p) oy)
+          lz (- @(Vector3.z p) oz)
+          
+          grid-size (* 64.0 voxel-cell-size)
+          outside (or (or (< lx 0.0) (> lx grid-size))
+                      (or (or (< ly 0.0) (> ly grid-size))
+                          (or (< lz 0.0) (> lz grid-size))))]
+      (if outside
+          (let [qx (- (Double.abs (- lx (* grid-size 0.5))) (* grid-size 0.5))
+                qy (- (Double.abs (- ly (* grid-size 0.5))) (* grid-size 0.5))
+                qz (- (Double.abs (- lz (* grid-size 0.5))) (* grid-size 0.5))
+                max-q (max qx (max qy qz))
+                outside-val (Vector3.init (max qx 0.0) (max qy 0.0) (max qz 0.0))
+                dist-outside (Vector3.mag &outside-val)
+                dist-inside (min max-q 0.0)]
+            (+ (+ dist-outside dist-inside) 10.0))
+          (let [tx (- (/ lx voxel-cell-size) 0.5)
+                ty (- (/ ly voxel-cell-size) 0.5)
+                tz (- (/ lz voxel-cell-size) 0.5)
+                
+                c0-x (Double.to-int (Double.floor tx))
+                c0-y (Double.to-int (Double.floor ty))
+                c0-z (Double.to-int (Double.floor tz))
+                
+                fx (- tx (Double.from-int c0-x))
+                fy (- ty (Double.from-int c0-y))
+                fz (- tz (Double.from-int c0-z))
+                
+                get-voxel-val (fn [x y z]
+                                (let [cx (Int.clamp 0 63 x)
+                                      cy (Int.clamp 0 63 y)
+                                      cz (Int.clamp 0 63 z)
+                                      idx (* (+ cx (+ (* cy 64) (* (* cz 64) 64))) 4)]
+                                  (Double.from-float @(Array.unsafe-nth voxel-data idx))))]
+            (let [v0 (get-voxel-val c0-x c0-y c0-z)
+                  v1 (get-voxel-val (inc c0-x) c0-y c0-z)
+                  v2 (get-voxel-val c0-x (inc c0-y) c0-z)
+                  v3 (get-voxel-val (inc c0-x) (inc c0-y) c0-z)
+                  v4 (get-voxel-val c0-x c0-y (inc c0-z))
+                  v5 (get-voxel-val (inc c0-x) c0-y (inc c0-z))
+                  v6 (get-voxel-val c0-x (inc c0-y) (inc c0-z))
+                  v7 (get-voxel-val (inc c0-x) (inc c0-y) (inc c0-z))
+                  
+                  v-01 (+ v0 (* fx (- v1 v0)))
+                  v-23 (+ v2 (* fx (- v3 v2)))
+                  v-45 (+ v4 (* fx (- v5 v4)))
+                  v-67 (+ v6 (* fx (- v7 v6)))
+                  
+                  v-y0 (+ v-01 (* fy (- v-23 v-01)))
+                  v-y1 (+ v-45 (* fy (- v-67 v-45)))]
+              (+ v-y0 (* fz (- v-y1 v-y0))))))))
 )

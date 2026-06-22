@@ -24,15 +24,8 @@
                   csg-node (CsgNode.init boxed-shape @(CsgNode.op node))]
               (SDF.add-csg-node! parent-sdf csg-node))))))))
 
-  (defn sample-static-world [world p]
-    (let [min-d 10000.0]
-      (do
-        (ECS.query world [ent (rb RigidBody) (col Collidable)]
-          (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-            (match-ref (Collidable.volume col)
-              (Volume.Sdf sdf) (set! min-d (min min-d (SDF.distance-world sdf p)))
-              _ ())))
-        min-d)))
+  (defn sample-static-world [world-data p]
+    (World.sample-voxel-grid-trilinear world-data p))
 
   (defn sample-static-world-material [world p]
     (let [min-d 10000.0
@@ -50,7 +43,7 @@
               _ ())))
         (Vector2.init min-d mat-id))))
 
-  (defn step-ecs! [world grid coord]
+  (defn step-ecs! [world world-data grid coord]
     (let [collision-occurred false
           manifolds []]
       (do
@@ -98,7 +91,7 @@
                     (match-ref (Collidable.volume col1)
                       (Volume.Ball s)
                         (let [rad @(Sphere.radius s)
-                              d (sample-static-world world pos)]
+                              d (sample-static-world world-data pos)]
                           (when (< d rad)
                             (let [depth (- rad d)
                                   normal (let [eps 0.001
@@ -108,9 +101,9 @@
                                                p-y- (Vector3.sub pos &(Vector3.init 0.0 eps 0.0))
                                                p-z+ (Vector3.add pos &(Vector3.init 0.0 0.0 eps))
                                                p-z- (Vector3.sub pos &(Vector3.init 0.0 0.0 eps))
-                                               dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                               dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                               dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                               dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                               dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                               dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                            (Vector3.normalize &(Vector3.init dx dy dz)))
                                   contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
                               (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))
@@ -136,7 +129,7 @@
                           (do
                             (for [i 0 8]
                               (let [v (Array.unsafe-nth &corners i)
-                                    d (sample-static-world world v)]
+                                    d (sample-static-world world-data v)]
                                 (when (< d 0.0)
                                   (let [depth (neg d)
                                         normal (let [eps 0.001
@@ -146,9 +139,9 @@
                                                      p-y- (Vector3.sub v &(Vector3.init 0.0 eps 0.0))
                                                      p-z+ (Vector3.add v &(Vector3.init 0.0 0.0 eps))
                                                      p-z- (Vector3.sub v &(Vector3.init 0.0 0.0 eps))
-                                                     dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                     dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                     dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                     dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                     dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                     dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                  (Vector3.normalize &(Vector3.init dx dy dz)))]
                                     (Array.push-back! &contacts (Contact.init depth @v normal))))))
                             (for [i 0 8]
@@ -174,7 +167,7 @@
                                   (let [local-offset (Array.unsafe-nth &offsets i)
                                         world-offset (Quaternion.rotate rot local-offset)
                                         v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world &v)]
+                                        d (sample-static-world world-data &v)]
                                     (do
                                       (when (< d 0.0)
                                         (let [depth (neg d)
@@ -185,9 +178,9 @@
                                                            p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
                                                            p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
                                                            p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
-                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                           dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                           dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                           dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                        (Vector3.normalize &(Vector3.init dx dy dz)))]
                                           (Array.push-back! &contacts (Contact.init depth v normal)))))))
                                 (for [i 0 8]
@@ -221,7 +214,7 @@
                                   (let [local-offset (Array.unsafe-nth &offsets i)
                                         world-offset (Quaternion.rotate rot local-offset)
                                         v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world &v)]
+                                        d (sample-static-world world-data &v)]
                                     (do
                                       (when (< d 0.0)
                                         (let [depth (neg d)
@@ -232,9 +225,9 @@
                                                            p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
                                                            p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
                                                            p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
-                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                           dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                           dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                           dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                        (Vector3.normalize &(Vector3.init dx dy dz)))]
                                           (Array.push-back! &contacts (Contact.init depth v normal)))))))
                                 (for [i 0 18]
@@ -251,7 +244,7 @@
                                   (let [local-offset (Array.unsafe-nth &offsets i)
                                         world-offset (Quaternion.rotate rot local-offset)
                                         v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world &v)]
+                                        d (sample-static-world world-data &v)]
                                     (do
                                       (when (< d rad-val)
                                         (let [depth (- rad-val d)
@@ -262,9 +255,9 @@
                                                            p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
                                                            p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
                                                            p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
-                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                           dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                           dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                           dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                        (Vector3.normalize &(Vector3.init dx dy dz)))
                                               contact-pt (Vector3.sub &v &(Vector3.mul &normal rad-val))]
                                           (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
@@ -288,7 +281,7 @@
                                   (let [local-offset (Array.unsafe-nth &offsets i)
                                         world-offset (Quaternion.rotate rot local-offset)
                                         v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world &v)]
+                                        d (sample-static-world world-data &v)]
                                     (do
                                       (when (< d rmin)
                                         (let [depth (- rmin d)
@@ -299,9 +292,9 @@
                                                            p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
                                                            p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
                                                            p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
-                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                           dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                           dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                           dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                        (Vector3.normalize &(Vector3.init dx dy dz)))
                                               contact-pt (Vector3.sub &v &(Vector3.mul &normal rmin))]
                                           (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
@@ -322,7 +315,7 @@
                                   (let [local-offset (Array.unsafe-nth &offsets i)
                                         world-offset (Quaternion.rotate rot local-offset)
                                         v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world &v)]
+                                        d (sample-static-world world-data &v)]
                                     (do
                                       (when (< d 0.0)
                                         (let [depth (neg d)
@@ -333,15 +326,15 @@
                                                            p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
                                                            p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
                                                            p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
-                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                           dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                           dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                           dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                        (Vector3.normalize &(Vector3.init dx dy dz)))]
                                           (Array.push-back! &contacts (Contact.init depth v normal)))))))
                                 (for [i 0 6]
                                   (Vector3.delete @(Array.unsafe-nth &offsets i)))))
                           _ (let [rad 0.4
-                                  d (sample-static-world world pos)]
+                                  d (sample-static-world world-data pos)]
                               (when (< d rad)
                                 (let [depth (- rad d)
                                       normal (let [eps 0.001
@@ -351,9 +344,9 @@
                                                    p-y- (Vector3.sub pos &(Vector3.init 0.0 eps 0.0))
                                                    p-z+ (Vector3.add pos &(Vector3.init 0.0 0.0 eps))
                                                    p-z- (Vector3.sub pos &(Vector3.init 0.0 0.0 eps))
-                                                   dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
-                                                   dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
-                                                   dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                   dx (- (sample-static-world world-data &p-x+) (sample-static-world world-data &p-x-))
+                                                   dy (- (sample-static-world world-data &p-y+) (sample-static-world world-data &p-y-))
+                                                   dz (- (sample-static-world world-data &p-z+) (sample-static-world world-data &p-z-))]
                                                (Vector3.normalize &(Vector3.init dx dy dz)))
                                       contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
                                   (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))

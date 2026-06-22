@@ -38,8 +38,8 @@
 
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
-          grid-origin (Vector3.init -100.0 -100.0 -100.0)
-          world-data (World.new grid-origin 20.0 16 16 16)
+          grid-origin (Vector3.init -60.0 -60.0 -60.0)
+          world-data (World.new grid-origin 12.0 10 10 10)
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)]
@@ -280,9 +280,9 @@
         _ ()))
   )
 
-  (sig sample-world-distance (Fn [(Ref GameWorld) (Ref (Array Uint32)) (Ref (Vector3 Double))] Double))
-  (defn sample-world-distance [world candidates p]
-    (let [min-d (PhysicsSystem.sample-static-world world p)]
+  (sig sample-world-distance (Fn [(Ref GameWorld) (Ref World) (Ref (Array Uint32)) (Ref (Vector3 Double))] Double))
+  (defn sample-world-distance [world world-data candidates p]
+    (let [min-d (PhysicsSystem.sample-static-world world-data p)]
       (do
         (for [i 0 (Array.length candidates)]
           (let [id (Array.unsafe-nth candidates i)
@@ -310,8 +310,8 @@
                   (set! min-d (min min-d d)))))))
         min-d)))
 
-  (sig estimate-normal-world (Fn [(Ref GameWorld) (Ref (Array Uint32)) (Ref (Vector3 Double)) Double] (Vector3 Double)))
-  (defn estimate-normal-world [world candidates p eps]
+  (sig estimate-normal-world (Fn [(Ref GameWorld) (Ref World) (Ref (Array Uint32)) (Ref (Vector3 Double)) Double] (Vector3 Double)))
+  (defn estimate-normal-world [world world-data candidates p eps]
     (let [ex (Vector3.init eps 0.0 0.0)
           ey (Vector3.init 0.0 eps 0.0)
           ez (Vector3.init 0.0 0.0 eps)
@@ -321,13 +321,13 @@
           p-y- (Vector3.sub p &ey)
           p-z+ (Vector3.add p &ez)
           p-z- (Vector3.sub p &ez)
-          dx (- (sample-world-distance world candidates &p-x+) (sample-world-distance world candidates &p-x-))
-          dy (- (sample-world-distance world candidates &p-y+) (sample-world-distance world candidates &p-y-))
-          dz (- (sample-world-distance world candidates &p-z+) (sample-world-distance world candidates &p-z-))]
+          dx (- (sample-world-distance world world-data candidates &p-x+) (sample-world-distance world world-data candidates &p-x-))
+          dy (- (sample-world-distance world world-data candidates &p-y+) (sample-world-distance world world-data candidates &p-y-))
+          dz (- (sample-world-distance world world-data candidates &p-z+) (sample-world-distance world world-data candidates &p-z-))]
       (Vector3.normalize &(Vector3.init dx dy dz))))
 
-  (sig march-world (Fn [(Ref GameWorld) (Ref (SpatialGrid Uint32)) (Ref Ray) (Ref RaymarchConfig)] RaymarchHit))
-  (defn march-world [world grid ray config]
+  (sig march-world (Fn [(Ref GameWorld) (Ref World) (Ref (SpatialGrid Uint32)) (Ref Ray) (Ref RaymarchConfig)] RaymarchHit))
+  (defn march-world [world world-data grid ray config]
     (let [max-d @(RaymarchConfig.max-dist config)
           candidates (SpatialGrid.query-ray-unique grid ray max-d)
           ro (Ray.origin ray)
@@ -343,13 +343,13 @@
         (while (and (< steps max-s) (< t max-d))
           (do
             (set! p (Vector3.add ro &(Vector3.mul rd t)))
-            (let [d (sample-world-distance world &candidates &p)]
+            (let [d (sample-world-distance world world-data &candidates &p)]
               (do
                 (if (< d hit-eps)
                   (do (set! hit true) (break))
                   (set! t (+ t (max d step-eps))))
                 (set! steps (inc steps))))))
-        (let [norm (if hit (estimate-normal-world world &candidates &p hit-eps) (Vector3.init 0.0 0.0 0.0))]
+        (let [norm (if hit (estimate-normal-world world world-data &candidates &p hit-eps) (Vector3.init 0.0 0.0 0.0))]
           (RaymarchHit.init p norm t steps hit)))))
 
   (defn fire-laser! [e]
@@ -360,14 +360,21 @@
           cam-front (Camera.front cam)
           ray (Ray.make @cam-pos @cam-front)
           config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
-          hit (march-world world grid &ray &config)]
+          hit (march-world world (Engine.world-data e) grid &ray &config)]
       (if @(RaymarchHit.hit &hit)
           (let [hit-p (RaymarchHit.p &hit)
-                rad 0.55
+                p-rad (let [r 1.0]
+                        (do
+                          (ECS.query world [p-ent (p-col Collidable) (p-tag PlayerTag)]
+                            (match-ref (Collidable.volume p-col)
+                              (Volume.Ball sphere) (set! r @(Sphere.radius sphere))
+                              _ ()))
+                          r))
+                rad (* p-rad 1.2)
                 crater-data (CraterSpawnData.init @hit-p rad)
                 ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
             (do
-              (IO.println &(format "Laser hit at %s, spawning crater!" &(Vector3.str hit-p)))
+              (IO.println &(str* "Laser hit at " &(Vector3.str hit-p) ", spawning crater of radius " &(Double.str rad)))
               (Coordinator.dispatch! (Engine.coordinator e) ev)))
           (IO.println "Laser missed!"))))
   (defn process-input! [e]
@@ -405,7 +412,7 @@
 
         (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
           (do
-            (when (PhysicsSystem.step-ecs! world grid (Engine.coordinator e))
+            (when (PhysicsSystem.step-ecs! world (Engine.world-data e) grid (Engine.coordinator e))
                   (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 

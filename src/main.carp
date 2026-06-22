@@ -90,7 +90,7 @@
                           (WGPURenderer.clear! &ren)
                           (Engine.submit-render-commands! &eng &ren)
                             (let [line-count (WGPURenderer.process-commands! ctx &ren 
-                                              time width height cam (Engine.grid &eng) (Engine.world &eng) (Engine.db &eng)
+                                              time width height cam (Engine.grid &eng) (Engine.world &eng) (Engine.world-data &eng)
                                               @(Engine.csg-dirty &eng) @(Engine.grid-dirty &eng) @(Engine.voxel-dirty &eng)
                                               (Engine.craters &eng))]
                              (do
