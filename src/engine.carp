@@ -17,6 +17,8 @@
   (use Coordinator)
   (use SdfDatabase)
   (use World)
+  (use Raymarch)
+  (use Ray)
 
   (deftype Engine [
     camera Camera
@@ -51,6 +53,7 @@
         (InputManager.add-binding! &mgr "FireBouncy" (InputSource.Key GLFW.Keycode.F) 1.0)
         (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
         (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
+        (InputManager.add-binding! &mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
 
         ;; Create Floor Entity (Giant Box SDF)
         (let [f-ent (GameWorld.create-entity! &world)
@@ -261,10 +264,99 @@
                 new-r (let [r (* old-r factor)]
                         (if (< r 0.2) 0.2 (if (> r 5.0) 5.0 r)))]
             (Sphere.set-radius! sphere new-r))
-        _ ())))
+        _ ()))
+  )
 
+  (sig sample-world-distance (Fn [(Ref GameWorld) (Ref (Array Uint32)) (Ref (Vector3 Double))] Double))
+  (defn sample-world-distance [world candidates p]
+    (let [min-d 10000.0]
+      (do
+        (for [i 0 (Array.length candidates)]
+          (let [id (Array.unsafe-nth candidates i)
+                ent (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id)) (Uint32.from-long 1l)))]
+            (when (not (ECS.has-component? world &ent PlayerTag))
+              (ECS.with-components world ent [e (rb RigidBody) (col Collidable)]
+                (let [d (match-ref (Collidable.volume col)
+                          (Volume.Ball s) (let [center (RigidBody.position rb)]
+                                            (- (Vector3.dist center p) @(Sphere.radius s)))
+                          (Volume.Box b) (let [center (RigidBody.position rb)
+                                               rot (RigidBody.rotation rb)
+                                               half-extents (Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)
+                                               local-p (Quaternion.rotate &(Quaternion.inverse rot) &(Vector3.sub p center))
+                                               q-x (- (Double.abs @(Vector3.x &local-p)) @(Vector3.x &half-extents))
+                                               q-y (- (Double.abs @(Vector3.y &local-p)) @(Vector3.y &half-extents))
+                                               q-z (- (Double.abs @(Vector3.z &local-p)) @(Vector3.z &half-extents))
+                                               ext-x (max q-x 0.0)
+                                               ext-y (max q-y 0.0)
+                                               ext-z (max q-z 0.0)
+                                               ext-len (Double.sqrt (+ (* ext-x ext-x) (+ (* ext-y ext-y) (* ext-z ext-z))))
+                                               int-val (min (max q-x (max q-y q-z)) 0.0)]
+                                          (+ ext-len int-val))
+                          (Volume.Sdf sdf) (SDF.distance-world sdf p)
+                          _ 10000.0)]
+                  (set! min-d (min min-d d)))))))
+        min-d)))
 
+  (sig estimate-normal-world (Fn [(Ref GameWorld) (Ref (Array Uint32)) (Ref (Vector3 Double)) Double] (Vector3 Double)))
+  (defn estimate-normal-world [world candidates p eps]
+    (let [ex (Vector3.init eps 0.0 0.0)
+          ey (Vector3.init 0.0 eps 0.0)
+          ez (Vector3.init 0.0 0.0 eps)
+          p-x+ (Vector3.add p &ex)
+          p-x- (Vector3.sub p &ex)
+          p-y+ (Vector3.add p &ey)
+          p-y- (Vector3.sub p &ey)
+          p-z+ (Vector3.add p &ez)
+          p-z- (Vector3.sub p &ez)
+          dx (- (sample-world-distance world candidates &p-x+) (sample-world-distance world candidates &p-x-))
+          dy (- (sample-world-distance world candidates &p-y+) (sample-world-distance world candidates &p-y-))
+          dz (- (sample-world-distance world candidates &p-z+) (sample-world-distance world candidates &p-z-))]
+      (Vector3.normalize &(Vector3.init dx dy dz))))
 
+  (sig march-world (Fn [(Ref GameWorld) (Ref (SpatialGrid Uint32)) (Ref Ray) (Ref RaymarchConfig)] RaymarchHit))
+  (defn march-world [world grid ray config]
+    (let [max-d @(RaymarchConfig.max-dist config)
+          candidates (SpatialGrid.query-ray-unique grid ray max-d)
+          ro (Ray.origin ray)
+          rd (Ray.direction ray)
+          t (max @(RaymarchConfig.start-bias config) @(RaymarchConfig.hit-threshold config))
+          p (Vector3.init 0.0 0.0 0.0)
+          hit false
+          steps 0
+          max-s @(RaymarchConfig.max-steps config)
+          hit-eps @(RaymarchConfig.hit-threshold config)
+          step-eps @(RaymarchConfig.min-step config)]
+      (do
+        (while (and (< steps max-s) (< t max-d))
+          (do
+            (set! p (Vector3.add ro &(Vector3.mul rd t)))
+            (let [d (sample-world-distance world &candidates &p)]
+              (do
+                (if (< d hit-eps)
+                  (do (set! hit true) (break))
+                  (set! t (+ t (max d step-eps))))
+                (set! steps (inc steps))))))
+        (let [norm (if hit (estimate-normal-world world &candidates &p hit-eps) (Vector3.init 0.0 0.0 0.0))]
+          (RaymarchHit.init p norm t steps hit)))))
+
+  (defn fire-laser! [e]
+    (let [cam (Engine.camera e)
+          world (Engine.world e)
+          grid (Engine.grid e)
+          cam-pos (Camera.pos cam)
+          cam-front (Camera.front cam)
+          ray (Ray.make @cam-pos @cam-front)
+          config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
+          hit (march-world world grid &ray &config)]
+      (if @(RaymarchHit.hit &hit)
+          (let [hit-p (RaymarchHit.p &hit)
+                rad 0.55
+                crater-data (CraterSpawnData.init @hit-p rad)
+                ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+            (do
+              (IO.println &(format "Laser hit at %s, spawning crater!" &(Vector3.str hit-p)))
+              (Coordinator.dispatch! (Engine.coordinator e) ev)))
+          (IO.println "Laser missed!"))))
   (defn process-input! [e]
     (let [mgr (Engine.input e)
           dt (Clock.unscaled-dt (Engine.clock e))]
@@ -279,6 +371,8 @@
           (spawn-bullet! e false))
         (when (InputManager.action-pressed? mgr "FireBouncy")
           (spawn-bullet! e true))
+        (when (InputManager.action-pressed? mgr "Laser")
+          (fire-laser! e))
         (when (InputManager.action-pressed? mgr "ScaleUp")
           (scale-player! e 1.1))
         (when (InputManager.action-pressed? mgr "ScaleDown")
