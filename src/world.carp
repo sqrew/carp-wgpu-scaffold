@@ -59,6 +59,14 @@
       (SdfInstance.set-shape-type! inst -1)))
 )
 
+(deftype Chunk [
+  coord-x Int
+  coord-y Int
+  coord-z Int
+  voxel-data (Array Float)
+  atlas-slot Int
+])
+
 (deftype World [
   sdf-db SdfDatabase
   grid-origin (Vector3 Double)
@@ -66,7 +74,7 @@
   grid-width Int
   grid-height Int
   grid-depth Int
-  voxel-data (Array Float)
+  chunks (Array Chunk)
 ])
 
 (defmodule World
@@ -74,9 +82,20 @@
   (use SdfDatabase)
   (use SpatialGrid)
 
+  (defn create-initial-chunks []
+    (let [arr (the (Array Chunk) [])]
+      (do
+        (for [z -1 2]
+          (for [y -1 2]
+            (for [x -1 2]
+              (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+                    slot (+ (+ (+ x 1) (* (+ y 1) 3)) (* (+ z 1) 9))
+                    chunk (Chunk.init x y z voxel-data slot)]
+                (Array.push-back! &arr chunk)))))
+        arr)))
+
   (defn new [origin cell-size w h d]
-    (let [voxel-data (the (Array Float) (replicate 1048576 &1000.0f))]
-      (World.init (SdfDatabase.new) origin cell-size w h d voxel-data)))
+    (World.init (SdfDatabase.new) origin cell-size w h d (create-initial-chunks)))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -86,64 +105,105 @@
       @(World.grid-depth w)
       @(World.grid-origin w)))
 
+  (defn voxel-resolution [] 32)
+  (defn voxel-cell-size [] 5.0)
+  (defn chunk-size [] 160.0)
+
+  (defn camera-chunk-qx [cam-pos]
+    (the Int (Double.to-int (Double.floor (/ @(Vector3.x cam-pos) (World.chunk-size))))))
+  (defn camera-chunk-qy [cam-pos]
+    (the Int (Double.to-int (Double.floor (/ @(Vector3.y cam-pos) (World.chunk-size))))))
+  (defn camera-chunk-qz [cam-pos]
+    (the Int (Double.to-int (Double.floor (/ @(Vector3.z cam-pos) (World.chunk-size))))))
+
+  (defn build-chunk-lookup-data [world origin-x origin-y origin-z]
+    (let [arr (the (Array Int) (replicate 516 &-1))
+          chunks (World.chunks world)]
+      (do
+        (Array.aset! &arr 0 origin-x)
+        (Array.aset! &arr 1 origin-y)
+        (Array.aset! &arr 2 origin-z)
+        (Array.aset! &arr 3 0)
+        (for [i 0 (Array.length chunks)]
+          (let [chunk (Array.unsafe-nth chunks i)
+                qx @(Chunk.coord-x chunk)
+                qy @(Chunk.coord-y chunk)
+                qz @(Chunk.coord-z chunk)
+                lx (- qx origin-x)
+                ly (- qy origin-y)
+                lz (- qz origin-z)]
+            (when (and (and (>= lx 0) (< lx 8))
+                       (and (and (>= ly 0) (< ly 8))
+                            (and (>= lz 0) (< lz 8))))
+              (let [idx (+ 4 (+ lx (+ (* ly 8) (* lz 64))))]
+                (Array.aset! &arr idx @(Chunk.atlas-slot chunk))))))
+        arr)))
+
+  (defn find-chunk [world qx qy qz]
+    (let [chunks (World.chunks world)
+          lx (+ qx 1)
+          ly (+ qy 1)
+          lz (+ qz 1)]
+      (if (and (and (>= lx 0) (< lx 3))
+               (and (and (>= ly 0) (< ly 3))
+                    (and (>= lz 0) (< lz 3))))
+          (let [idx (+ lx (+ (* ly 3) (* lz 9)))]
+            (Maybe.Just @(Array.unsafe-nth chunks idx)))
+          (Maybe.Nothing))))
+
+  (defn get-voxel-at-world-grid [world gx gy gz]
+    (let [res (World.voxel-resolution)
+          qx (if (< gx 0) (dec (/ (inc gx) res)) (/ gx res))
+          qy (if (< gy 0) (dec (/ (inc gy) res)) (/ gy res))
+          qz (if (< gz 0) (dec (/ (inc gz) res)) (/ gz res))
+          lx (Int.positive-mod gx res)
+          ly (Int.positive-mod gy res)
+          lz (Int.positive-mod gz res)
+          clx (+ qx 1)
+          cly (+ qy 1)
+          clz (+ qz 1)]
+      (if (and (and (>= clx 0) (< clx 3))
+               (and (and (>= cly 0) (< cly 3))
+                    (and (>= clz 0) (< clz 3))))
+          (let [idx (+ clx (+ (* cly 3) (* clz 9)))
+                chunk (Array.unsafe-nth (World.chunks world) idx)
+                voxel-idx (* (+ lx (+ (* ly res) (* (* lz res) res))) 4)]
+            (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) voxel-idx)))
+          1000.0)))
+
   (defn sample-voxel-grid-trilinear [world p]
-    (let [voxel-data (World.voxel-data world)
-          origin (World.grid-origin world)
-          ox @(Vector3.x origin)
-          oy @(Vector3.y origin)
-          oz @(Vector3.z origin)
-          voxel-cell-size (/ (* (Double.from-int @(World.grid-width world)) @(World.cell-size world)) 64.0)
+    (let [px @(Vector3.x p)
+          py @(Vector3.y p)
+          pz @(Vector3.z p)
+          v-size (World.voxel-cell-size)
           
-          lx (- @(Vector3.x p) ox)
-          ly (- @(Vector3.y p) oy)
-          lz (- @(Vector3.z p) oz)
+          tx (- (/ px v-size) 0.5)
+          ty (- (/ py v-size) 0.5)
+          tz (- (/ pz v-size) 0.5)
           
-          grid-size (* 64.0 voxel-cell-size)
-          outside (or (or (< lx 0.0) (> lx grid-size))
-                      (or (or (< ly 0.0) (> ly grid-size))
-                          (or (< lz 0.0) (> lz grid-size))))]
-      (if outside
-          (let [qx (- (Double.abs (- lx (* grid-size 0.5))) (* grid-size 0.5))
-                qy (- (Double.abs (- ly (* grid-size 0.5))) (* grid-size 0.5))
-                qz (- (Double.abs (- lz (* grid-size 0.5))) (* grid-size 0.5))
-                max-q (max qx (max qy qz))
-                outside-val (Vector3.init (max qx 0.0) (max qy 0.0) (max qz 0.0))
-                dist-outside (Vector3.mag &outside-val)
-                dist-inside (min max-q 0.0)]
-            (+ (+ dist-outside dist-inside) 10.0))
-          (let [tx (- (/ lx voxel-cell-size) 0.5)
-                ty (- (/ ly voxel-cell-size) 0.5)
-                tz (- (/ lz voxel-cell-size) 0.5)
-                
-                c0-x (Double.to-int (Double.floor tx))
-                c0-y (Double.to-int (Double.floor ty))
-                c0-z (Double.to-int (Double.floor tz))
-                
-                fx (- tx (Double.from-int c0-x))
-                fy (- ty (Double.from-int c0-y))
-                fz (- tz (Double.from-int c0-z))
-                
-                get-voxel-val (fn [x y z]
-                                (let [cx (Int.clamp 0 63 x)
-                                      cy (Int.clamp 0 63 y)
-                                      cz (Int.clamp 0 63 z)
-                                      idx (* (+ cx (+ (* cy 64) (* (* cz 64) 64))) 4)]
-                                  (Double.from-float @(Array.unsafe-nth voxel-data idx))))]
-            (let [v0 (get-voxel-val c0-x c0-y c0-z)
-                  v1 (get-voxel-val (inc c0-x) c0-y c0-z)
-                  v2 (get-voxel-val c0-x (inc c0-y) c0-z)
-                  v3 (get-voxel-val (inc c0-x) (inc c0-y) c0-z)
-                  v4 (get-voxel-val c0-x c0-y (inc c0-z))
-                  v5 (get-voxel-val (inc c0-x) c0-y (inc c0-z))
-                  v6 (get-voxel-val c0-x (inc c0-y) (inc c0-z))
-                  v7 (get-voxel-val (inc c0-x) (inc c0-y) (inc c0-z))
-                  
-                  v-01 (+ v0 (* fx (- v1 v0)))
-                  v-23 (+ v2 (* fx (- v3 v2)))
-                  v-45 (+ v4 (* fx (- v5 v4)))
-                  v-67 (+ v6 (* fx (- v7 v6)))
-                  
-                  v-y0 (+ v-01 (* fy (- v-23 v-01)))
-                  v-y1 (+ v-45 (* fy (- v-67 v-45)))]
-              (+ v-y0 (* fz (- v-y1 v-y0))))))))
+          c0-x (Double.to-int (Double.floor tx))
+          c0-y (Double.to-int (Double.floor ty))
+          c0-z (Double.to-int (Double.floor tz))
+          
+          fx (- tx (Double.from-int c0-x))
+          fy (- ty (Double.from-int c0-y))
+          fz (- tz (Double.from-int c0-z))
+          
+          v0 (World.get-voxel-at-world-grid world c0-x c0-y c0-z)
+          v1 (World.get-voxel-at-world-grid world (inc c0-x) c0-y c0-z)
+          v2 (World.get-voxel-at-world-grid world c0-x (inc c0-y) c0-z)
+          v3 (World.get-voxel-at-world-grid world (inc c0-x) (inc c0-y) c0-z)
+          v4 (World.get-voxel-at-world-grid world c0-x c0-y (inc c0-z))
+          v5 (World.get-voxel-at-world-grid world (inc c0-x) c0-y (inc c0-z))
+          v6 (World.get-voxel-at-world-grid world c0-x (inc c0-y) (inc c0-z))
+          v7 (World.get-voxel-at-world-grid world (inc c0-x) (inc c0-y) (inc c0-z))
+          
+          v-01 (+ v0 (* fx (- v1 v0)))
+          v-23 (+ v2 (* fx (- v3 v2)))
+          v-45 (+ v4 (* fx (- v5 v4)))
+          v-67 (+ v6 (* fx (- v7 v6)))
+          
+          v-y0 (+ v-01 (* fy (- v-23 v-01)))
+          v-y1 (+ v-45 (* fy (- v-67 v-45)))]
+      (+ v-y0 (* fz (- v-y1 v-y0)))))
 )

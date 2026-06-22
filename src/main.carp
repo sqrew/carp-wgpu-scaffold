@@ -77,28 +77,38 @@
               (Result.Success ren)
                 (do
                   (println* "Engine started.")
-                  (while (= (GLFW.window-should-close win) 0)
-                    (do
-                      (GLFW.poll-events)
-
-                      (Engine.process-input! &eng)
-                      (Engine.tick! &eng)
-
-                      (let [cam (Engine.camera &eng)
-                            time (Clock.total (Engine.clock &eng))]
+                  (let [frame-count 0]
+                    (while (= (GLFW.window-should-close win) 0)
+                      (let [t-start (System.nanotime)
+                            _poll (GLFW.poll-events)
+                            _input (Engine.process-input! &eng)
+                            t-after-input (System.nanotime)
+                            _tick (Engine.tick! &eng)
+                            t-after-tick (System.nanotime)
+                            cam (Engine.camera &eng)
+                            time (Clock.total (Engine.clock &eng))
+                            _clear (WGPURenderer.clear! &ren)
+                            _submit (Engine.submit-render-commands! &eng &ren)
+                            line-count (WGPURenderer.process-commands! ctx &ren 
+                                               time width height cam (Engine.grid &eng) (Engine.world &eng) (Engine.world-data &eng)
+                                               @(Engine.csg-dirty &eng) @(Engine.grid-dirty &eng) @(Engine.voxel-dirty &eng)
+                                               (Engine.craters &eng))
+                            t-after-proc (System.nanotime)
+                            _draw (WGPURenderer.draw surf ctx &ren line-count)
+                            t-after-draw (System.nanotime)
+                            _csg (Engine.set-csg-dirty! &eng false)
+                            _grid (Engine.set-grid-dirty! &eng false)
+                            _voxel (Engine.set-voxel-dirty! &eng false)
+                            _craters (Engine.set-craters! &eng [])
+                            t-end (System.nanotime)
+                            dt-tick (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-tick t-after-input))) 1000000.0)
+                            dt-proc (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-proc t-after-tick))) 1000000.0)
+                            dt-draw (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-draw t-after-proc))) 1000000.0)
+                            dt-frame (/ (Double.from-long (Uint64.to-long (Uint64.- t-end t-start))) 1000000.0)]
                         (do
-                          (WGPURenderer.clear! &ren)
-                          (Engine.submit-render-commands! &eng &ren)
-                            (let [line-count (WGPURenderer.process-commands! ctx &ren 
-                                              time width height cam (Engine.grid &eng) (Engine.world &eng) (Engine.world-data &eng)
-                                              @(Engine.csg-dirty &eng) @(Engine.grid-dirty &eng) @(Engine.voxel-dirty &eng)
-                                              (Engine.craters &eng))]
-                             (do
-                               (WGPURenderer.draw surf ctx &ren line-count)
-                               (Engine.set-csg-dirty! &eng false)
-                               (Engine.set-grid-dirty! &eng false)
-                               (Engine.set-voxel-dirty! &eng false)
-                               (Engine.set-craters! &eng [])))))))
+                          (set! frame-count (inc frame-count))
+                          (when (= (Int.mod frame-count 60) 0)
+                            (println* "Frame " frame-count " | Tick: " dt-tick "ms | Proc: " dt-proc "ms | Draw: " dt-draw "ms | Total: " dt-frame "ms"))))))
 
                   (println* "Shutting down...")
                   (Init.destroy-app app)

@@ -14,6 +14,18 @@
   (Fn [(Ptr WGPUContext) (Ptr WGPURenderPipelineWrapper) WGPUBuffer WGPUBuffer (Ptr WGPUUniformBufferWrapper)] WGPUBindGroup)
   "wgpu_create_render_two_storage_uniform_bind_group")
 
+(register wgpu-write-buffer-ints
+  (Fn [(Ptr WGPUContext) WGPUBuffer (Ptr Int) Uint64] ())
+  "wgpu_write_buffer")
+
+(deftemplate ints-array->ptr (Fn [(Ref (Array Int))] (Ptr Int))
+  "int* $NAME(Array__int* arr)"
+  "$DECL { return (int*)arr->data; }")
+
+(deftemplate uniform-buffer-get-buffer (Fn [(Ptr WGPUUniformBufferWrapper)] WGPUBuffer)
+  "WGPUBuffer $NAME(WGPUUniformBufferWrapper* ub)"
+  "$DECL { return ub->buffer; }")
+
 (deftype WGPURenderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
   u-buffer (Ptr WGPUUniformBufferWrapper)
@@ -30,6 +42,12 @@
   voxel-sampler WGPUSampler
   voxel-data (Array Float)
   voxel-dirty Bool
+  carve-pipeline WGPUComputePipeline
+  pack-pipeline WGPUComputePipeline
+  voxel-gpu-buffer WGPUBuffer
+  voxel-half-buffer WGPUBuffer
+  carve-params-buffer WGPUBuffer
+  chunk-lookup-buffer (Ptr WGPUUniformBufferWrapper)
 ])
 
 (defmodule WGPURenderer
@@ -41,6 +59,10 @@
   (sig float-from-int (Fn [Int] Float))
   (defn float-from-int [x]
     (Double.to-float (Double.from-int x)))
+
+  (sig write-ints (Fn [(Ptr WGPUContext) WGPUBuffer (Ref (Array Int))] ()))
+  (defn write-ints [ctx buf arr]
+    (wgpu-write-buffer-ints ctx buf (ints-array->ptr arr) (Uint64.from-long (Long.from-int (* (Array.length arr) 4)))))
 
   (sig write-csg-node-raw! (Fn [(Ref (Array Float)) Int Int Int Int Int (Ref (Vector3 Double)) Double (Ref Quaternion) Double Double Double Double] ()))
   (defn write-csg-node-raw! [csg-data idx shape-type op-type left-child right-child pos scale rot p0 p1 p2 p3]
@@ -170,44 +192,66 @@
           rot: vec4<f32>,
           params: vec4<f32>,
       }
+      struct ChunkLookup {
+          origin: vec4<i32>,
+          slots: array<vec4<i32>, 128>,
+      }
       @group(0) @binding(0) var<storage, read> grid: array<Cell>;
       @group(0) @binding(1) var<uniform> u: Uniforms;
       @group(0) @binding(2) var<storage, read> csg_nodes: array<CsgNode>;
       @group(0) @binding(3) var voxel_texture: texture_3d<f32>;
       @group(0) @binding(4) var voxel_sampler: sampler;
+      @group(0) @binding(5) var<uniform> chunk_lookup: ChunkLookup;
 
-      fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
-          let p_local = p - u.grid_origin.xyz;
-          let grid_size = u.grid_dims.xyz * u.cell_size;
-          if (any(p_local < vec3<f32>(0.0)) || any(p_local > grid_size)) {
-              let q = abs(p_local - grid_size * 0.5) - grid_size * 0.5;
-              let d_aabb = length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
-              return vec2<f32>(d_aabb + 10.0, 0.0);
+      fn positive_mod(n: i32, m: i32) -> i32 {
+          let r = n % m;
+          if (r < 0) {
+              return r + m;
+          }
+          return r;
+      }
+
+       fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> 5u;
+          let qy = gy >> 5u;
+          let qz = gz >> 5u;
+          
+          let lx = gx & 31;
+          let ly = gy & 31;
+          let lz = gz & 31;
+          
+          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+          if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(8))) {
+              return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           }
           
-          let voxel_cell_size = (u.grid_dims.x * u.cell_size) / 64.0;
-          let texel_coord = p_local / voxel_cell_size - vec3<f32>(0.5);
-          let c0 = vec3<i32>(floor(texel_coord));
-          let f = fract(texel_coord);
+          let idx = local_q.x + local_q.y * 8 + local_q.z * 64;
+          let slot = chunk_lookup.slots[idx >> 2u][idx & 3];
+          if (slot < 0) {
+              return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+          }
           
-          let limit = vec3<i32>(63);
-          let c0_clamped = clamp(c0, vec3<i32>(0), limit);
-          let c1_clamped = clamp(c0 + vec3<i32>(1, 0, 0), vec3<i32>(0), limit);
-          let c2_clamped = clamp(c0 + vec3<i32>(0, 1, 0), vec3<i32>(0), limit);
-          let c3_clamped = clamp(c0 + vec3<i32>(1, 1, 0), vec3<i32>(0), limit);
-          let c4_clamped = clamp(c0 + vec3<i32>(0, 0, 1), vec3<i32>(0), limit);
-          let c5_clamped = clamp(c0 + vec3<i32>(1, 0, 1), vec3<i32>(0), limit);
-          let c6_clamped = clamp(c0 + vec3<i32>(0, 1, 1), vec3<i32>(0), limit);
-          let c7_clamped = clamp(c0 + vec3<i32>(1, 1, 1), vec3<i32>(0), limit);
+          let slot_x = slot & 7;
+          let slot_y = (slot >> 3u) & 7;
+          let slot_z = slot >> 6u;
           
-          let v0 = textureLoad(voxel_texture, c0_clamped, 0);
-          let v1 = textureLoad(voxel_texture, c1_clamped, 0);
-          let v2 = textureLoad(voxel_texture, c2_clamped, 0);
-          let v3 = textureLoad(voxel_texture, c3_clamped, 0);
-          let v4 = textureLoad(voxel_texture, c4_clamped, 0);
-          let v5 = textureLoad(voxel_texture, c5_clamped, 0);
-          let v6 = textureLoad(voxel_texture, c6_clamped, 0);
-          let v7 = textureLoad(voxel_texture, c7_clamped, 0);
+          let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
+          return textureLoad(voxel_texture, atlas_coord, 0);
+      }
+
+      fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
+          let tx = p / 5.0 - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(tx));
+          let f = fract(tx);
+          
+          let v0 = getVoxelAt(c0.x,     c0.y,     c0.z);
+          let v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z);
+          let v2 = getVoxelAt(c0.x,     c0.y + 1, c0.z);
+          let v3 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z);
+          let v4 = getVoxelAt(c0.x,     c0.y,     c0.z + 1);
+          let v5 = getVoxelAt(c0.x + 1, c0.y,     c0.z + 1);
+          let v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1);
+          let v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1);
           
           let v_01 = mix(v0, v1, f.x);
           let v_23 = mix(v2, v3, f.x);
@@ -390,8 +434,8 @@
       }
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
-          let voxel_sample = sampleVoxelGrid(p);
-          var d = vec2<f32>(voxel_sample.x, -1.0);
+          let voxel_val = sampleVoxelGrid(p);
+          var d = vec2<f32>(voxel_val.x, -1.0);
           let p_local = p - u.grid_origin.xyz;
           let gx = i32(floor(p_local.x / u.cell_size));
           let gy = i32(floor(p_local.y / u.cell_size));
@@ -573,6 +617,63 @@
   (def max-csg-nodes 1024)
   (def csg-node-size 64)
 
+  (def carve-shader
+    "@group(0) @binding(0) var<storage, read_write> voxel_gpu_buffer: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read>       params: array<f32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let idx = global_id.x;
+    if (idx >= 32768u) { return; }
+
+    let ox = params[0];
+    let oy = params[1];
+    let oz = params[2];
+    let cell_size = params[3];
+    let cx = params[4];
+    let cy = params[5];
+    let cz = params[6];
+    let radius = params[7];
+
+    let sx = f32(idx % 32u);
+    let sy = f32((idx / 32u) % 32u);
+    let sz = f32(idx / (32u * 32u));
+
+    let px = ox + (sx + 0.5) * cell_size;
+    let py = oy + (sy + 0.5) * cell_size;
+    let pz = oz + (sz + 0.5) * cell_size;
+
+    let dx = px - cx;
+    let dy = py - cy;
+    let dz = pz - cz;
+    let dist_to_crater_center = sqrt(dx*dx + dy*dy + dz*dz);
+    let crater_dist = dist_to_crater_center - radius;
+    let neg_crater_dist = -crater_dist;
+
+    var val = voxel_gpu_buffer[idx];
+    let old_dist = val.x;
+    let new_dist = max(old_dist, neg_crater_dist);
+    val.x = new_dist;
+    voxel_gpu_buffer[idx] = val;
+}")
+
+  (def pack-shader
+    "@group(0) @binding(0) var<storage, read>       voxel_gpu_buffer: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read_write> voxel_half_buffer: array<vec2<u32>>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let idx = global_id.x;
+    if (idx >= 32768u) { return; }
+
+    let val = voxel_gpu_buffer[idx];
+    
+    let p1 = pack2x16float(val.xy);
+    let p2 = pack2x16float(val.zw);
+
+    voxel_half_buffer[idx] = vec2<u32>(p1, p2);
+}")
+
   (defn create [ctx format width height grid]
     (let [u-size (+ WGPURenderer.header-size (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
           shader (shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
@@ -581,7 +682,7 @@
           u-data (the (Array Float) (replicate (/ u-size 4) &0.0f))
           s-data (the (Array Float) (replicate (/ s-size 4) &0.0f))
           csg-data (the (Array Float) (replicate (/ csg-size 4) &0.0f))]
-      (match (WGPURender.create-3d-texture ctx 64 64 64 "rgba16float")
+      (match (WGPURender.create-3d-texture ctx 256 256 256 "rgba16float")
         (Result.Error e) (Result.Error (str* "3D Texture failed: " e))
         (Result.Success voxel-tex)
           (match (WGPURender.create-sampler ctx)
@@ -596,34 +697,164 @@
                       (match (WGPU.create-buffer ctx csg-size)
                         (Result.Error e) (do (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "CSG buffer failed: " e)))
                         (Result.Success csg-b)
-                          (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
-                            (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
-                            (Result.Success pipe)
-                              (match (WGPURender.create-voxel-render-bind-group ctx pipe sb csg-b ub voxel-tex voxel-samp)
-                                (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
-                                (Result.Success bg)
-                                  (match (WGPURender.create-depth-texture ctx width height)
-                                    (Result.Error e) (do (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
-                                    (Result.Success dt)
-                                      (match (LinePass.create ctx format 10000)
-                                        (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
-                                        (Result.Success lp)
-                                          (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true)))))))))))))
+                          (match (WGPURender.create-uniform-buffer ctx 2064)
+                            (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Chunk lookup buffer failed: " e)))
+                            (Result.Success chunk-lookup-b)
+                              (let [raw-lookup-buf (uniform-buffer-get-buffer chunk-lookup-b)]
+                                (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
+                                  (Result.Error e) (do (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
+                                  (Result.Success pipe)
+                                    (match (WGPURender.create-voxel-render-bind-group-chunked ctx pipe sb csg-b ub voxel-tex voxel-samp raw-lookup-buf)
+                                      (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
+                                      (Result.Success bg)
+                                        (match (WGPURender.create-depth-texture ctx width height)
+                                          (Result.Error e) (do (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
+                                          (Result.Success dt)
+                                            (match (LinePass.create ctx format 10000)
+                                              (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
+                                              (Result.Success lp)
+                                                (match (WGPU.create-buffer ctx 524288)
+                                                  (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel GPU Buffer failed: " e)))
+                                                  (Result.Success v-gpu-b)
+                                                    (match (WGPU.create-buffer ctx 262144)
+                                                      (Result.Error e) (do (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
+                                                      (Result.Success v-half-b)
+                                                        (match (WGPU.create-buffer ctx 8)
+                                                          (Result.Error e) (do (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
+                                                          (Result.Success c-params-b)
+                                                            (match (WGPU.create-pipeline ctx carve-shader "main")
+                                                              (Result.Error e) (do (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve pipeline failed: " e)))
+                                                              (Result.Success c-pipe)
+                                                                (match (WGPU.create-pipeline ctx pack-shader "main")
+                                                                  (Result.Error e) (do (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
+                                                                  (Result.Success p-pipe)
+                                                                     (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true c-pipe p-pipe v-gpu-b v-half-b c-params-b chunk-lookup-b))))))))))))))))))))
+
+  (defn pack-and-copy-chunk! [ctx ren slot]
+    (let [v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+          v-half-b @(WGPURenderer.voxel-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          bufs [v-gpu-b v-half-b]
+          slot-x (Int.mod slot 8)
+          slot-y (Int.mod (/ slot 8) 8)
+          slot-z (/ slot 64)
+          ox (* slot-x 32)
+          oy (* slot-y 32)
+          oz (* slot-z 32)]
+      (match (WGPU.create-bind-group ctx pipe &bufs)
+        (Result.Error e) (IO.println &(format "Pack Bind Group error: %s" &e))
+        (Result.Success bg)
+          (do
+            (WGPU.dispatch ctx pipe bg 512)
+            (WGPU.free-bind-group bg)
+            (WGPURender.copy-buffer-to-3d-texture-offset 
+              ctx 
+              v-half-b 
+              @(WGPURenderer.voxel-texture ren) 
+              ox oy oz 32 32 32)))))
+
+  (defn chunk-overlaps-sphere? [chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          c-min-x (* (Double.from-int qx) 160.0)
+          c-min-y (* (Double.from-int qy) 160.0)
+          c-min-z (* (Double.from-int qz) 160.0)
+          c-max-x (+ c-min-x 160.0)
+          c-max-y (+ c-min-y 160.0)
+          c-max-z (+ c-min-z 160.0)
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          px (Double.clamp c-min-x c-max-x cx)
+          py (Double.clamp c-min-y c-max-y cy)
+          pz (Double.clamp c-min-z c-max-z cz)
+          dx (- px cx)
+          dy (- py cy)
+          dz (- pz cz)
+          dist-sq (+ (* dx dx) (+ (* dy dy) (* dz dz)))]
+      (< dist-sq (* radius radius))))
+
+  (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 160.0)
+          oy (* (Double.from-int qy) 160.0)
+          oz (* (Double.from-int qz) 160.0)
+          cell-size 5.0
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
+                       (Double.to-float cell-size)
+                       (Double.to-float cx) (Double.to-float cy) (Double.to-float cz)
+                       (Double.to-float radius)]
+          v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+          c-params-b @(WGPURenderer.carve-params-buffer ren)
+          pipe @(WGPURenderer.carve-pipeline ren)]
+      (do
+        (WGPU.write-floats ctx v-gpu-b (Chunk.voxel-data chunk))
+        (WGPU.write-floats ctx c-params-b &params-data)
+        (let [bufs [v-gpu-b c-params-b]]
+          (match (WGPU.create-bind-group ctx pipe &bufs)
+            (Result.Error e) (IO.println &(format "Carve Bind Group error: %s" &e))
+            (Result.Success bg)
+              (do
+                (WGPU.dispatch ctx pipe bg 512)
+                (WGPU.free-bind-group bg))))
+        (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
+        (let [updated-floats (WGPU.read-floats ctx v-gpu-b 131072)]
+          (Chunk.set-voxel-data! chunk updated-floats))
+        )))
+
+  (sig bake-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Array SDF)) (Ref (Array Float))] ()))
+  (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
+    (let [voxel-data (Chunk.voxel-data chunk)
+          qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 160.0)
+          oy (* (Double.from-int qy) 160.0)
+          oz (* (Double.from-int qz) 160.0)
+          cell-size 5.0
+          w-dim 32
+          h-dim 32
+          d-dim 32
+          num-shapes (Array.length static-sdfs)]
+      (do
+        (for [z 0 d-dim]
+          (for [y 0 h-dim]
+            (for [x 0 w-dim]
+              (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
+                    py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
+                    pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
+                    p (Vector3.init px py pz)
+                    min-d 10000.0
+                    mat-id 0.0f]
+                (do
+                  (for [i 0 num-shapes]
+                    (let [sdf (Array.unsafe-nth static-sdfs i)
+                          d (SDF.distance-world sdf &p)]
+                      (when (< d min-d)
+                        (do
+                          (set! min-d d)
+                          (set! mat-id @(Array.unsafe-nth static-mat-ids i))))))
+                  (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
+                    (do
+                      (Array.aset! voxel-data idx (Double.to-float min-d))
+                      (Array.aset! voxel-data (+ idx 1) mat-id)
+                      (Array.aset! voxel-data (+ idx 2) 0.0f)
+                      (Array.aset! voxel-data (+ idx 3) 0.0f))))))))
+        (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) voxel-data)
+        (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
+        )))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
-    (let [voxel-data (World.voxel-data world-data)
-          origin (SpatialGrid.origin grid)
-          cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
-          ox @(Vector3.x origin)
-          oy @(Vector3.y origin)
-          oz @(Vector3.z origin)
-          w-dim 64
-          h-dim 64
-          d-dim 64
-          static-sdfs []
+    (let [static-sdfs []
           static-mat-ids []]
       (do
-        (IO.println "BAKING VOXEL GRID...")
+        (IO.println "BAKING VOXEL GRID (CHUNKED)...")
         (ECS.query ecs-world [ent (rb RigidBody) (col Collidable)]
           (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
             (match-ref (Collidable.volume col)
@@ -638,53 +869,27 @@
                       (SDF.set-csg-nodes! sdf saved-nodes)))
                   (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
               _ ())))
-        (let [num-shapes (Array.length &static-sdfs)]
+        (let [num-shapes (Array.length &static-sdfs)
+              chunks (World.chunks world-data)]
           (do
             (IO.println &(format "NUM STATIC SHAPES: %d" num-shapes))
-            (for [z 0 d-dim]
-              (for [y 0 h-dim]
-                (for [x 0 w-dim]
-                  (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
-                        py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
-                        pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
-                        p (Vector3.init px py pz)
-                        min-d 10000.0
-                        mat-id 0.0f]
-                    (do
-                      (for [i 0 num-shapes]
-                        (let [sdf (Array.unsafe-nth &static-sdfs i)
-                              d (SDF.distance-world sdf &p)]
-                          (when (< d min-d)
-                            (do
-                              (set! min-d d)
-                              (set! mat-id @(Array.unsafe-nth &static-mat-ids i))))))
-                      (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
-                        (do
-                          (Array.aset! voxel-data idx (Double.to-float min-d))
-                          (Array.aset! voxel-data (+ idx 1) mat-id)
-                          (Array.aset! voxel-data (+ idx 2) 0.0f)
-                          (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))
-        (do
-          (IO.println &(format "VOXEL[0] = %f" (Double.from-float @(Array.unsafe-nth voxel-data 0))))
-          (IO.println &(format "VOXEL[1] = %f" (Double.from-float @(Array.unsafe-nth voxel-data 1))))
-          (IO.println &(format "VOXEL[CAMERA] = %f" (Double.from-float @(Array.unsafe-nth voxel-data 349268))))
-          (WGPURender.update-3d-texture-subregion-floats 
-            ctx @(WGPURenderer.voxel-texture ren) 
-            0 0 0 w-dim h-dim d-dim 
-            voxel-data)))))
+            (for [i 0 (Array.length chunks)]
+              (let [chunk (Array.unsafe-nth chunks i)]
+                (bake-chunk! ctx ren chunk &static-sdfs &static-mat-ids)))))
+        )))
 
-  (defn carve-voxel-grid-cpu! [grid world-data center radius]
-    (let [voxel-data (World.voxel-data world-data)
-          origin (SpatialGrid.origin grid)
-          cell-size (/ (* (Double.from-int @(SpatialGrid.cols grid)) @(SpatialGrid.cell-size grid)) 64.0)
-          ox @(Vector3.x origin)
-          oy @(Vector3.y origin)
-          oz @(Vector3.z origin)
-          
+  (defn carve-voxel-grid-cpu! [chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 160.0)
+          oy (* (Double.from-int qy) 160.0)
+          oz (* (Double.from-int qz) 160.0)
+          cell-size 5.0
+          voxel-data (Chunk.voxel-data chunk)
           cx @(Vector3.x center)
           cy @(Vector3.y center)
           cz @(Vector3.z center)
-          
           min-x (- cx radius)
           max-x (+ cx radius)
           min-y (- cy radius)
@@ -699,12 +904,12 @@
           idx-min-z (the Int (Double.to-int (Double.floor (/ (- min-z oz) cell-size))))
           idx-max-z (the Int (Double.to-int (Double.floor (/ (- max-z oz) cell-size))))
           
-          start-x (Int.clamp 0 63 idx-min-x)
-          end-x (Int.clamp 0 63 idx-max-x)
-          start-y (Int.clamp 0 63 idx-min-y)
-          end-y (Int.clamp 0 63 idx-max-y)
-          start-z (Int.clamp 0 63 idx-min-z)
-          end-z (Int.clamp 0 63 idx-max-z)]
+          start-x (Int.clamp 0 31 idx-min-x)
+          end-x (Int.clamp 0 31 idx-max-x)
+          start-y (Int.clamp 0 31 idx-min-y)
+          end-y (Int.clamp 0 31 idx-max-y)
+          start-z (Int.clamp 0 31 idx-min-z)
+          end-z (Int.clamp 0 31 idx-max-z)]
       (do
         (for [sz start-z (inc end-z)]
           (for [sy start-y (inc end-y)]
@@ -719,11 +924,13 @@
                     dist-to-crater-center (Double.sqrt (+ (* dx dx) (+ (* dy dy) (* dz dz))))
                     crater-dist (- dist-to-crater-center radius)
                     
-                    idx-full (* (+ sx (+ (* sy 64) (* (* sz 64) 64))) 4)
+                    idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
                     old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
                     new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
                                (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
                 (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))
+
+
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]
@@ -866,21 +1073,31 @@
 
             (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
 
+            (let [cam-qx (World.camera-chunk-qx cam-pos)
+                  cam-qy (World.camera-chunk-qy cam-pos)
+                  cam-qz (World.camera-chunk-qz cam-pos)
+                  origin-x (- cam-qx 4)
+                  origin-y (- cam-qy 4)
+                  origin-z (- cam-qz 4)
+                  lookup-data (World.build-chunk-lookup-data world-data origin-x origin-y origin-z)]
+              (WGPURenderer.write-ints ctx (uniform-buffer-get-buffer @(WGPURenderer.chunk-lookup-buffer ren)) &lookup-data))
+
             (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
               (do
-                (when (Array.empty? craters)
-                  (bake-voxel-grid! ctx ren grid world world-data))
-                (when (not (Array.empty? craters))
+                (if (Array.empty? craters)
+                  (bake-voxel-grid! ctx ren grid world world-data)
                   (do
                     (for [i 0 (Array.length craters)]
                       (let [crater (Array.unsafe-nth craters i)
                             pos (CraterSpawnData.pos crater)
-                            rad @(CraterSpawnData.radius crater)]
-                        (carve-voxel-grid-cpu! grid world-data pos rad)))
-                    (WGPURender.update-3d-texture-subregion-floats 
-                      ctx @(WGPURenderer.voxel-texture ren) 
-                      0 0 0 64 64 64 
-                      (World.voxel-data world-data))))
+                            rad @(CraterSpawnData.radius crater)
+                            chunks (World.chunks world-data)]
+                        (for [j 0 (Array.length chunks)]
+                          (let [chunk (Array.unsafe-nth chunks j)]
+                            (when (chunk-overlaps-sphere? chunk pos rad)
+                              (do
+                                (carve-voxel-grid-cpu! chunk pos rad)
+                                (carve-voxel-grid-gpu! ctx ren chunk pos rad)))))))))
                 (WGPURenderer.set-voxel-dirty! ren false)))
             
             (when grid-dirty
