@@ -26,6 +26,22 @@
             (let [boxed-shape (Box.init @child-sdf)
                   csg-node (CsgNode.init boxed-shape @(CsgNode.op node))]
               (SDF.add-csg-node! parent-sdf csg-node))))))))
+
+  (defn sample-static-world [world p]
+    (let [min-d 10000.0]
+      (do
+        (let [floor-ent (ECS.Entity.init (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l)))]
+          (ECS.with-components world floor-ent [e (col Collidable)]
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf sdf) (set! min-d (min min-d (SDF.distance-world sdf p)))
+              _ ())))
+        (let [root-ent (ECS.Entity.init (Handle.init (Uint64.from-long 1l) (Uint32.from-long 1l)))]
+          (ECS.with-components world root-ent [e (col Collidable)]
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf sdf) (set! min-d (min min-d (SDF.distance-world sdf p)))
+              _ ())))
+        min-d)))
+
   (defn step-ecs! [world grid coord]
     (let [collision-occurred false
           manifolds []]
@@ -47,6 +63,11 @@
             (do
               (match-ref vol
                 (Volume.Ball s) (Sphere.set-center! s @pos)
+                (Volume.Box b)
+                  (let [half-extents (Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)]
+                    (do
+                      (AABB.set-min! b (Vector3.sub pos &half-extents))
+                      (AABB.set-max! b (Vector3.add pos &half-extents))))
                 (Volume.Sdf sdf)
                   (do
                     (SDF.set-position! sdf @pos)
@@ -63,72 +84,328 @@
             (let [aabb (Collision.get-aabb (Collidable.volume col1))
                   candidates (SpatialGrid.query-unique grid &aabb)]
               (do
-                ;; Check collision against floor (entity ID 0) directly
-                (let [floor-ent (ECS.Entity.init (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l)))]
-                  (ECS.with-components world floor-ent [e-floor (rb-floor RigidBody) (col-floor Collidable)]
-                    (match (CollisionChecker.check-pair col1 col-floor)
-                      (Maybe.Just (CollisionResult.Physical actual-col))
-                        (let [is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
-                                                   (not (ECS.has-component? world &ent1 BouncyTag)))]
-                          (if is-dig-bullet-1
-                              (let [bullet-ent &ent1
-                                    other-col col-floor]
-                                (match-ref (Collidable.volume other-col)
-                                  (Volume.Sdf sdf)
-                                    (let [c-set (Collision.contact-set &actual-col)
-                                          contacts (ContactSet.contacts c-set)]
-                                      (when (> (Array.length contacts) 0)
-                                        (let [bp @(RigidBody.position rb1)
-                                              crater-data (CraterSpawnData.init bp 0.45)
-                                              event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
-                                          (do
-                                            (Coordinator.dispatch! coord event)
-                                            (ECS.with-components world @bullet-ent [e (lt Lifetime)]
-                                              (Lifetime.set-time! lt 0.0))))))
-                                  _ (do
-                                      (set! collision-occurred true)
-                                      (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
+                (let [contacts []
+                      pos (RigidBody.position rb1)
+                      rot (RigidBody.rotation rb1)]
+                  (do
+                    (match-ref (Collidable.volume col1)
+                      (Volume.Ball s)
+                        (let [rad @(Sphere.radius s)
+                              d (sample-static-world world pos)]
+                          (when (< d rad)
+                            (let [depth (- rad d)
+                                  normal (let [eps 0.001
+                                               p-x+ (Vector3.add pos &(Vector3.init eps 0.0 0.0))
+                                               p-x- (Vector3.sub pos &(Vector3.init eps 0.0 0.0))
+                                               p-y+ (Vector3.add pos &(Vector3.init 0.0 eps 0.0))
+                                               p-y- (Vector3.sub pos &(Vector3.init 0.0 eps 0.0))
+                                               p-z+ (Vector3.add pos &(Vector3.init 0.0 0.0 eps))
+                                               p-z- (Vector3.sub pos &(Vector3.init 0.0 0.0 eps))
+                                               dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                               dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                               dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                           (Vector3.normalize &(Vector3.init dx dy dz)))
+                                  contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
+                              (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))
+                      (Volume.Box b)
+                        (let [amin (AABB.min b)
+                              amax (AABB.max b)
+                              min-x @(Vector3.x amin)
+                              min-y @(Vector3.y amin)
+                              min-z @(Vector3.z amin)
+                              max-x @(Vector3.x amax)
+                              max-y @(Vector3.y amax)
+                              max-z @(Vector3.z amax)
+                              corners [
+                                (Vector3.init min-x min-y min-z)
+                                (Vector3.init min-x min-y max-z)
+                                (Vector3.init min-x max-y min-z)
+                                (Vector3.init min-x max-y max-z)
+                                (Vector3.init max-x min-y min-z)
+                                (Vector3.init max-x min-y max-z)
+                                (Vector3.init max-x max-y min-z)
+                                (Vector3.init max-x max-y max-z)
+                              ]]
+                          (do
+                            (for [i 0 8]
+                              (let [v (Array.unsafe-nth &corners i)
+                                    d (sample-static-world world v)]
+                                (when (< d 0.0)
+                                  (let [depth (neg d)
+                                        normal (let [eps 0.001
+                                                     p-x+ (Vector3.add v &(Vector3.init eps 0.0 0.0))
+                                                     p-x- (Vector3.sub v &(Vector3.init eps 0.0 0.0))
+                                                     p-y+ (Vector3.add v &(Vector3.init 0.0 eps 0.0))
+                                                     p-y- (Vector3.sub v &(Vector3.init 0.0 eps 0.0))
+                                                     p-z+ (Vector3.add v &(Vector3.init 0.0 0.0 eps))
+                                                     p-z- (Vector3.sub v &(Vector3.init 0.0 0.0 eps))
+                                                     dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                     dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                     dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                 (Vector3.normalize &(Vector3.init dx dy dz)))]
+                                    (Array.push-back! &contacts (Contact.init depth @v normal))))))
+                            (for [i 0 8]
+                              (Vector3.delete @(Array.unsafe-nth &corners i)))))
+                      (Volume.Sdf sdf)
+                        (match-ref (SDF.base sdf)
+                          (BaseShape.Box half-extents)
+                            (let [ex @(Vector3.x half-extents)
+                                  ey @(Vector3.y half-extents)
+                                  ez @(Vector3.z half-extents)
+                                  offsets [
+                                    (Vector3.init ex ey ez)
+                                    (Vector3.init ex ey (neg ez))
+                                    (Vector3.init ex (neg ey) ez)
+                                    (Vector3.init ex (neg ey) (neg ez))
+                                    (Vector3.init (neg ex) ey ez)
+                                    (Vector3.init (neg ex) ey (neg ez))
+                                    (Vector3.init (neg ex) (neg ey) ez)
+                                    (Vector3.init (neg ex) (neg ey) (neg ez))
+                                  ]]
                               (do
-                                (set! collision-occurred true)
-                                (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
-                      _ ())))
+                                (for [i 0 8]
+                                  (let [local-offset (Array.unsafe-nth &offsets i)
+                                        world-offset (Quaternion.rotate rot local-offset)
+                                        v (Vector3.add pos &world-offset)
+                                        d (sample-static-world world &v)]
+                                    (do
+                                      (when (< d 0.0)
+                                        (let [depth (neg d)
+                                              normal (let [eps 0.001
+                                                           p-x+ (Vector3.add &v &(Vector3.init eps 0.0 0.0))
+                                                           p-x- (Vector3.sub &v &(Vector3.init eps 0.0 0.0))
+                                                           p-y+ (Vector3.add &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
+                                                           p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
+                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                       (Vector3.normalize &(Vector3.init dx dy dz)))]
+                                          (Array.push-back! &contacts (Contact.init depth v normal)))))))
+                                (for [i 0 8]
+                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                          (BaseShape.Cylinder rad hh)
+                            (let [rad-val @rad
+                                  hh-val @hh
+                                  offsets [
+                                    (Vector3.init 0.0 hh-val 0.0)
+                                    (Vector3.init 0.0 (neg hh-val) 0.0)
+                                    (Vector3.init rad-val hh-val 0.0)
+                                    (Vector3.init (neg rad-val) hh-val 0.0)
+                                    (Vector3.init 0.0 hh-val rad-val)
+                                    (Vector3.init 0.0 hh-val (neg rad-val))
+                                    (Vector3.init (* rad-val 0.7071) hh-val (* rad-val 0.7071))
+                                    (Vector3.init (* rad-val -0.7071) hh-val (* rad-val 0.7071))
+                                    (Vector3.init (* rad-val 0.7071) hh-val (* rad-val -0.7071))
+                                    (Vector3.init (* rad-val -0.7071) hh-val (* rad-val -0.7071))
+                                    
+                                    (Vector3.init rad-val (neg hh-val) 0.0)
+                                    (Vector3.init (neg rad-val) (neg hh-val) 0.0)
+                                    (Vector3.init 0.0 (neg hh-val) rad-val)
+                                    (Vector3.init 0.0 (neg hh-val) (neg rad-val))
+                                    (Vector3.init (* rad-val 0.7071) (neg hh-val) (* rad-val 0.7071))
+                                    (Vector3.init (* rad-val -0.7071) (neg hh-val) (* rad-val 0.7071))
+                                    (Vector3.init (* rad-val 0.7071) (neg hh-val) (* rad-val -0.7071))
+                                    (Vector3.init (* rad-val -0.7071) (neg hh-val) (* rad-val -0.7071))
+                                  ]]
+                              (do
+                                (for [i 0 18]
+                                  (let [local-offset (Array.unsafe-nth &offsets i)
+                                        world-offset (Quaternion.rotate rot local-offset)
+                                        v (Vector3.add pos &world-offset)
+                                        d (sample-static-world world &v)]
+                                    (do
+                                      (when (< d 0.0)
+                                        (let [depth (neg d)
+                                              normal (let [eps 0.001
+                                                           p-x+ (Vector3.add &v &(Vector3.init eps 0.0 0.0))
+                                                           p-x- (Vector3.sub &v &(Vector3.init eps 0.0 0.0))
+                                                           p-y+ (Vector3.add &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
+                                                           p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
+                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                       (Vector3.normalize &(Vector3.init dx dy dz)))]
+                                          (Array.push-back! &contacts (Contact.init depth v normal)))))))
+                                (for [i 0 18]
+                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                          (BaseShape.Capsule rad hh)
+                            (let [rad-val @rad
+                                  hh-val @hh
+                                  offsets [
+                                    (Vector3.init 0.0 hh-val 0.0)
+                                    (Vector3.init 0.0 (neg hh-val) 0.0)
+                                  ]]
+                              (do
+                                (for [i 0 2]
+                                  (let [local-offset (Array.unsafe-nth &offsets i)
+                                        world-offset (Quaternion.rotate rot local-offset)
+                                        v (Vector3.add pos &world-offset)
+                                        d (sample-static-world world &v)]
+                                    (do
+                                      (when (< d rad-val)
+                                        (let [depth (- rad-val d)
+                                              normal (let [eps 0.001
+                                                           p-x+ (Vector3.add &v &(Vector3.init eps 0.0 0.0))
+                                                           p-x- (Vector3.sub &v &(Vector3.init eps 0.0 0.0))
+                                                           p-y+ (Vector3.add &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
+                                                           p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
+                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                       (Vector3.normalize &(Vector3.init dx dy dz)))
+                                              contact-pt (Vector3.sub &v &(Vector3.mul &normal rad-val))]
+                                          (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
+                                (for [i 0 2]
+                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                          (BaseShape.Torus rad-maj rad-min)
+                            (let [rmaj @rad-maj
+                                  rmin @rad-min
+                                  offsets [
+                                    (Vector3.init rmaj 0.0 0.0)
+                                    (Vector3.init (neg rmaj) 0.0 0.0)
+                                    (Vector3.init 0.0 0.0 rmaj)
+                                    (Vector3.init 0.0 0.0 (neg rmaj))
+                                    (Vector3.init (* rmaj 0.7071) 0.0 (* rmaj 0.7071))
+                                    (Vector3.init (* rmaj -0.7071) 0.0 (* rmaj 0.7071))
+                                    (Vector3.init (* rmaj 0.7071) 0.0 (* rmaj -0.7071))
+                                    (Vector3.init (* rmaj -0.7071) 0.0 (* rmaj -0.7071))
+                                  ]]
+                              (do
+                                (for [i 0 8]
+                                  (let [local-offset (Array.unsafe-nth &offsets i)
+                                        world-offset (Quaternion.rotate rot local-offset)
+                                        v (Vector3.add pos &world-offset)
+                                        d (sample-static-world world &v)]
+                                    (do
+                                      (when (< d rmin)
+                                        (let [depth (- rmin d)
+                                              normal (let [eps 0.001
+                                                           p-x+ (Vector3.add &v &(Vector3.init eps 0.0 0.0))
+                                                           p-x- (Vector3.sub &v &(Vector3.init eps 0.0 0.0))
+                                                           p-y+ (Vector3.add &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
+                                                           p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
+                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                       (Vector3.normalize &(Vector3.init dx dy dz)))
+                                              contact-pt (Vector3.sub &v &(Vector3.mul &normal rmin))]
+                                          (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
+                                (for [i 0 8]
+                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                          (BaseShape.Octahedron s)
+                            (let [size @s
+                                  offsets [
+                                    (Vector3.init size 0.0 0.0)
+                                    (Vector3.init (neg size) 0.0 0.0)
+                                    (Vector3.init 0.0 size 0.0)
+                                    (Vector3.init 0.0 (neg size) 0.0)
+                                    (Vector3.init 0.0 0.0 size)
+                                    (Vector3.init 0.0 0.0 (neg size))
+                                  ]]
+                              (do
+                                (for [i 0 6]
+                                  (let [local-offset (Array.unsafe-nth &offsets i)
+                                        world-offset (Quaternion.rotate rot local-offset)
+                                        v (Vector3.add pos &world-offset)
+                                        d (sample-static-world world &v)]
+                                    (do
+                                      (when (< d 0.0)
+                                        (let [depth (neg d)
+                                              normal (let [eps 0.001
+                                                           p-x+ (Vector3.add &v &(Vector3.init eps 0.0 0.0))
+                                                           p-x- (Vector3.sub &v &(Vector3.init eps 0.0 0.0))
+                                                           p-y+ (Vector3.add &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-y- (Vector3.sub &v &(Vector3.init 0.0 eps 0.0))
+                                                           p-z+ (Vector3.add &v &(Vector3.init 0.0 0.0 eps))
+                                                           p-z- (Vector3.sub &v &(Vector3.init 0.0 0.0 eps))
+                                                           dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                           dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                           dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                                       (Vector3.normalize &(Vector3.init dx dy dz)))]
+                                          (Array.push-back! &contacts (Contact.init depth v normal)))))))
+                                (for [i 0 6]
+                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                          _ (let [rad 0.4
+                                  d (sample-static-world world pos)]
+                              (when (< d rad)
+                                (let [depth (- rad d)
+                                      normal (let [eps 0.001
+                                                   p-x+ (Vector3.add pos &(Vector3.init eps 0.0 0.0))
+                                                   p-x- (Vector3.sub pos &(Vector3.init eps 0.0 0.0))
+                                                   p-y+ (Vector3.add pos &(Vector3.init 0.0 eps 0.0))
+                                                   p-y- (Vector3.sub pos &(Vector3.init 0.0 eps 0.0))
+                                                   p-z+ (Vector3.add pos &(Vector3.init 0.0 0.0 eps))
+                                                   p-z- (Vector3.sub pos &(Vector3.init 0.0 0.0 eps))
+                                                   dx (- (sample-static-world world &p-x+) (sample-static-world world &p-x-))
+                                                   dy (- (sample-static-world world &p-y+) (sample-static-world world &p-y-))
+                                                   dz (- (sample-static-world world &p-z+) (sample-static-world world &p-z-))]
+                                               (Vector3.normalize &(Vector3.init dx dy dz)))
+                                      contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
+                                  (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))
+                      _ ())
+                    (when (not (Array.empty? &contacts))
+                      (let [m (ContactSet.init @(Collidable.handle col1) (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l)) @&contacts)
+                            is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
+                                                 (not (ECS.has-component? world &ent1 BouncyTag)))]
+                        (if is-dig-bullet-1
+                            (let [bullet-ent &ent1]
+                              (do
+                                (let [bp @(RigidBody.position rb1)
+                                      crater-data (CraterSpawnData.init bp 0.45)
+                                      event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+                                  (Coordinator.dispatch! coord event))
+                                (ECS.with-components world @bullet-ent [e (lt Lifetime)]
+                                  (Lifetime.set-time! lt 0.0))))
+                            (do
+                              (set! collision-occurred true)
+                              (Array.push-back! &manifolds m)))))))
 
                 (for [c 0 (Array.length &candidates)]
                   (let [id2 (Array.unsafe-nth &candidates c)
                         ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
-                    (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
-                               (Handle.less-than? (Collidable.handle col1) (ECS.Entity.handle &ent2)))
-                      (ECS.with-components world @&ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
-                        (match (CollisionChecker.check-pair col1 col2)
-                          (Maybe.Just (CollisionResult.Physical actual-col))
-                            (let [is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
-                                                       (not (ECS.has-component? world &ent1 BouncyTag)))
-                                  is-dig-bullet-2 (and (ECS.has-component? world &ent2 Lifetime)
-                                                       (not (ECS.has-component? world &ent2 BouncyTag)))]
-                              (if (or is-dig-bullet-1 is-dig-bullet-2)
-                                  (let [bullet-ent (if is-dig-bullet-1 &ent1 &ent2)
-                                        other-ent (if is-dig-bullet-1 &ent2 &ent1)
-                                        other-col (if is-dig-bullet-1 col2 col1)]
-                                    (match-ref (Collidable.volume other-col)
-                                      (Volume.Sdf sdf)
-                                        (let [c-set (Collision.contact-set &actual-col)
-                                              contacts (ContactSet.contacts c-set)]
-                                          (when (> (Array.length contacts) 0)
-                                            (let [bp @(if is-dig-bullet-1 (RigidBody.position rb1) (RigidBody.position rb2))
-                                                  crater-data (CraterSpawnData.init bp 0.45)
-                                                  event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
-                                              (do
-                                                (Coordinator.dispatch! coord event)
-                                                (ECS.with-components world @bullet-ent [e (lt Lifetime)]
-                                                  (Lifetime.set-time! lt 0.0))))))
-                                      _ (do
-                                          (set! collision-occurred true)
-                                          (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
-                                  (do
-                                    (set! collision-occurred true)
-                                    (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
-                          _ ())))))))))
-
+                    (do
+                      (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
+                                 (Handle.less-than? (Collidable.handle col1) (ECS.Entity.handle &ent2)))
+                        (ECS.with-components world @&ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
+                          (let [res (CollisionChecker.check-pair col1 col2)]
+                          (match res
+                            (Maybe.Just (CollisionResult.Physical actual-col))
+                              (do
+                                (let [is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
+                                                           (not (ECS.has-component? world &ent1 BouncyTag)))
+                                      is-dig-bullet-2 (and (ECS.has-component? world &ent2 Lifetime)
+                                                           (not (ECS.has-component? world &ent2 BouncyTag)))]
+                                  (if (or is-dig-bullet-1 is-dig-bullet-2)
+                                      (let [bullet-ent (if is-dig-bullet-1 &ent1 &ent2)
+                                            other-ent (if is-dig-bullet-1 &ent2 &ent1)
+                                            other-col (if is-dig-bullet-1 col2 col1)]
+                                        (match-ref (Collidable.volume other-col)
+                                          (Volume.Sdf sdf)
+                                            (let [c-set (Collision.contact-set &actual-col)
+                                                  contacts-arr (ContactSet.contacts c-set)]
+                                              (when (> (Array.length contacts-arr) 0)
+                                                (let [bp @(if is-dig-bullet-1 (RigidBody.position rb1) (RigidBody.position rb2))
+                                                      crater-data (CraterSpawnData.init bp 0.45)
+                                                      event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+                                                  (do
+                                                    (Coordinator.dispatch! coord event)
+                                                    (ECS.with-components world @bullet-ent [e (lt Lifetime)]
+                                                      (Lifetime.set-time! lt 0.0))))))
+                                          _ (do
+                                              (set! collision-occurred true)
+                                              (Array.push-back! &manifolds @(Collision.contact-set &actual-col)))))
+                                      (do
+                                        (set! collision-occurred true)
+                                        (Array.push-back! &manifolds @(Collision.contact-set &actual-col))))))
+                            _ ())))))))))))
         ;; 4. Solve Constraints Iteratively over Cached Manifolds
         (for [iter-idx 0 iterations]
           (for [m-idx 0 (Array.length &manifolds)]

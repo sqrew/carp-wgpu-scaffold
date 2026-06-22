@@ -56,4 +56,10 @@
   (implements zero BouncyTag.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag)
+(deftype GeometryRef [id Int])
+(defmodule GeometryRef
+  (defn zero [] (GeometryRef.init -1))
+  (implements zero GeometryRef.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef)

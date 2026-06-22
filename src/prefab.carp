@@ -15,8 +15,9 @@
   (use Color)
   (use Lifetime)
   (use BouncyTag)
+  (use GeometryRef)
 
-  (defn spawn-bullet! [world pos vel ang-vel scale bouncy]
+  (defn spawn-bullet! [world db pos vel ang-vel scale bouncy]
     (let [bullet-ent (GameWorld.create-entity! world)
           rb (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
           shape-type (Int.random-between 0 6)
@@ -45,7 +46,18 @@
                                            (Vector3.init 1.0 0.5 0.0)
                                            (if (= shape-type 4)
                                                (Vector3.init 0.0 1.0 0.0)
-                                               (Vector3.init 0.5 0.5 1.0)))))))]
+                                               (Vector3.init 0.5 0.5 1.0)))))))
+          c-val (Color.v &color)
+          p-x 0.4 p-y 0.4 p-z 0.4 p-w 0.0
+          _ (if (= shape-type 0) (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0))
+            (if (= shape-type 1) (do (set! p-x 0.4) (set! p-y 0.4) (set! p-z 0.4))
+            (if (= shape-type 2) (do (set! p-x 0.4) (set! p-y 0.4) (set! p-z 0.0))
+            (if (= shape-type 3) (do (set! p-x 0.4) (set! p-y 0.4) (set! p-z 0.0))
+            (if (= shape-type 4) (do (set! p-x 0.4) (set! p-y 0.1) (set! p-z 0.0))
+                                 (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0)))))))
+          params (Vector4.init p-x p-y p-z p-w)
+          inst (SdfInstance.init (+ shape-type 1) params @pos (Quaternion.identity) scale -1 @c-val)
+          geom-id (SdfDatabase.register-instance! db &inst)]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)
         (Body.set-angular-velocity! (RigidBody.body &rb) @ang-vel)
@@ -53,6 +65,7 @@
         (ECS.add-component! world &bullet-ent col)
         (ECS.add-component! world &bullet-ent color)
         (ECS.add-component! world &bullet-ent (Lifetime.init 5.0))
+        (ECS.add-component! world &bullet-ent (GeometryRef.init geom-id))
         (when bouncy
           (ECS.add-component! world &bullet-ent (BouncyTag.init))))))
 )

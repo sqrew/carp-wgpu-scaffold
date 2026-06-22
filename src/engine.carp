@@ -15,6 +15,7 @@
   (use ECS)
   (use WGPURenderer)
   (use Coordinator)
+  (use SdfDatabase)
 
   (deftype Engine [
     camera Camera
@@ -25,6 +26,7 @@
     bg-color (Vector3 Double)
     accumulator Double
     coordinator Coordinator
+    db SdfDatabase
   ])
 
   (defn new [win aspect backend]
@@ -32,7 +34,8 @@
           grid-origin (Vector3.init -100.0 -100.0 -100.0)
           grid (SpatialGrid.new-with-origin 5.0 40 40 40 grid-origin)
           world (GameWorld.new)
-          coord (Coordinator.new)]
+          coord (Coordinator.new)
+          db (SdfDatabase.new)]
       (do
         (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
         (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
@@ -51,22 +54,29 @@
         ;; Create Floor Entity (Giant Box SDF)
         (let [f-ent (GameWorld.create-entity! &world)
               f-pos (Vector3.init 0.0 -100.0 0.0)
-              f-rb (RigidBody.static f-pos (Quaternion.identity) 0.8 0.8)
+              f-rb (RigidBody.static @&f-pos (Quaternion.identity) 0.8 0.8)
               f-vol (Volume.Sdf (SDF.init-box (Vector3.init 100.0 100.0 100.0) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               f-col (Collidable.init @(ECS.Entity.handle &f-ent) f-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-              f-color (Color.init (Vector3.init 0.25 0.25 0.25))]
+              f-color (Color.init (Vector3.init 0.25 0.25 0.25))
+              params (Vector4.init 100.0 100.0 100.0 0.0)
+              inst (SdfInstance.init 2 params f-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.25 0.25 0.25))
+              geom-id (SdfDatabase.register-instance! &db &inst)]
           (do
             (ECS.add-component! &world &f-ent f-rb)
             (ECS.add-component! &world &f-ent f-col)
-            (ECS.add-component! &world &f-ent f-color)))
+            (ECS.add-component! &world &f-ent f-color)
+            (ECS.add-component! &world &f-ent (GeometryRef.init geom-id))))
 
         ;; Create CSG Root Shape (Static Box) and Child Shape (Cylinder)
         (let [root-ent (GameWorld.create-entity! &world)
               root-pos (Vector3.init 5.0 2.0 0.0)
-              root-rb (RigidBody.static root-pos (Quaternion.identity) 0.5 0.5)
+              root-rb (RigidBody.static @&root-pos (Quaternion.identity) 0.5 0.5)
               root-vol (Volume.Sdf (SDF.init-box (Vector3.init 1.5 1.5 1.5) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
+              params (Vector4.init 1.5 1.5 1.5 0.0)
+              inst (SdfInstance.init 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2))
+              geom-id (SdfDatabase.register-instance! &db &inst)
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -76,6 +86,7 @@
             (ECS.add-component! &world &root-ent root-rb)
             (ECS.add-component! &world &root-ent root-col)
             (ECS.add-component! &world &root-ent root-color)
+            (ECS.add-component! &world &root-ent (GeometryRef.init geom-id))
             (ECS.add-component! &world &child-ent child-col)
             (ECS.add-component! &world &child-ent parent-comp)
             (ECS.add-component! &world &child-ent csg-comp)
@@ -104,34 +115,40 @@
           (for [x 0 4]
             (let [ent (GameWorld.create-entity! &world)
                   x-pos (+ 5.0 (* (- (Double.from-int x) 1.5) 1.05))
-                  y-pos (+ 0.55 (* (Double.from-int y) 1.05))
+                  y-pos (+ 0.55 (* (Double.from-int y) 2.0))
                   z-pos -2.0
                   pos (Vector3.init x-pos y-pos z-pos)
-                  rb (RigidBody.new pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
-                  vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+                  rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
+                  vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
                   col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
                   color-idx (Int.random-between 0 4)
-                  color (Color.init (if (= color-idx 0)
-                                       (Vector3.init 0.0 1.0 1.0)
-                                       (if (= color-idx 1)
-                                           (Vector3.init 1.0 0.0 1.0)
-                                           (if (= color-idx 2)
-                                               (Vector3.init 1.0 0.5 0.0)
-                                               (Vector3.init 1.0 1.0 0.0)))))]
+                  c-val (if (= color-idx 0)
+                            (Vector3.init 0.0 1.0 1.0)
+                            (if (= color-idx 1)
+                                (Vector3.init 1.0 0.0 1.0)
+                                (if (= color-idx 2)
+                                    (Vector3.init 1.0 0.5 0.0)
+                                    (Vector3.init 1.0 1.0 0.0))))
+                  color (Color.init @&c-val)
+                  params (Vector4.init 0.5 0.5 0.5 0.0)
+                  inst (SdfInstance.init 2 params pos (Quaternion.identity) 1.0 -1 c-val)
+                  geom-id (SdfDatabase.register-instance! &db &inst)]
               (do
                 (ECS.add-component! &world &ent rb)
                 (ECS.add-component! &world &ent col)
-                (ECS.add-component! &world &ent color)))))
+                (ECS.add-component! &world &ent color)
+                (ECS.add-component! &world &ent (GeometryRef.init geom-id))))))
 
-        (Engine.init 
-          (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
-          (Clock.new)
-          mgr
-          grid
-          world
-          (Vector3.init 0.1 0.1 0.1)
-          0.0
-          coord))))
+          (Engine.init 
+            (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
+            (Clock.new)
+            mgr
+            grid
+            world
+            (Vector3.init 0.1 0.1 0.1)
+            0.0
+            coord
+            db))))
 
   (defn spawn-crater! [e pos rad]
     (let [world (Engine.world e)]
@@ -187,7 +204,7 @@
                       scale @(BulletSpawnData.scale data)
                       bouncy @(BulletSpawnData.bouncy data)]
                   (do
-                    (Prefab.spawn-bullet! (Engine.world e) pos vel ang-vel scale bouncy)
+                    (Prefab.spawn-bullet! (Engine.world e) (Engine.db e) pos vel ang-vel scale bouncy)
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)
                 (let [pos (CraterSpawnData.pos data)
@@ -197,6 +214,12 @@
                     (Result.Success ())))
               _ (Result.Success ()))
           _ (Result.Success ())))))
+
+  (defn destroy-sdf-entity! [world db ent]
+    (do
+      (ECS.with-components world @ent [e (g-ref GeometryRef)]
+        (SdfDatabase.release-instance! db @(GeometryRef.id g-ref)))
+      (GameWorld.destroy-entity! world ent)))
 
   (defn spawn-bullet! [e bouncy]
     (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
@@ -288,7 +311,7 @@
                   (when (<= new-time 0.0)
                     (Array.push-back! &expired-ents ent)))))
             (for [i 0 (Array.length &expired-ents)]
-              (GameWorld.destroy-entity! world (Array.unsafe-nth &expired-ents i)))))
+              (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &expired-ents i)))))
 
         ;; Cleanup old bullets and craters to keep entity IDs recycled and low (<128)
         (let [p-pos (Vector3.init 0.0 0.0 0.0)
@@ -310,11 +333,18 @@
                             (Array.push-back! &to-destroy ent))))))
                   
                   (for [i 0 (Array.length &to-destroy)]
-                    (GameWorld.destroy-entity! world (Array.unsafe-nth &to-destroy i)))))))))))
+                    (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &to-destroy i)))))))))))
 
   (defn submit-render-commands! [e ren]
     (let [world (Engine.world e)]
       (do
+        (ECS.query world [ent (rb RigidBody) (g-ref GeometryRef)]
+          (let [id @(GeometryRef.id g-ref)]
+            (when (>= id 0)
+              (let [inst (Array.unsafe-nth (SdfDatabase.instances (Engine.db e)) id)]
+                (do
+                  (SdfInstance.set-pos! inst @(RigidBody.position rb))
+                  (SdfInstance.set-rot! inst @(RigidBody.rotation rb)))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
           (let [pos (RigidBody.position rb)

@@ -8,6 +8,7 @@
 (use LinePass)
 (use GPUSpatial)
 (use ECS)
+(use GeometryRef)
 
 (register wgpu-create-render-two-storage-uniform-bind-group
   (Fn [(Ptr WGPUContext) (Ptr WGPURenderPipelineWrapper) WGPUBuffer WGPUBuffer (Ptr WGPUUniformBufferWrapper)] WGPUBindGroup)
@@ -136,7 +137,7 @@
 
   (defn shader-wgsl [limit max-ids]
     (str*
-      "struct SphereData {
+      "struct SdfInstance {
           pos: vec4<f32>,
           rot: vec4<f32>,
           color: vec4<f32>,
@@ -157,7 +158,7 @@
           bg_color: vec4<f32>,
           grid_dims: vec4<f32>,
           grid_origin: vec4<f32>,
-          spheres: array<SphereData, " (Int.str limit) ">
+          instances: array<SdfInstance, " (Int.str limit) ">
       }
       struct CsgNode {
           info: vec4<f32>,
@@ -335,7 +336,7 @@
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
           var d = vec2<f32>(10000.0, -1.0);
-          let floor_data = u.spheres[0];
+          let floor_data = u.instances[0];
           if (floor_data.pos.w != 0.0) {
               let local_p = rotateVector(p - floor_data.pos.xyz, q_inv(floor_data.rot));
               let csg_root_idx = i32(round(floor_data.color.w));
@@ -372,7 +373,7 @@
               for(var i = 0; i < count; i = i + 1) {
                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                   if (s_idx >= 0 && s_idx < " (Int.str limit) ") {
-                    let s_data = u.spheres[s_idx];
+                    let s_data = u.instances[s_idx];
                     let raw_w = s_data.pos.w;
                     if (raw_w != 0.0) {
                       var local_dist = 10000.0;
@@ -464,7 +465,7 @@
               var is_sphere = false;
               if (hitId != -1.0) {
                   let s_idx = i32(hitId);
-                  let s_data = u.spheres[s_idx];
+                  let s_data = u.instances[s_idx];
                   let raw_w = s_data.pos.w;
                   if (raw_w > 0.0 && raw_w < 500.0 && s_data.color.w < 0.0) {
                       is_sphere = true;
@@ -473,7 +474,7 @@
 
               if (is_sphere) {
                   let s_idx = i32(hitId);
-                  let s_data = u.spheres[s_idx];
+                  let s_data = u.instances[s_idx];
                   normal = normalize(p - s_data.pos.xyz);
               } else {
                   let eps = vec3<f32>(0.01, 0.0, 0.0);
@@ -496,7 +497,7 @@
               var edge = 0.0;
               if (hitId != -1.0) {
                   let s_idx = i32(hitId);
-                  let s_data = u.spheres[s_idx];
+                  let s_data = u.instances[s_idx];
                   base_col = s_data.color.rgb;
                   
                   let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
@@ -632,16 +633,15 @@
             (Array.aset! data 30 (Double.to-float @(Vector3.z origin)))
             (Array.aset! data 31 0.0f)
 
-            ;; 3. Populate Spheres using Entity ID as index (128+ bytes)
-            (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
+            ;; 3. Populate Spheres using Database geom-id as index (128+ bytes)
+            (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color) (g-ref GeometryRef)]
               (let [has-parent false]
                 (do
                   (ECS.with-components world @&ent [e (p Parent)]
                     (set! has-parent true))
                   (when (and (not has-parent)
-                             (< (ECS.Entity.id &ent) (Uint32.from-long (Long.from-int WGPURenderer.max-spheres)))
                              (not (ECS.has-component? world &ent PlayerTag)))
-                    (let [id (ECS.Entity.id &ent)
+                    (let [id @(GeometryRef.id g-ref)
                           pos (RigidBody.position rb)
                           rot (RigidBody.rotation rb)
                           c-val (Color.v color)
@@ -666,7 +666,7 @@
                             (when (> (Array.length (SDF.csg-nodes sdf)) 0)
                               (set! root-csg-idx (serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
                           _ ())
-                        (let [base (+ (/ WGPURenderer.header-size 4) (* (the Int (Long.to-int (Uint32.to-long id))) 12))]
+                        (let [base (+ (/ WGPURenderer.header-size 4) (* id 12))]
                           (do
                             (Array.aset! data base (Double.to-float @(Vector3.x pos)))
                             (Array.aset! data (+ base 1) (Double.to-float @(Vector3.y pos)))
@@ -682,7 +682,7 @@
                             (Array.aset! data (+ base 11) (Double.to-float (Double.from-int root-csg-idx)))))))))))))
 
         (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
-        (GPUSpatial.flatten-in-place! grid 16 flat-grid)
+        (GPUSpatial.flatten-in-place! world grid 16 flat-grid)
         (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) flat-grid)
         (WGPU.write-floats ctx @(WGPURenderer.csg-buffer ren) csg-data)
         (LinePass.update! ctx (WGPURenderer.line-pass ren) vp-data commands))))

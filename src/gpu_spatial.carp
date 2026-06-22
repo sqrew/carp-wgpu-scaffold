@@ -1,6 +1,8 @@
 (load "physics_system.carp")
 
 (defmodule GPUSpatial
+  (use GeometryRef)
+
   (defn cell-count [grid]
     (* @(SpatialGrid.cols grid) (* @(SpatialGrid.rows grid) @(SpatialGrid.layers grid))))
 
@@ -10,7 +12,7 @@
   (defn required-floats [grid max-ids]
     (* (GPUSpatial.cell-count grid) (GPUSpatial.stride max-ids)))
 
-  (defn flatten-in-place! [grid max-ids data]
+  (defn flatten-in-place! [world grid max-ids data]
     (let [total-cells (GPUSpatial.cell-count grid)
           st (GPUSpatial.stride max-ids)
           buckets (SpatialGrid.buckets grid)]
@@ -22,7 +24,12 @@
             (do
               (Array.aset! data base-idx (the Float (Double.to-float (Double.from-int count))))
               (for [j 0 count]
-                (let [ent-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth bucket j))))]
-                  (Array.aset! data (+ base-idx (+ 4 j)) (the Float (Double.to-float (Double.from-int ent-idx)))))))))
+                (let [ent-idx-u32 @(Array.unsafe-nth bucket j)
+                      ent (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long ent-idx-u32)) (Uint32.from-long 1l)))
+                      geom-id -1]
+                  (do
+                    (ECS.with-components world ent [e (g-ref GeometryRef)]
+                      (set! geom-id @(GeometryRef.id g-ref)))
+                    (Array.aset! data (+ base-idx (+ 4 j)) (the Float (Double.to-float (Double.from-int geom-id))))))))))
         ())))
 )
