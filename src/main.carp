@@ -89,9 +89,13 @@
                         (do
                           (WGPURenderer.clear! &ren)
                           (Engine.submit-render-commands! &eng &ren)
-                          (let [line-count (WGPURenderer.process-commands! ctx &ren 
-                                             time width height cam (Engine.grid &eng) (Engine.world &eng))]
-                            (WGPURenderer.draw surf ctx &ren line-count))))))
+                           (let [line-count (WGPURenderer.process-commands! ctx &ren 
+                                             time width height cam (Engine.grid &eng) (Engine.world &eng) (Engine.db &eng)
+                                             @(Engine.csg-dirty &eng) @(Engine.grid-dirty &eng))]
+                             (do
+                               (WGPURenderer.draw surf ctx &ren line-count)
+                               (Engine.set-csg-dirty! &eng false)
+                               (Engine.set-grid-dirty! &eng false)))))))
 
                   (println* "Shutting down...")
                   (Init.destroy-app app)

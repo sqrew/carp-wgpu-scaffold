@@ -30,6 +30,8 @@
     accumulator Double
     coordinator Coordinator
     world-data World
+    csg-dirty Bool
+    grid-dirty Bool
   ])
 
   (defn new [win aspect backend]
@@ -152,7 +154,9 @@
             (Vector3.init 0.1 0.1 0.1)
             0.0
             coord
-            world-data))))
+            world-data
+            true
+            true))))
 
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
@@ -195,7 +199,9 @@
                                   (ECS.add-component! world &child-ent parent-comp)
                                   (ECS.add-component! world &child-ent csg-comp)
                                   (SDF.set-csg-nodes! parent-sdf [])
-                                  (PhysicsSystem.build-csg-tree-rec! world (ECS.Entity.handle &ent) parent-sdf)))))))))
+                                  (PhysicsSystem.build-csg-tree-rec! world (ECS.Entity.handle &ent) parent-sdf)
+                                  (Engine.set-csg-dirty! e true)
+                                  (Engine.set-grid-dirty! e true)))))))))
                 _ ())))))))
 
   (defn register-internal-handlers! [e]
@@ -212,6 +218,7 @@
                       bouncy @(BulletSpawnData.bouncy data)]
                   (do
                     (Prefab.spawn-bullet! (Engine.world e) (Engine.db e) pos vel ang-vel scale bouncy)
+                    (Engine.set-grid-dirty! e true)
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)
                 (let [pos (CraterSpawnData.pos data)
@@ -269,7 +276,7 @@
 
   (sig sample-world-distance (Fn [(Ref GameWorld) (Ref (Array Uint32)) (Ref (Vector3 Double))] Double))
   (defn sample-world-distance [world candidates p]
-    (let [min-d 10000.0]
+    (let [min-d (PhysicsSystem.sample-static-world world p)]
       (do
         (for [i 0 (Array.length candidates)]
           (let [id (Array.unsafe-nth candidates i)
@@ -409,7 +416,10 @@
                   (when (<= new-time 0.0)
                     (Array.push-back! &expired-ents ent)))))
             (for [i 0 (Array.length &expired-ents)]
-              (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &expired-ents i)))))
+              (do
+                (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &expired-ents i))
+                (Engine.set-grid-dirty! e true)
+                (Engine.set-csg-dirty! e true)))))
 
         ;; Cleanup old bullets and craters to keep entity IDs recycled and low (<128)
         (let [p-pos (Vector3.init 0.0 0.0 0.0)
@@ -431,7 +441,20 @@
                             (Array.push-back! &to-destroy ent))))))
                   
                   (for [i 0 (Array.length &to-destroy)]
-                    (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &to-destroy i)))))))))))
+                    (do
+                      (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &to-destroy i))
+                      (Engine.set-grid-dirty! e true)
+                      (Engine.set-csg-dirty! e true)))
+                  
+                  (let [any-moving false]
+                    (do
+                      (ECS.query world [ent (rb RigidBody)]
+                        (when (and (not (ECS.has-component? world &ent PlayerTag))
+                                   (not @(Body.is-sleeping (RigidBody.body rb)))
+                                   (not (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)))
+                          (set! any-moving true)))
+                      (when any-moving
+                        (Engine.set-grid-dirty! e true))))))))))))
 
   (defn submit-render-commands! [e ren]
     (let [world (Engine.world e)]

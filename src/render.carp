@@ -561,7 +561,7 @@
   (defn submit! [ren cmd]
     (Array.push-back! (WGPURenderer.commands ren) cmd))
 
-  (defn process-commands! [ctx ren time width height cam grid world]
+  (defn process-commands! [ctx ren time width height cam grid world db csg-dirty grid-dirty]
     (let [bg-color (Vector3.init 0.1 0.1 0.1)
           commands (WGPURenderer.commands ren)
           vp (Camera.view-projection cam)
@@ -579,17 +579,16 @@
           flat-grid (WGPURenderer.s-data ren)
           csg-data (WGPURenderer.csg-data ren)]
       (do
-        ;; Zero out the dynamic spheres part of uniforms (indices 32 onwards) to clear stale data in-place
-        (for [i 32 (Array.length data)]
-          (Array.aset! data i 0.0f))
+        (when csg-dirty
+          (for [i 0 (Array.length csg-data)]
+            (Array.aset! csg-data i 0.0f)))
 
-        ;; Zero out the flat-grid spatial buffer entirely in-place
-        (for [i 0 (Array.length flat-grid)]
-          (Array.aset! flat-grid i 0.0f))
-
-        ;; Zero out the CSG data buffer in-place
-        (for [i 0 (Array.length csg-data)]
-          (Array.aset! csg-data i 0.0f))
+        (when grid-dirty
+          (do
+            (for [i 32 (Array.length data)]
+              (Array.aset! data i 0.0f))
+            (for [i 0 (Array.length flat-grid)]
+              (Array.aset! flat-grid i 0.0f))))
 
         (let [next-csg-node-idx 0]
           (do
@@ -634,20 +633,21 @@
             (Array.aset! data 31 0.0f)
 
             ;; 3. Populate Spheres using Database geom-id as index (128+ bytes)
-            (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color) (g-ref GeometryRef)]
-              (let [has-parent false]
-                (do
-                  (ECS.with-components world @&ent [e (p Parent)]
-                    (set! has-parent true))
-                  (when (and (not has-parent)
-                             (not (ECS.has-component? world &ent PlayerTag)))
-                    (let [id @(GeometryRef.id g-ref)
-                          pos (RigidBody.position rb)
-                          rot (RigidBody.rotation rb)
-                          c-val (Color.v color)
-                          rad (match-ref (Collidable.volume col)
-                                (Volume.Ball b) @(Sphere.radius b)
-                                (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
+            (when (or grid-dirty csg-dirty)
+              (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color) (g-ref GeometryRef)]
+                (let [has-parent false]
+                  (do
+                    (ECS.with-components world @&ent [e (p Parent)]
+                      (set! has-parent true))
+                    (when (and (not has-parent)
+                               (not (ECS.has-component? world &ent PlayerTag)))
+                      (let [id @(GeometryRef.id g-ref)
+                            pos (RigidBody.position rb)
+                            rot (RigidBody.rotation rb)
+                            c-val (Color.v color)
+                            rad (match-ref (Collidable.volume col)
+                                  (Volume.Ball b) @(Sphere.radius b)
+                                  (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
                                   (Volume.Sdf sdf)
                                     (let [scale @(SDF.scale sdf)]
                                       (match-ref (SDF.base sdf)
@@ -658,34 +658,46 @@
                                         (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
                                         (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
                                         _ 0.0))
-                                 _ 0.0)
-                          root-csg-idx -1]
-                      (do
-                        (match-ref (Collidable.volume col)
-                          (Volume.Sdf sdf)
-                            (when (> (Array.length (SDF.csg-nodes sdf)) 0)
-                              (set! root-csg-idx (serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
-                          _ ())
-                        (let [base (+ (/ WGPURenderer.header-size 4) (* id 12))]
-                          (do
-                            (Array.aset! data base (Double.to-float @(Vector3.x pos)))
-                            (Array.aset! data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                            (Array.aset! data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                            (Array.aset! data (+ base 3) (Double.to-float rad))
-                            (Array.aset! data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                            (Array.aset! data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                            (Array.aset! data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                            (Array.aset! data (+ base 7) (Double.to-float @(Quaternion.w rot)))
-                            (Array.aset! data (+ base 8) (Double.to-float @(Vector3.x c-val)))
-                            (Array.aset! data (+ base 9) (Double.to-float @(Vector3.y c-val)))
-                            (Array.aset! data (+ base 10) (Double.to-float @(Vector3.z c-val)))
-                            (Array.aset! data (+ base 11) (Double.to-float (Double.from-int root-csg-idx)))))))))))))
+                                  _ 0.0)
+                            root-csg-idx -1]
+                        (do
+                          (when csg-dirty
+                            (do
+                              (match-ref (Collidable.volume col)
+                                (Volume.Sdf sdf)
+                                  (when (> (Array.length (SDF.csg-nodes sdf)) 0)
+                                    (set! root-csg-idx (serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
+                                _ ())
+                              (let [inst (Array.unsafe-nth (SdfDatabase.instances db) id)]
+                                (SdfInstance.set-root-csg-idx! inst root-csg-idx))))
+                          (let [base (+ (/ WGPURenderer.header-size 4) (* id 12))
+                                inst (Array.unsafe-nth (SdfDatabase.instances db) id)
+                                final-csg-idx @(SdfInstance.root-csg-idx inst)]
+                            (do
+                              (Array.aset! data base (Double.to-float @(Vector3.x pos)))
+                              (Array.aset! data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                              (Array.aset! data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                              (Array.aset! data (+ base 3) (Double.to-float rad))
+                              (Array.aset! data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                              (Array.aset! data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                              (Array.aset! data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                              (Array.aset! data (+ base 7) (Double.to-float @(Quaternion.w rot)))
+                              (Array.aset! data (+ base 8) (Double.to-float @(Vector3.x c-val)))
+                              (Array.aset! data (+ base 9) (Double.to-float @(Vector3.y c-val)))
+                              (Array.aset! data (+ base 10) (Double.to-float @(Vector3.z c-val)))
+                              (Array.aset! data (+ base 11) (Double.to-float (Double.from-int final-csg-idx))))))))))))))
 
-        (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
-        (GPUSpatial.flatten-in-place! world grid 16 flat-grid)
-        (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) flat-grid)
-        (WGPU.write-floats ctx @(WGPURenderer.csg-buffer ren) csg-data)
-        (LinePass.update! ctx (WGPURenderer.line-pass ren) vp-data commands))))
+            (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
+            
+            (when grid-dirty
+              (do
+                (GPUSpatial.flatten-in-place! world grid 16 flat-grid)
+                (WGPU.write-floats ctx @(WGPURenderer.s-buffer ren) flat-grid)))
+
+            (when csg-dirty
+              (WGPU.write-floats ctx @(WGPURenderer.csg-buffer ren) csg-data))
+
+            (LinePass.update! ctx (WGPURenderer.line-pass ren) vp-data commands))))
 
   (defn draw [surf ctx ren line-count]
     (match (WGPURender.begin-frame surf ctx)

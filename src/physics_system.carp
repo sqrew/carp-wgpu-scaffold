@@ -27,13 +27,8 @@
   (defn sample-static-world [world p]
     (let [min-d 10000.0]
       (do
-        (let [floor-ent (ECS.Entity.init (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l)))]
-          (ECS.with-components world floor-ent [e (col Collidable)]
-            (match-ref (Collidable.volume col)
-              (Volume.Sdf sdf) (set! min-d (min min-d (SDF.distance-world sdf p)))
-              _ ())))
-        (let [root-ent (ECS.Entity.init (Handle.init (Uint64.from-long 1l) (Uint32.from-long 1l)))]
-          (ECS.with-components world root-ent [e (col Collidable)]
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+          (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
             (match-ref (Collidable.volume col)
               (Volume.Sdf sdf) (set! min-d (min min-d (SDF.distance-world sdf p)))
               _ ())))
