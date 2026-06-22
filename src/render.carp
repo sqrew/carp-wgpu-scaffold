@@ -26,6 +26,10 @@
   u-data (Array Float)
   s-data (Array Float)
   csg-data (Array Float)
+  voxel-texture (Ptr WGPURenderTexture)
+  voxel-sampler WGPUSampler
+  voxel-data (Array Float)
+  voxel-dirty Bool
 ])
 
 (defmodule WGPURenderer
@@ -169,6 +173,56 @@
       @group(0) @binding(0) var<storage, read> grid: array<Cell>;
       @group(0) @binding(1) var<uniform> u: Uniforms;
       @group(0) @binding(2) var<storage, read> csg_nodes: array<CsgNode>;
+      @group(0) @binding(3) var voxel_texture: texture_3d<f32>;
+      @group(0) @binding(4) var voxel_sampler: sampler;
+
+      fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
+          let p_local = p - u.grid_origin.xyz;
+          let grid_size = u.grid_dims.xyz * u.cell_size;
+          if (any(p_local < vec3<f32>(0.0)) || any(p_local > grid_size)) {
+              let q = abs(p_local - grid_size * 0.5) - grid_size * 0.5;
+              let d_aabb = length(max(q, vec3<f32>(0.0))) + min(max(q.x, max(q.y, q.z)), 0.0);
+              return vec2<f32>(d_aabb + 10.0, 0.0);
+          }
+          
+          let texel_coord = p_local / u.cell_size - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(texel_coord));
+          let f = fract(texel_coord);
+          
+          let limit = vec3<i32>(63);
+          let c0_clamped = clamp(c0, vec3<i32>(0), limit);
+          let c1_clamped = clamp(c0 + vec3<i32>(1, 0, 0), vec3<i32>(0), limit);
+          let c2_clamped = clamp(c0 + vec3<i32>(0, 1, 0), vec3<i32>(0), limit);
+          let c3_clamped = clamp(c0 + vec3<i32>(1, 1, 0), vec3<i32>(0), limit);
+          let c4_clamped = clamp(c0 + vec3<i32>(0, 0, 1), vec3<i32>(0), limit);
+          let c5_clamped = clamp(c0 + vec3<i32>(1, 0, 1), vec3<i32>(0), limit);
+          let c6_clamped = clamp(c0 + vec3<i32>(0, 1, 1), vec3<i32>(0), limit);
+          let c7_clamped = clamp(c0 + vec3<i32>(1, 1, 1), vec3<i32>(0), limit);
+          
+          let v0 = textureLoad(voxel_texture, c0_clamped, 0);
+          let v1 = textureLoad(voxel_texture, c1_clamped, 0);
+          let v2 = textureLoad(voxel_texture, c2_clamped, 0);
+          let v3 = textureLoad(voxel_texture, c3_clamped, 0);
+          let v4 = textureLoad(voxel_texture, c4_clamped, 0);
+          let v5 = textureLoad(voxel_texture, c5_clamped, 0);
+          let v6 = textureLoad(voxel_texture, c6_clamped, 0);
+          let v7 = textureLoad(voxel_texture, c7_clamped, 0);
+          
+          let v_01 = mix(v0, v1, f.x);
+          let v_23 = mix(v2, v3, f.x);
+          let v_45 = mix(v4, v5, f.x);
+          let v_67 = mix(v6, v7, f.x);
+          
+          let v_y0 = mix(v_01, v_23, f.y);
+          let v_y1 = mix(v_45, v_67, f.y);
+          
+          let tex_val = mix(v_y0, v_y1, f.z);
+          
+          let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
+          let dummy = dummy_sample.r * 1e-10;
+          
+          return vec2<f32>(tex_val.r + dummy, tex_val.g);
+      }
 
       struct VertexOutput {
           @builtin(position) position: vec4<f32>,
@@ -335,22 +389,8 @@
       }
 
       fn worldSDF(p: vec3<f32>, rd: vec3<f32>) -> vec2<f32> {
-          var d = vec2<f32>(10000.0, -1.0);
-          let floor_data = u.instances[0];
-          if (floor_data.pos.w != 0.0) {
-              let local_p = rotateVector(p - floor_data.pos.xyz, q_inv(floor_data.rot));
-              let csg_root_idx = i32(round(floor_data.color.w));
-              var local_dist = 10000.0;
-              if (csg_root_idx >= 0) {
-                  local_dist = evaluateCsgTree(local_p, csg_root_idx);
-              } else {
-                  let size = -floor_data.pos.w;
-                  local_dist = sdBox(local_p, vec3<f32>(size));
-              }
-              if (local_dist < d.x) {
-                  d = vec2<f32>(local_dist, 0.0);
-              }
-          }
+          let voxel_sample = sampleVoxelGrid(p);
+          var d = vec2<f32>(voxel_sample.x, -1.0);
           let p_local = p - u.grid_origin.xyz;
           let gx = i32(floor(p_local.x / u.cell_size));
           let gy = i32(floor(p_local.y / u.cell_size));
@@ -504,6 +544,16 @@
                   if (s_data.color.w < 0.0) {
                       edge = get_wireframe_edge(lp, s_data.pos.w, 0.08);
                   }
+              } else {
+                  let voxel_val = sampleVoxelGrid(p);
+                  let mat_id = i32(round(voxel_val.y));
+                  if (mat_id == 1) {
+                      base_col = vec3<f32>(0.25, 0.25, 0.25);
+                  } else if (mat_id == 2) {
+                      base_col = vec3<f32>(0.2, 0.8, 0.2);
+                  } else {
+                      base_col = vec3<f32>(0.4, 0.4, 0.5);
+                  }
               }
 
               color = base_col * (lit + 0.15) * ao;
@@ -529,29 +579,177 @@
           csg-size (* WGPURenderer.max-csg-nodes WGPURenderer.csg-node-size)
           u-data (the (Array Float) (replicate (/ u-size 4) &0.0f))
           s-data (the (Array Float) (replicate (/ s-size 4) &0.0f))
-          csg-data (the (Array Float) (replicate (/ csg-size 4) &0.0f))]
-      (match (WGPURender.create-uniform-buffer ctx u-size)
-        (Result.Error e) (Result.Error (str* "Uniform failed: " e))
-        (Result.Success ub)
-          (match (WGPU.create-buffer ctx s-size)
-            (Result.Error e) (do (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Storage failed: " e)))
-            (Result.Success sb)
-              (match (WGPU.create-buffer ctx csg-size)
-                (Result.Error e) (do (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "CSG buffer failed: " e)))
-                (Result.Success csg-b)
-                  (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
-                    (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Pipeline failed: " e)))
-                    (Result.Success pipe)
-                      (let [bg (wgpu-create-render-two-storage-uniform-bind-group ctx pipe sb csg-b ub)]
-                        (if (WGPURender.bindgroup-null?- bg)
-                            (do (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Bind group failed: " (WGPURender.get-error))))
-                            (match (WGPURender.create-depth-texture ctx width height)
-                              (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "Depth failed: " e)))
-                              (Result.Success dt)
-                                (match (LinePass.create ctx format 10000)
-                                  (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (Result.Error (str* "LinePass failed: " e)))
-                                  (Result.Success lp)
-                                    (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data))))))))))))
+          csg-data (the (Array Float) (replicate (/ csg-size 4) &0.0f))
+          voxel-data (the (Array Float) (replicate 1048576 &1000.0f))]
+      (match (WGPURender.create-3d-texture ctx 64 64 64 "rgba16float")
+        (Result.Error e) (Result.Error (str* "3D Texture failed: " e))
+        (Result.Success voxel-tex)
+          (match (WGPURender.create-sampler ctx)
+            (Result.Error e) (do (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Sampler failed: " e)))
+            (Result.Success voxel-samp)
+              (match (WGPURender.create-uniform-buffer ctx u-size)
+                (Result.Error e) (do (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Uniform failed: " e)))
+                (Result.Success ub)
+                  (match (WGPU.create-buffer ctx s-size)
+                    (Result.Error e) (do (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Storage failed: " e)))
+                    (Result.Success sb)
+                      (match (WGPU.create-buffer ctx csg-size)
+                        (Result.Error e) (do (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "CSG buffer failed: " e)))
+                        (Result.Success csg-b)
+                          (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
+                            (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
+                            (Result.Success pipe)
+                              (match (WGPURender.create-voxel-render-bind-group ctx pipe sb csg-b ub voxel-tex voxel-samp)
+                                (Result.Error e) (do (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
+                                (Result.Success bg)
+                                  (match (WGPURender.create-depth-texture ctx width height)
+                                    (Result.Error e) (do (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
+                                    (Result.Success dt)
+                                      (match (LinePass.create ctx format 10000)
+                                        (Result.Error e) (do (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
+                                        (Result.Success lp)
+                                          (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp voxel-data true)))))))))))))
+
+  (defn bake-voxel-grid! [ctx ren grid world]
+    (let [voxel-data (WGPURenderer.voxel-data ren)
+          origin (SpatialGrid.origin grid)
+          cell-size @(SpatialGrid.cell-size grid)
+          ox @(Vector3.x origin)
+          oy @(Vector3.y origin)
+          oz @(Vector3.z origin)
+          w-dim 64
+          h-dim 64
+          d-dim 64
+          static-sdfs []
+          static-mat-ids []]
+      (do
+        (IO.println "BAKING VOXEL GRID...")
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+          (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf sdf)
+                (do
+                  (SDF.set-position! sdf @(RigidBody.position rb))
+                  (SDF.set-rotation! sdf @(RigidBody.rotation rb))
+                  (Array.push-back! &static-sdfs @sdf)
+                  (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
+              _ ())))
+        (let [num-shapes (Array.length &static-sdfs)]
+          (do
+            (IO.println &(format "NUM STATIC SHAPES: %d" num-shapes))
+            (for [z 0 d-dim]
+              (for [y 0 h-dim]
+                (for [x 0 w-dim]
+                  (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
+                        py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
+                        pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
+                        p (Vector3.init px py pz)
+                        min-d 10000.0
+                        mat-id 0.0f]
+                    (do
+                      (for [i 0 num-shapes]
+                        (let [sdf (Array.unsafe-nth &static-sdfs i)
+                              d (SDF.distance-world sdf &p)]
+                          (when (< d min-d)
+                            (do
+                              (set! min-d d)
+                              (set! mat-id @(Array.unsafe-nth &static-mat-ids i))))))
+                      (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
+                        (do
+                          (Array.aset! voxel-data idx (Double.to-float min-d))
+                          (Array.aset! voxel-data (+ idx 1) mat-id)
+                          (Array.aset! voxel-data (+ idx 2) 0.0f)
+                          (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))
+        (do
+          (IO.println &(format "VOXEL[0] = %f" (Double.from-float @(Array.unsafe-nth voxel-data 0))))
+          (IO.println &(format "VOXEL[1] = %f" (Double.from-float @(Array.unsafe-nth voxel-data 1))))
+          (IO.println &(format "VOXEL[CAMERA] = %f" (Double.from-float @(Array.unsafe-nth voxel-data 349268))))
+          (WGPURender.update-3d-texture-subregion-floats 
+            ctx @(WGPURenderer.voxel-texture ren) 
+            0 0 0 w-dim h-dim d-dim 
+            voxel-data)))))
+
+  (defn carve-voxel-grid! [ctx ren grid center radius]
+    (let [voxel-data (WGPURenderer.voxel-data ren)
+          origin (SpatialGrid.origin grid)
+          cell-size @(SpatialGrid.cell-size grid)
+          ox @(Vector3.x origin)
+          oy @(Vector3.y origin)
+          oz @(Vector3.z origin)
+          
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          
+          ;; Compute AABB of the crater in world space
+          min-x (- cx radius)
+          max-x (+ cx radius)
+          min-y (- cy radius)
+          max-y (+ cy radius)
+          min-z (- cz radius)
+          max-z (+ cz radius)
+          
+          ;; Convert world space AABB to grid voxel indices
+          idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
+          idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))
+          idx-min-y (the Int (Double.to-int (Double.floor (/ (- min-y oy) cell-size))))
+          idx-max-y (the Int (Double.to-int (Double.floor (/ (- max-y oy) cell-size))))
+          idx-min-z (the Int (Double.to-int (Double.floor (/ (- min-z oz) cell-size))))
+          idx-max-z (the Int (Double.to-int (Double.floor (/ (- max-z oz) cell-size))))
+          
+          ;; Clamp to grid dimensions [0, 63]
+          start-x (Int.clamp 0 63 idx-min-x)
+          end-x (Int.clamp 0 63 idx-max-x)
+          start-y (Int.clamp 0 63 idx-min-y)
+          end-y (Int.clamp 0 63 idx-max-y)
+          start-z (Int.clamp 0 63 idx-min-z)
+          end-z (Int.clamp 0 63 idx-max-z)
+          
+          ;; Compute size of the subregion
+          size-x (inc (- end-x start-x))
+          size-y (inc (- end-y start-y))
+          size-z (inc (- end-z start-z))]
+      (do
+        (IO.println "CARVING VOXEL GRID...")
+        (when (and (> size-x 0) (and (> size-y 0) (> size-z 0)))
+          (let [num-floats (* (* size-x size-y) (* size-z 4))
+                sub-data (Array.replicate num-floats &0.0f)]
+            (do
+              (for [sz start-z (inc end-z)]
+                (for [sy start-y (inc end-y)]
+                  (for [sx start-x (inc end-x)]
+                    (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                          py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
+                          pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
+                          
+                          dx (- px cx)
+                          dy (- py cy)
+                          dz (- pz cz)
+                          dist-to-crater-center (Double.sqrt (+ (* dx dx) (+ (* dy dy) (* dz dz))))
+                          crater-dist (- dist-to-crater-center radius)
+                          
+                          idx-full (* (+ sx (+ (* sy 64) (* (* sz 64) 64))) 4)
+                          old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                          new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
+                                     (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))
+                          
+                          local-x (- sx start-x)
+                          local-y (- sy start-y)
+                          local-z (- sz start-z)
+                          idx-sub (* (+ local-x (+ (* local-y size-x) (* (* local-z size-x) size-y))) 4)
+                          mat-id @(Array.unsafe-nth voxel-data (+ idx-full 1))]
+                      (do
+                        (Array.aset! voxel-data idx-full (Double.to-float new-dist))
+                        (Array.aset! &sub-data idx-sub (Double.to-float new-dist))
+                        (Array.aset! &sub-data (+ idx-sub 1) mat-id)
+                        (Array.aset! &sub-data (+ idx-sub 2) 0.0f)
+                        (Array.aset! &sub-data (+ idx-sub 3) 0.0f))))))
+              (WGPURender.update-3d-texture-subregion-floats 
+                ctx 
+                @(WGPURenderer.voxel-texture ren) 
+                start-x start-y start-z 
+                size-x size-y size-z 
+                &sub-data)))))))
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]
@@ -561,7 +759,7 @@
   (defn submit! [ren cmd]
     (Array.push-back! (WGPURenderer.commands ren) cmd))
 
-  (defn process-commands! [ctx ren time width height cam grid world db csg-dirty grid-dirty]
+  (defn process-commands! [ctx ren time width height cam grid world db csg-dirty grid-dirty voxel-dirty craters]
     (let [bg-color (Vector3.init 0.1 0.1 0.1)
           commands (WGPURenderer.commands ren)
           vp (Camera.view-projection cam)
@@ -632,6 +830,16 @@
             (Array.aset! data 30 (Double.to-float @(Vector3.z origin)))
             (Array.aset! data 31 0.0f)
 
+            (IO.println &(str* "COLS/ROWS/LAYERS: " 
+              (Float.str @(Array.unsafe-nth data 24)) ", "
+              (Float.str @(Array.unsafe-nth data 25)) ", "
+              (Float.str @(Array.unsafe-nth data 26))))
+            (IO.println &(str* "ORIGIN: " 
+              (Float.str @(Array.unsafe-nth data 28)) ", "
+              (Float.str @(Array.unsafe-nth data 29)) ", "
+              (Float.str @(Array.unsafe-nth data 30))))
+            (IO.println &(str* "CELL SIZE: " (Float.str @(Array.unsafe-nth data 3))))
+
             ;; 3. Populate Spheres using Database geom-id as index (128+ bytes)
             (when (or grid-dirty csg-dirty)
               (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color) (g-ref GeometryRef)]
@@ -645,20 +853,22 @@
                             pos (RigidBody.position rb)
                             rot (RigidBody.rotation rb)
                             c-val (Color.v color)
-                            rad (match-ref (Collidable.volume col)
-                                  (Volume.Ball b) @(Sphere.radius b)
-                                  (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
-                                  (Volume.Sdf sdf)
-                                    (let [scale @(SDF.scale sdf)]
-                                      (match-ref (SDF.base sdf)
-                                        (BaseShape.Ball r) (* @r scale)
-                                        (BaseShape.Box e) (- 0.0 (* @(Vector3.x e) scale))
-                                        (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
-                                        (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
-                                        (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
-                                        (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
-                                        _ 0.0))
-                                  _ 0.0)
+                            is-static (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+                            rad (if is-static 0.0
+                                  (match-ref (Collidable.volume col)
+                                    (Volume.Ball b) @(Sphere.radius b)
+                                    (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
+                                    (Volume.Sdf sdf)
+                                      (let [scale @(SDF.scale sdf)]
+                                        (match-ref (SDF.base sdf)
+                                          (BaseShape.Ball r) (* @r scale)
+                                          (BaseShape.Box e) (- 0.0 (* @(Vector3.x e) scale))
+                                          (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
+                                          (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
+                                          (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
+                                          (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
+                                          _ 0.0))
+                                    _ 0.0))
                             root-csg-idx -1]
                         (do
                           (when csg-dirty
@@ -688,6 +898,17 @@
                               (Array.aset! data (+ base 11) (Double.to-float (Double.from-int final-csg-idx))))))))))))))
 
             (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
+
+            (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
+              (do
+                (if (Array.empty? craters)
+                  (bake-voxel-grid! ctx ren grid world)
+                  (for [i 0 (Array.length craters)]
+                    (let [crater (Array.unsafe-nth craters i)
+                          pos (CraterSpawnData.pos crater)
+                          rad @(CraterSpawnData.radius crater)]
+                      (carve-voxel-grid! ctx ren grid pos rad))))
+                (WGPURenderer.set-voxel-dirty! ren false)))
             
             (when grid-dirty
               (do

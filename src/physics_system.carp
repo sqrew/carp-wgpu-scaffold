@@ -34,6 +34,22 @@
               _ ())))
         min-d)))
 
+  (defn sample-static-world-material [world p]
+    (let [min-d 10000.0
+          mat-id 0.0]
+      (do
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+          (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf sdf)
+                (let [d (SDF.distance-world sdf p)]
+                  (when (< d min-d)
+                    (do
+                      (set! min-d d)
+                      (set! mat-id (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent))))))))))
+              _ ())))
+        (Vector2.init min-d mat-id))))
+
   (defn step-ecs! [world grid coord]
     (let [collision-occurred false
           manifolds []]

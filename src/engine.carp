@@ -32,12 +32,14 @@
     world-data World
     csg-dirty Bool
     grid-dirty Bool
+    voxel-dirty Bool
+    craters (Array CraterSpawnData)
   ])
 
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -100.0 -100.0 -100.0)
-          world-data (World.new grid-origin 5.0 40 40 40)
+          world-data (World.new grid-origin 5.0 64 64 64)
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)]
@@ -156,7 +158,9 @@
             coord
             world-data
             true
-            true))))
+            true
+            true
+            []))))
 
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
@@ -201,6 +205,7 @@
                                   (SDF.set-csg-nodes! parent-sdf [])
                                   (PhysicsSystem.build-csg-tree-rec! world (ECS.Entity.handle &ent) parent-sdf)
                                   (Engine.set-csg-dirty! e true)
+                                  (Engine.set-voxel-dirty! e true)
                                   (Engine.set-grid-dirty! e true)))))))))
                 _ ())))))))
 
@@ -225,6 +230,7 @@
                       rad @(CraterSpawnData.radius data)]
                   (do
                     (Engine.spawn-crater! e @pos rad)
+                    (Array.push-back! (Engine.craters e) @data)
                     (Result.Success ())))
               _ (Result.Success ()))
           _ (Result.Success ())))))
