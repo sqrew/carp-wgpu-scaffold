@@ -58,3 +58,29 @@
     (let [inst (Array.unsafe-nth (SdfDatabase.instances db) id)]
       (SdfInstance.set-shape-type! inst -1)))
 )
+
+(deftype World [
+  sdf-db SdfDatabase
+  grid-origin (Vector3 Double)
+  cell-size Double
+  grid-width Int
+  grid-height Int
+  grid-depth Int
+])
+
+(defmodule World
+  (use Vector3)
+  (use SdfDatabase)
+  (use SpatialGrid)
+
+  (defn new [origin cell-size w h d]
+    (World.init (SdfDatabase.new) origin cell-size w h d))
+
+  (defn create-spatial-grid [w]
+    (SpatialGrid.new-with-origin
+      @(World.cell-size w)
+      @(World.grid-width w)
+      @(World.grid-height w)
+      @(World.grid-depth w)
+      @(World.grid-origin w)))
+)

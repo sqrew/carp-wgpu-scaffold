@@ -13,9 +13,6 @@
   (def gravity (Vector3.init 0.0 -9.81 0.0))
   (def iterations 8)
 
-  (defn sync-transforms! [world]
-    ())
-
   (defn build-csg-tree-rec! [world parent-handle parent-sdf]
     (ECS.query world [child-ent (parent Parent) (node CsgNode)]
       (when (Handle.equal? (Parent.handle parent) parent-handle)
@@ -46,7 +43,6 @@
     (let [collision-occurred false
           manifolds []]
       (do
-        (sync-transforms! world)
         
         ;; 1. Apply Gravity and Step Bodies
         (ECS.query world [ent (rb RigidBody)]

@@ -16,6 +16,7 @@
   (use WGPURenderer)
   (use Coordinator)
   (use SdfDatabase)
+  (use World)
 
   (deftype Engine [
     camera Camera
@@ -26,16 +27,16 @@
     bg-color (Vector3 Double)
     accumulator Double
     coordinator Coordinator
-    db SdfDatabase
+    world-data World
   ])
 
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -100.0 -100.0 -100.0)
-          grid (SpatialGrid.new-with-origin 5.0 40 40 40 grid-origin)
+          world-data (World.new grid-origin 5.0 40 40 40)
+          grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
-          coord (Coordinator.new)
-          db (SdfDatabase.new)]
+          coord (Coordinator.new)]
       (do
         (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
         (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
@@ -60,7 +61,7 @@
               f-color (Color.init (Vector3.init 0.25 0.25 0.25))
               params (Vector4.init 100.0 100.0 100.0 0.0)
               inst (SdfInstance.init 2 params f-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.25 0.25 0.25))
-              geom-id (SdfDatabase.register-instance! &db &inst)]
+              geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)]
           (do
             (ECS.add-component! &world &f-ent f-rb)
             (ECS.add-component! &world &f-ent f-col)
@@ -76,7 +77,7 @@
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
               params (Vector4.init 1.5 1.5 1.5 0.0)
               inst (SdfInstance.init 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2))
-              geom-id (SdfDatabase.register-instance! &db &inst)
+              geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -111,8 +112,8 @@
             (ECS.add-component! &world &p-ent p-rot)
             (ECS.add-component! &world &p-ent (PlayerTag.init))))
 
-        (for [y 0 4]
-          (for [x 0 4]
+        (for [y 0 5]
+          (for [x 0 5]
             (let [ent (GameWorld.create-entity! &world)
                   x-pos (+ 5.0 (* (- (Double.from-int x) 1.5) 1.05))
                   y-pos (+ 0.55 (* (Double.from-int y) 2.0))
@@ -132,7 +133,7 @@
                   color (Color.init @&c-val)
                   params (Vector4.init 0.5 0.5 0.5 0.0)
                   inst (SdfInstance.init 2 params pos (Quaternion.identity) 1.0 -1 c-val)
-                  geom-id (SdfDatabase.register-instance! &db &inst)]
+                  geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)]
               (do
                 (ECS.add-component! &world &ent rb)
                 (ECS.add-component! &world &ent col)
@@ -148,7 +149,10 @@
             (Vector3.init 0.1 0.1 0.1)
             0.0
             coord
-            db))))
+            world-data))))
+
+  (defn db [e]
+    (World.sdf-db (Engine.world-data e)))
 
   (defn spawn-crater! [e pos rad]
     (let [world (Engine.world e)]
