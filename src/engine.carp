@@ -40,8 +40,8 @@
 
   (defn new [win aspect backend]
     (let [mgr (InputManager.create win backend)
-          grid-origin (Vector3.init -60.0 -60.0 -60.0)
-          world-data (World.new grid-origin 12.0 10 10 10)
+          grid-origin (Vector3.init -120.0 -300.0 -120.0)
+          world-data (World.new grid-origin 12.0 20 30 20)
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)]
@@ -269,7 +269,8 @@
             rand-z (Double.random-between -10.0 10.0)
             bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
             
-            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel p-scale bouncy)
+            b-scale (if bouncy (* p-scale (Double.random-between 0.2 2.0)) p-scale)
+            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel b-scale bouncy)
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
         (Coordinator.dispatch! (Engine.coordinator e) ev)))))))
 
@@ -511,7 +512,7 @@
                       (when (and (> id (Uint32.from-long 4l)) (not (ECS.has-component? world &ent PlayerTag)))
                         (let [pos (RigidBody.position rb)
                               dist (Vector3.dist pos &p-pos)]
-                          (when (or (> dist 150.0) (< @(Vector3.y pos) -100.0))
+                          (when (or (> dist 350.0) (< @(Vector3.y pos) -280.0))
                             (Array.push-back! &to-destroy ent))))))
                   
                   (for [i 0 (Array.length &to-destroy)]

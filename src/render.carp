@@ -754,9 +754,9 @@
                  } else {
                      t += res_pt.x;
                  }
-                 if (t > 100.0) { break; }
+                 if (t > 350.0) { break; }
              }
-             if (t <= 100.0) {
+             if (t <= 350.0) {
                  for (var j = 0; j < 2; j = j + 1) {
                      let p = ro + rd * t;
                      let res = worldSDF(p, rd);
@@ -765,7 +765,7 @@
                  }
              }
             var color = u.bg_color.rgb;
-            if (t <= 100.0) {
+            if (t <= 350.0) {
                 let p = ro + rd * t;
                 let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
