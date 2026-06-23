@@ -35,6 +35,7 @@
     voxel-dirty Bool
     craters (Array CraterSpawnData)
     metaball-k Double
+    show-debug-lines Bool
   ])
 
   (defn new [win aspect backend]
@@ -63,6 +64,7 @@
         (InputManager.add-binding! &mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
         (InputManager.add-binding! &mgr "MorphLess" (InputSource.Key GLFW.Keycode.COMMA) 1.0)
         (InputManager.add-binding! &mgr "MorphMore" (InputSource.Key GLFW.Keycode.PERIOD) 1.0)
+        (InputManager.add-binding! &mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
 
         ()
 
@@ -152,7 +154,8 @@
             true
             true
             []
-            1.2))))
+            1.2
+            true))))
 
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
@@ -448,7 +451,13 @@
                 new-k (let [val (+ k 0.1)] (if (> val 10.0) 10.0 val))]
             (do
               (Engine.set-metaball-k! e new-k)
-              (IO.println &(str* "Metaball Morphiness: " (Double.str new-k)))))))))
+              (IO.println &(str* "Metaball Morphiness: " (Double.str new-k))))))
+        (when (InputManager.action-pressed? mgr "ToggleDebug")
+          (let [show @(Engine.show-debug-lines e)
+                new-show (not show)]
+            (do
+              (Engine.set-show-debug-lines! e new-show)
+              (IO.println &(str* "Debug Lines: " (if new-show "ON" "OFF")))))))))
 
   (defn tick! [e]
     (let [cam (Engine.camera e)
@@ -532,10 +541,11 @@
                   (SdfInstance.set-pos! inst @(RigidBody.position rb))
                   (SdfInstance.set-rot! inst @(RigidBody.rotation rb)))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
-        (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
-          (let [pos (RigidBody.position rb)
-                rot (RigidBody.rotation rb)
-                vol (Collidable.volume col)
-                col-vec (Color.v color)]
-            (DebugDraw.volume! ren pos rot vol col-vec))))))
+        (when @(Engine.show-debug-lines e)
+          (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
+            (let [pos (RigidBody.position rb)
+                  rot (RigidBody.rotation rb)
+                  vol (Collidable.volume col)
+                  col-vec (Color.v color)]
+              (DebugDraw.volume! ren pos rot vol col-vec)))))))
 )

@@ -1472,7 +1472,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                           (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
                                           _ 0.0))
                                     _ 0.0))
-                            root-csg-idx -1]
+                            root-csg-idx (if is-bouncy -99 -1)]
                         (do
                           (when csg-dirty
                             (do
@@ -1482,7 +1482,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                     (set! root-csg-idx (serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
                                 _ ())
                               (let [inst (Array.unsafe-nth (SdfDatabase.instances db) id)]
-                                (SdfInstance.set-root-csg-idx! inst root-csg-idx))))
+                                (SdfInstance.set-root-csg-idx! inst (if is-bouncy -99 root-csg-idx)))))
                           (let [base (+ (/ WGPURenderer.header-size 4) (* id 12))
                                 inst (Array.unsafe-nth (SdfDatabase.instances db) id)
                                 final-csg-idx @(SdfInstance.root-csg-idx inst)]
