@@ -530,6 +530,21 @@
                       (when any-moving
                         (Engine.set-grid-dirty! e true))))))))))))
 
+  (sig rotation-between (Fn [(Ref (Vector3 Double)) (Ref (Vector3 Double))] Quaternion))
+  (defn rotation-between [v1 v2]
+    (let [cos-theta (Vector3.dot v1 v2)
+          k (Double.sqrt (* (Vector3.mag-sq v1) (Vector3.mag-sq v2)))]
+      (if (< (+ cos-theta k) 0.0001)
+        (let [axis (if (> (Double.abs @(Vector3.x v1)) (Double.abs @(Vector3.z v1)))
+                       (Vector3.init (- 0.0 @(Vector3.y v1)) @(Vector3.x v1) 0.0)
+                       (Vector3.init 0.0 (- 0.0 @(Vector3.z v1)) @(Vector3.y v1)))
+              axis-norm (Vector3.normalize &axis)]
+          (Quaternion.from-axis-angle axis-norm 3.1415926535))
+        (let [axis (Vector3.cross v1 v2)
+              w (+ cos-theta k)
+              q (Quaternion.new @(Vector3.x &axis) @(Vector3.y &axis) @(Vector3.z &axis) w)]
+          (Quaternion.normalize &q)))))
+
   (defn submit-render-commands! [e ren]
     (let [world (Engine.world e)]
       (do
@@ -539,7 +554,23 @@
               (let [inst (Array.unsafe-nth (SdfDatabase.instances (Engine.db e)) id)]
                 (do
                   (SdfInstance.set-pos! inst @(RigidBody.position rb))
-                  (SdfInstance.set-rot! inst @(RigidBody.rotation rb)))))))
+                  (if (ECS.has-component? world &ent BouncyTag)
+                    (let [vel (Body.velocity (RigidBody.body rb))
+                          speed (Double.sqrt (Vector3.mag-sq vel))
+                          stretch-factor 0.05
+                          s-val (+ 0.6 (* speed stretch-factor))
+                          s-clamped (if (< s-val 0.6) 0.6 (if (> s-val 2.5) 2.5 s-val))
+                          stretch-amt (Double.to-int (* s-clamped 100.0))
+                          csg-idx (- -99 stretch-amt)]
+                      (do
+                        (SdfInstance.set-root-csg-idx! inst csg-idx)
+                        (if (> speed 0.1)
+                          (let [dir (Vector3.mul vel (/ 1.0 speed))
+                                up-axis (Vector3.init 0.0 1.0 0.0)
+                                rot (rotation-between &up-axis &dir)]
+                            (SdfInstance.set-rot! inst rot))
+                          (SdfInstance.set-rot! inst (Quaternion.identity)))))
+                    (SdfInstance.set-rot! inst @(RigidBody.rotation rb))))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]

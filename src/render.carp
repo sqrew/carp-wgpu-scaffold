@@ -363,9 +363,12 @@
                     let raw_w = s_data.pos.w;
                     if (raw_w != 0.0) {
                       let csg_root_idx = i32(round(s_data.color.w));
-                      if (csg_root_idx == -99) {
+                      if (csg_root_idx <= -99) {
+                          var s = f32(-99 - csg_root_idx) / 100.0;
+                          if (s < 0.05) { s = 0.6; }
                           let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                          let local_dist = sdSphere(local_p, raw_w);
+                          let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
+                          let local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
                           metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
                       }
                     }
@@ -555,8 +558,11 @@
                         var local_dist = 10000.0;
                         let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
                         let csg_root_idx = i32(round(s_data.color.w));
-                        if (csg_root_idx == -99) {
-                            local_dist = sdSphere(local_p, raw_w);
+                        if (csg_root_idx <= -99) {
+                            var s = f32(-99 - csg_root_idx) / 100.0;
+                            if (s < 0.05) { s = 0.6; }
+                            let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
+                            local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
                             metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
                             has_metaballs = true;
                             metaball_idx = f32(s_idx);
@@ -637,8 +643,11 @@
                         var local_dist = 10000.0;
                         let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
                         let csg_root_idx = i32(round(s_data.color.w));
-                        if (csg_root_idx == -99) {
-                            local_dist = sdSphere(local_p, raw_w);
+                        if (csg_root_idx <= -99) {
+                            var s = f32(-99 - csg_root_idx) / 100.0;
+                            if (s < 0.05) { s = 0.6; }
+                            let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
+                            local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
                             metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
                             has_metaballs = true;
                             metaball_idx = f32(s_idx);
@@ -766,10 +775,10 @@
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let raw_w = s_data.pos.w;
-                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color.w < 0.0 && s_data.color.w != -99.0) {
+                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color.w < 0.0 && s_data.color.w > -99.0) {
                         is_sphere = true;
                     }
-                    if (s_data.color.w == -99.0) {
+                    if (s_data.color.w <= -99.0) {
                         is_metaball = true;
                     }
                 }
@@ -823,7 +832,8 @@
                    let view_dir = normalize(u.cam_pos.xyz - p);
                    let half_dir = normalize(light_dir + view_dir);
                    let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
-                   specular = pow(max(dot(normal, half_dir), 0.0), 80.0) * 0.8 * shadow * h;
+                    let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
+                    specular = pow(max(dot(normal, half_dir), 0.0), 120.0) * 2.0 * fresnel * shadow * h;
                }
 
                // Determine the base terrain color at p
@@ -848,9 +858,12 @@
                    }
                } else {
                    // Calculate water color at p (using world coordinates for waves layout)
-                   let w_speed = u.time * 2.5;
-                   let wave_val = sin(p.x * 6.0 + w_speed) * cos(p.z * 6.0 + w_speed) * 0.5 + 0.5;
-                   let water_col = mix(vec3<f32>(0.05, 0.35, 0.85), vec3<f32>(0.2, 0.65, 0.95), wave_val);
+                    let w_speed1 = u.time * 2.8;
+                    let w_speed2 = u.time * -1.8;
+                    let wave_val1 = sin(p.x * 5.0 + w_speed1) * cos(p.z * 5.0 + w_speed1) * 0.5 + 0.5;
+                    let wave_val2 = sin(p.x * 12.0 + w_speed2) * cos(p.z * 10.0 - w_speed2) * 0.5 + 0.5;
+                    let wave_val = mix(wave_val1, wave_val2, 0.35);
+                    let water_col = mix(vec3<f32>(0.02, 0.25, 0.75), vec3<f32>(0.15, 0.65, 0.95), wave_val);
 
                    // Blend terrain color and water color smoothly
                    let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
@@ -1482,7 +1495,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                     (set! root-csg-idx (serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
                                 _ ())
                               (let [inst (Array.unsafe-nth (SdfDatabase.instances db) id)]
-                                (SdfInstance.set-root-csg-idx! inst (if is-bouncy -99 root-csg-idx)))))
+                                (SdfInstance.set-root-csg-idx! inst (if is-bouncy @(SdfInstance.root-csg-idx inst) root-csg-idx)))))
                           (let [base (+ (/ WGPURenderer.header-size 4) (* id 12))
                                 inst (Array.unsafe-nth (SdfDatabase.instances db) id)
                                 final-csg-idx @(SdfInstance.root-csg-idx inst)]
