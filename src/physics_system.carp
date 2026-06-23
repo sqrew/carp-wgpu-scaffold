@@ -43,7 +43,7 @@
               _ ())))
         (Vector2.init min-d mat-id))))
 
-  (defn step-ecs! [world world-data grid coord]
+  (defn step-ecs! [world world-data grid coord metaball-k]
     (let [collision-occurred false
           manifolds []]
       (do
@@ -74,9 +74,15 @@
                     (SDF.set-rotation! sdf @rot))
                 _ ())
               (let [vel (Body.velocity (RigidBody.body rb))
-                    swept (Collision.get-swept-aabb vol vel fixed-dt)]
+                    swept (Collision.get-swept-aabb vol vel fixed-dt)
+                    swept-expanded (if (ECS.has-component? world &ent BouncyTag)
+                                       (let [pad (+ 0.8 metaball-k)
+                                             pad-vec (Vector3.init pad pad pad)]
+                                         (AABB.init (Vector3.sub (AABB.min &swept) &pad-vec)
+                                                    (Vector3.add (AABB.max &swept) &pad-vec)))
+                                       swept)]
                 (when (not (Uint32.= (ECS.Entity.id &ent) (Uint32.from-long 0l)))
-                  (SpatialGrid.insert! grid &swept (ECS.Entity.id &ent)))))))
+                  (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
 
         ;; 3. Detect Collisions between Entities (including the static floor)
         (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
@@ -333,7 +339,8 @@
                                           (Array.push-back! &contacts (Contact.init depth v normal)))))))
                                 (for [i 0 6]
                                   (Vector3.delete @(Array.unsafe-nth &offsets i)))))
-                          _ (let [rad 0.4
+                          _ (let [is-bouncy (ECS.has-component? world &ent1 BouncyTag)
+                                  rad (if is-bouncy 0.2 0.4)
                                   d (sample-static-world world-data pos)]
                               (when (< d rad)
                                 (let [depth (- rad d)
