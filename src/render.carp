@@ -619,17 +619,23 @@
             var res = 1.0;
             var t = mint;
             var last_h = 1e10;
+            var dt = 0.0;
             for (var i = 0; i < 30; i = i + 1) {
                 let sdf_val = worldSDF(ro + rd * t, rd);
                 let h = sdf_val.y;
                 if (h < 0.001) {
                     return 0.0;
                 }
-                let y = h * h / (2.0 * last_h);
-                let d = sqrt(max(0.0, h * h - y * y));
-                res = min(res, k * d / max(0.0001, t - y));
+                if (i > 0) {
+                    let y = (h * h - last_h * last_h + dt * dt) / (2.0 * dt);
+                    let d = sqrt(max(0.0, h * h - y * y));
+                    res = min(res, k * d / max(0.0001, t - y));
+                } else {
+                    res = min(res, k * h / t);
+                }
                 last_h = h;
-                t += h;
+                dt = clamp(sdf_val.x, 0.05, 0.8);
+                t += dt;
                 if (t > maxt) {
                     break;
                 }
