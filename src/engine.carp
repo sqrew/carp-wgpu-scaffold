@@ -52,7 +52,8 @@
         (InputManager.add-binding! &mgr "Down" (InputSource.Key GLFW.Keycode.Q) 1.0)
         (InputManager.add-binding! &mgr "LookX" (InputSource.MouseDeltaX) 0.002)
         (InputManager.add-binding! &mgr "LookY" (InputSource.MouseDeltaY) 0.002)
-        (InputManager.add-binding! &mgr "Reset" (InputSource.Key GLFW.Keycode.R) 1.0)
+        (InputManager.add-binding! &mgr "StopMovement" (InputSource.Key GLFW.Keycode.R) 1.0)
+        (InputManager.add-binding! &mgr "ResetPlayer" (InputSource.Key GLFW.Keycode.T) 1.0)
         (InputManager.add-binding! &mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
         (InputManager.add-binding! &mgr "FireBouncy" (InputSource.Key GLFW.Keycode.F) 1.0)
         (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
@@ -386,7 +387,17 @@
           (let [p-scale (match-ref (Collidable.volume p-col)
                           (Volume.Ball sphere) @(Sphere.radius sphere)
                           _ 1.0)]
-            (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)))
+            (do
+              (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)
+              (when (InputManager.action-pressed? mgr "StopMovement")
+                (do
+                  (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                  (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+              (when (InputManager.action-pressed? mgr "ResetPlayer")
+                (do
+                  (RigidBody.set-position! p-rb (Vector3.init 0.0 0.0 0.0))
+                  (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                  (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0)))))))
         (when (InputManager.action-pressed? mgr "Fire")
           (spawn-bullet! e false))
         (when (InputManager.action-pressed? mgr "FireBouncy")
