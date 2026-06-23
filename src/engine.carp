@@ -59,6 +59,7 @@
         (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
         (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
         (InputManager.add-binding! &mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
+        (InputManager.add-binding! &mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
 
         ;; Create Floor Entity (Large static platform for dynamic chunk loading: center (0.0, -50.0, 0.0), extents (500.0, 50.0, 500.0))
         (let [f-ent (GameWorld.create-entity! &world)
@@ -228,9 +229,11 @@
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)
                 (let [pos (CraterSpawnData.pos data)
-                      rad @(CraterSpawnData.radius data)]
+                      rad @(CraterSpawnData.radius data)
+                      op @(CraterSpawnData.op-type data)]
                   (do
-                    (Engine.spawn-crater! e @pos rad)
+                    (when (< op 0.5)
+                      (Engine.spawn-crater! e @pos rad))
                     (Array.push-back! (Engine.craters e) @data)
                     (Result.Success ())))
               _ (Result.Success ()))
@@ -372,12 +375,39 @@
                               _ ()))
                           r))
                 rad (* p-rad 1.2)
-                crater-data (CraterSpawnData.init @hit-p rad)
+                crater-data (CraterSpawnData.init @hit-p rad 0.0)
                 ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
             (do
               (IO.println &(str* "Laser hit at " &(Vector3.str hit-p) ", spawning crater of radius " &(Double.str rad)))
               (Coordinator.dispatch! (Engine.coordinator e) ev)))
           (IO.println "Laser missed!"))))
+
+  (defn build-laser! [e]
+    (let [cam (Engine.camera e)
+          world (Engine.world e)
+          grid (Engine.grid e)
+          cam-pos (Camera.pos cam)
+          cam-front (Camera.front cam)
+          ray (Ray.make @cam-pos @cam-front)
+          config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
+          hit (march-world world (Engine.world-data e) grid &ray &config)]
+      (if @(RaymarchHit.hit &hit)
+          (let [hit-p (RaymarchHit.p &hit)
+                p-rad (let [r 1.0]
+                        (do
+                          (ECS.query world [p-ent (p-col Collidable) (p-tag PlayerTag)]
+                            (match-ref (Collidable.volume p-col)
+                              (Volume.Ball sphere) (set! r @(Sphere.radius sphere))
+                              _ ()))
+                          r))
+                rad (* p-rad 1.5)
+                crater-data (CraterSpawnData.init @hit-p rad 1.0)
+                ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+            (do
+              (IO.println &(str* "Build hit at " &(Vector3.str hit-p) ", building sphere of radius " &(Double.str rad)))
+              (Coordinator.dispatch! (Engine.coordinator e) ev)))
+          (IO.println "Build missed!"))))
+
   (defn process-input! [e]
     (let [mgr (Engine.input e)
           dt (Clock.unscaled-dt (Engine.clock e))]
@@ -404,6 +434,8 @@
           (spawn-bullet! e true))
         (when (InputManager.action-pressed? mgr "Laser")
           (fire-laser! e))
+        (when (InputManager.action-pressed? mgr "Build")
+          (build-laser! e))
         (when (InputManager.action-pressed? mgr "ScaleUp")
           (scale-player! e 1.1))
         (when (InputManager.action-pressed? mgr "ScaleDown")

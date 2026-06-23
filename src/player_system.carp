@@ -40,6 +40,12 @@
         (when (not (< (Vector3.mag-sq &move-dir) 0.001))
           (let [accel (Vector3.mul &(Vector3.normalize &move-dir) move-speed)]
             (RigidBody.apply-force! p-rb &accel)))
+        (when (InputManager.action-digital? mgr "Up")
+          (let [up-force (Vector3.init 0.0 (* move-speed 1.5) 0.0)]
+            (RigidBody.apply-force! p-rb &up-force)))
+        (when (InputManager.action-digital? mgr "Down")
+          (let [down-force (Vector3.init 0.0 (- 0.0 (* move-speed 1.2)) 0.0)]
+            (RigidBody.apply-force! p-rb &down-force)))
         (RigidBody.set-rotation! p-rb look-rot))))
 
   (defn update-camera-and-bounds! [world cam dt]

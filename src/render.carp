@@ -787,6 +787,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let cy = params[5];
     let cz = params[6];
     let radius = params[7];
+    let op = params[8];
 
     let sx = f32(idx % 32u);
     let sy = f32((idx / 32u) % 32u);
@@ -801,15 +802,27 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let dz = pz - cz;
     let dist_to_crater_center = sqrt(dx*dx + dy*dy + dz*dz);
     let crater_dist = dist_to_crater_center - radius;
-    let neg_crater_dist = -crater_dist;
 
     var val = voxel_gpu_buffer[idx];
     let old_dist = val.x;
-    var new_dist = max(old_dist, neg_crater_dist);
-    if (new_dist < 0.0 && new_dist > -0.1) {
-        new_dist = 1.0;
+
+    if (op < 0.5) {
+        // Carve
+        let neg_crater_dist = -crater_dist;
+        var new_dist = max(old_dist, neg_crater_dist);
+        if (new_dist < 0.0 && new_dist > -0.1) {
+            new_dist = 1.0;
+        }
+        val.x = new_dist;
+    } else {
+        // Build
+        let new_dist = min(old_dist, crater_dist);
+        val.x = new_dist;
+        if (crater_dist < 0.0) {
+            val.y = 2.0; // Green material ID
+        }
     }
-    val.x = new_dist;
+
     voxel_gpu_buffer[idx] = val;
 }")
 
@@ -875,7 +888,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                                     (match (WGPU.create-buffer ctx 262144)
                                                       (Result.Error e) (do (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
                                                       (Result.Success v-half-b)
-                                                        (match (WGPU.create-buffer ctx 8)
+                                                        (match (WGPU.create-buffer ctx 12)
                                                           (Result.Error e) (do (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
                                                           (Result.Success c-params-b)
                                                             (match (WGPU.create-pipeline ctx carve-shader "main")
@@ -931,7 +944,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
           dist-sq (+ (* dx dx) (+ (* dy dy) (* dz dz)))]
       (< dist-sq (* radius radius))))
 
-  (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
+  (defn run-voxel-action-gpu! [ctx ren chunk center radius op-type]
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
@@ -945,7 +958,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
           params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
                        (Double.to-float cell-size)
                        (Double.to-float cx) (Double.to-float cy) (Double.to-float cz)
-                       (Double.to-float radius)]
+                       (Double.to-float radius)
+                       (Double.to-float op-type)
+                       0.0f 0.0f 0.0f]
           v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
           c-params-b @(WGPURenderer.carve-params-buffer ren)
           pipe @(WGPURenderer.carve-pipeline ren)]
@@ -954,7 +969,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         (WGPU.write-floats ctx c-params-b &params-data)
         (let [bufs [v-gpu-b c-params-b]]
           (match (WGPU.create-bind-group ctx pipe &bufs)
-            (Result.Error e) (IO.println &(format "Carve Bind Group error: %s" &e))
+            (Result.Error e) (IO.println &(format "Voxel action Bind Group error: %s" &e))
             (Result.Success bg)
               (do
                 (WGPU.dispatch ctx pipe bg 512)
@@ -963,6 +978,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         (let [updated-floats (WGPU.read-floats ctx v-gpu-b 131072)]
           (Chunk.set-voxel-data! chunk updated-floats))
         )))
+
+  (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
+    (run-voxel-action-gpu! ctx ren chunk center radius 0.0))
+
+  (defn build-voxel-grid-gpu! [ctx ren chunk center radius]
+    (run-voxel-action-gpu! ctx ren chunk center radius 1.0))
 
   (sig bake-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Array SDF)) (Ref (Array Float))] ()))
   (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
@@ -1086,6 +1107,60 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                        d (if (> old-dist neg-crater-dist) old-dist neg-crater-dist)]
                                    (if (and (< d 0.0) (> d -0.1)) 1.0 d))]
                     (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))
+
+  (defn build-voxel-grid-cpu! [chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          voxel-data (Chunk.voxel-data chunk)
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          min-x (- cx radius)
+          max-x (+ cx radius)
+          min-y (- cy radius)
+          max-y (+ cy radius)
+          min-z (- cz radius)
+          max-z (+ cz radius)
+          
+          idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
+          idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))
+          idx-min-y (the Int (Double.to-int (Double.floor (/ (- min-y oy) cell-size))))
+          idx-max-y (the Int (Double.to-int (Double.floor (/ (- max-y oy) cell-size))))
+          idx-min-z (the Int (Double.to-int (Double.floor (/ (- min-z oz) cell-size))))
+          idx-max-z (the Int (Double.to-int (Double.floor (/ (- max-z oz) cell-size))))
+          
+          start-x (Int.clamp 0 31 idx-min-x)
+          end-x (Int.clamp 0 31 idx-max-x)
+          start-y (Int.clamp 0 31 idx-min-y)
+          end-y (Int.clamp 0 31 idx-max-y)
+          start-z (Int.clamp 0 31 idx-min-z)
+          end-z (Int.clamp 0 31 idx-max-z)]
+      (do
+        (for [sz start-z (inc end-z)]
+          (let [pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
+                dz (- pz cz)
+                dz2 (* dz dz)]
+            (for [sy start-y (inc end-y)]
+              (let [py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
+                    dy (- py cy)
+                    dy2_dz2 (+ (* dy dy) dz2)]
+                (for [sx start-x (inc end-x)]
+                  (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                        dx (- px cx)
+                        dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
+                        sphere-dist (- dist-to-sphere-center radius)
+                        idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
+                        old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                        new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
+                    (do
+                      (Array.aset! voxel-data idx-full (Double.to-float new-dist))
+                      (when (< sphere-dist 0.0)
+                        (Array.aset! voxel-data (+ idx-full 1) 2.0f))))))))))))
 
 
 
@@ -1314,13 +1389,18 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                       (let [crater (Array.unsafe-nth craters i)
                             pos (CraterSpawnData.pos crater)
                             rad @(CraterSpawnData.radius crater)
+                            op @(CraterSpawnData.op-type crater)
                             chunks (World.chunks world-data)]
                         (for [j 0 (Array.length chunks)]
                           (let [chunk (Array.unsafe-nth chunks j)]
                             (when (chunk-overlaps-sphere? chunk pos rad)
-                              (do
-                                (carve-voxel-grid-cpu! chunk pos rad)
-                                (carve-voxel-grid-gpu! ctx ren chunk pos rad)))))))))
+                              (if (< op 0.5)
+                                  (do
+                                    (carve-voxel-grid-cpu! chunk pos rad)
+                                    (carve-voxel-grid-gpu! ctx ren chunk pos rad))
+                                  (do
+                                    (build-voxel-grid-cpu! chunk pos rad)
+                                    (build-voxel-grid-gpu! ctx ren chunk pos rad))))))))))
                 (WGPURenderer.set-voxel-dirty! ren false)))
             
             (when grid-dirty

@@ -359,7 +359,7 @@
                             (let [bullet-ent &ent1]
                               (do
                                 (let [bp @(RigidBody.position rb1)
-                                      crater-data (CraterSpawnData.init bp 0.45)
+                                      crater-data (CraterSpawnData.init bp 0.45 0.0)
                                       event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
                                   (Coordinator.dispatch! coord event))
                                 (ECS.with-components world @bullet-ent [e (lt Lifetime)]
@@ -393,7 +393,7 @@
                                                   contacts-arr (ContactSet.contacts c-set)]
                                               (when (> (Array.length contacts-arr) 0)
                                                 (let [bp @(if is-dig-bullet-1 (RigidBody.position rb1) (RigidBody.position rb2))
-                                                      crater-data (CraterSpawnData.init bp 0.45)
+                                                      crater-data (CraterSpawnData.init bp 0.45 0.0)
                                                       event (EventKind.Game (GameEvent.SpawnCrater crater-data))]
                                                   (do
                                                     (Coordinator.dispatch! coord event)
