@@ -167,9 +167,10 @@
                     (and (>= clz 0) (< clz 3))))
           (let [idx (+ clx (+ (* cly 3) (* clz 9)))
                 chunk (Array.unsafe-nth (World.chunks world) idx)
-                voxel-idx (* (+ lx (+ (* ly res) (* (* lz res) res))) 4)]
-            (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) voxel-idx)))
-          1000.0)))
+                voxel-idx (* (+ lx (+ (* ly res) (* (* lz res) res))) 4)
+                val (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) voxel-idx))]
+            (if (< val 1.5) val 1.5))
+          1.5)))
 
   (defn sample-voxel-grid-trilinear [world p]
     (let [px @(Vector3.x p)

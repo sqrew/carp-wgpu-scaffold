@@ -60,14 +60,14 @@
         (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
         (InputManager.add-binding! &mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
 
-        ;; Create Floor Entity (Giant Box SDF)
+        ;; Create Floor Entity (Platform aligned with active voxel chunks: center (16.0, -50.0, 16.0), extents (48.0, 50.0, 48.0))
         (let [f-ent (GameWorld.create-entity! &world)
-              f-pos (Vector3.init 0.0 -100.0 0.0)
+              f-pos (Vector3.init 16.0 -50.0 16.0)
               f-rb (RigidBody.static @&f-pos (Quaternion.identity) 0.8 0.8)
-              f-vol (Volume.Sdf (SDF.init-box (Vector3.init 100.0 100.0 100.0) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+              f-vol (Volume.Sdf (SDF.init-box (Vector3.init 48.0 50.0 48.0) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               f-col (Collidable.init @(ECS.Entity.handle &f-ent) f-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               f-color (Color.init (Vector3.init 0.25 0.25 0.25))
-              params (Vector4.init 100.0 100.0 100.0 0.0)
+              params (Vector4.init 48.0 50.0 48.0 0.0)
               inst (SdfInstance.init 2 params f-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.25 0.25 0.25))
               geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)]
           (do
