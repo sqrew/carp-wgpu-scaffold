@@ -1232,6 +1232,72 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
             (let [cam-qx (World.camera-chunk-qx cam-pos)
                   cam-qy (World.camera-chunk-qy cam-pos)
+                  cam-qz (World.camera-chunk-qz cam-pos)]
+              (do
+                ;; If camera moved chunks, run dynamic load/unload
+                (when (or (not (= cam-qx @(World.last-cam-x world-data)))
+                          (or (not (= cam-qy @(World.last-cam-y world-data)))
+                              (not (= cam-qz @(World.last-cam-z world-data)))))
+                  (do
+                    (World.set-last-cam-x! world-data cam-qx)
+                    (World.set-last-cam-y! world-data cam-qy)
+                    (World.set-last-cam-z! world-data cam-qz)
+                    
+                    ;; 1. Unload far chunks (keep only chunks within dx <= 4, dy <= 3, dz <= 4)
+                    (let [chunks (World.chunks world-data)
+                          keep (the (Array Chunk) [])]
+                      (do
+                        (for [idx 0 (Array.length chunks)]
+                          (let [chunk (Array.unsafe-nth chunks idx)
+                                cqx @(Chunk.coord-x chunk)
+                                cqy @(Chunk.coord-y chunk)
+                                cqz @(Chunk.coord-z chunk)
+                                dist-x (Int.abs (- cqx cam-qx))
+                                dist-y (Int.abs (- cqy cam-qy))
+                                dist-z (Int.abs (- cqz cam-qz))]
+                             (if (and (<= dist-x 3) (and (<= dist-y 3) (<= dist-z 3)))
+                                 (Array.push-back! &keep @chunk)
+                                 ())))
+                        (World.set-chunks! world-data keep)))))
+
+                ;; 2. Load missing chunks dynamically around player (up to 1 chunk per frame to prevent hiccups)
+                (let [loaded-any false]
+                  (do
+                    (for [dy -2 2]
+                      (for [dz -2 3]
+                        (for [dx -2 3]
+                          (let [qx (+ cam-qx dx)
+                                qy (+ cam-qy dy)
+                                qz (+ cam-qz dz)]
+                            (when (and (not loaded-any) (not (World.has-chunk? world-data qx qy qz)))
+                              (let [slot (World.find-unused-atlas-slot world-data)]
+                                (when (>= slot 0)
+                                  (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+                                        chunk (Chunk.init qx qy qz voxel-data slot)
+                                        static-sdfs []
+                                        static-mat-ids []]
+                                    (do
+                                      ;; Get static shapes to bake into this chunk
+                                      (ECS.query world [ent (rb RigidBody) (col Collidable)]
+                                        (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+                                          (match-ref (Collidable.volume col)
+                                            (Volume.Sdf sdf)
+                                              (do
+                                                (SDF.set-position! sdf @(RigidBody.position rb))
+                                                (SDF.set-rotation! sdf @(RigidBody.rotation rb))
+                                                (let [saved-nodes @(SDF.csg-nodes sdf)]
+                                                  (do
+                                                    (SDF.set-csg-nodes! sdf [])
+                                                    (Array.push-back! &static-sdfs @sdf)
+                                                    (SDF.set-csg-nodes! sdf saved-nodes)))
+                                                (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
+                                            _ ())))
+                                      (bake-chunk! ctx ren &chunk &static-sdfs &static-mat-ids)
+                                      (Array.push-back! (World.chunks world-data) chunk)
+                                      (set! loaded-any true))))))))))))))
+
+            (let [cam-qx (World.camera-chunk-qx cam-pos)
+                  cam-qy (World.camera-chunk-qy cam-pos)
                   cam-qz (World.camera-chunk-qz cam-pos)
                   origin-x (- cam-qx 4)
                   origin-y (- cam-qy 4)

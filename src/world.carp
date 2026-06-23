@@ -75,6 +75,9 @@
   grid-height Int
   grid-depth Int
   chunks (Array Chunk)
+  last-cam-x Int
+  last-cam-y Int
+  last-cam-z Int
 ])
 
 (defmodule World
@@ -95,7 +98,7 @@
         arr)))
 
   (defn new [origin cell-size w h d]
-    (World.init (SdfDatabase.new) origin cell-size w h d (create-initial-chunks)))
+    (World.init (SdfDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -158,19 +161,26 @@
           lx (Int.bit-and gx 31)
           ly (Int.bit-and gy 31)
           lz (Int.bit-and gz 31)
-          clx (+ qx 1)
-          cly (+ qy 1)
-          clz (+ qz 1)
-          res 32]
-      (if (and (and (>= clx 0) (< clx 3))
-               (and (and (>= cly 0) (< cly 3))
-                    (and (>= clz 0) (< clz 3))))
-          (let [idx (+ clx (+ (* cly 3) (* clz 9)))
-                chunk (Array.unsafe-nth (World.chunks world) idx)
-                voxel-idx (* (+ lx (+ (* ly res) (* (* lz res) res))) 4)
-                val (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) voxel-idx))]
-            (if (< val 1.5) val 1.5))
-          1.5)))
+          res 32
+          chunks (World.chunks world)
+          found-idx -1
+          i 0
+          len (Array.length chunks)]
+      (do
+        (while (and (< i len) (= found-idx -1))
+          (let [chunk (Array.unsafe-nth chunks i)]
+            (do
+              (when (and (= @(Chunk.coord-x chunk) qx)
+                         (and (= @(Chunk.coord-y chunk) qy)
+                              (= @(Chunk.coord-z chunk) qz)))
+                (set! found-idx i))
+              (set! i (inc i)))))
+        (if (= found-idx -1)
+            1.5
+            (let [chunk (Array.unsafe-nth chunks found-idx)
+                  voxel-idx (* (+ lx (+ (* ly res) (* (* lz res) res))) 4)
+                  val (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) voxel-idx))]
+              (if (< val 1.5) val 1.5))))))
 
   (defn sample-voxel-grid-trilinear [world p]
     (let [px @(Vector3.x p)
@@ -207,4 +217,39 @@
           v-y0 (+ v-01 (* fy (- v-23 v-01)))
           v-y1 (+ v-45 (* fy (- v-67 v-45)))]
       (+ v-y0 (* fz (- v-y1 v-y0)))))
+
+  (defn find-unused-atlas-slot [world]
+    (let [chunks (World.chunks world)
+          used-slots (the (Array Bool) (replicate 512 &false))]
+      (do
+        (for [i 0 (Array.length chunks)]
+          (let [chunk (Array.unsafe-nth chunks i)
+                slot @(Chunk.atlas-slot chunk)]
+            (when (and (>= slot 0) (< slot 512))
+              (Array.aset! &used-slots slot true))))
+        (let [found-slot -1
+              s 0]
+          (do
+            (while (and (< s 512) (= found-slot -1))
+              (do
+                (when (not @(Array.unsafe-nth &used-slots s))
+                  (set! found-slot s))
+                (set! s (inc s))))
+            found-slot)))))
+
+  (defn has-chunk? [world qx qy qz]
+    (let [chunks (World.chunks world)
+          found false
+          i 0
+          len (Array.length chunks)]
+      (do
+        (while (and (< i len) (not found))
+          (let [chunk (Array.unsafe-nth chunks i)]
+            (do
+              (when (and (= @(Chunk.coord-x chunk) qx)
+                         (and (= @(Chunk.coord-y chunk) qy)
+                              (= @(Chunk.coord-z chunk) qz)))
+                (set! found true))
+              (set! i (inc i)))))
+        found)))
 )
