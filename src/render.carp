@@ -212,41 +212,41 @@
       }
 
        fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
-          let qx = gx >> 5u;
-          let qy = gy >> 5u;
-          let qz = gz >> 5u;
-          
-          let lx = gx & 31;
-          let ly = gy & 31;
-          let lz = gz & 31;
-          
-          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-          if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(8))) {
-              return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          }
-          
-          let idx = local_q.x + local_q.y * 8 + local_q.z * 64;
-          let slot = chunk_lookup.slots[idx >> 2u][idx & 3];
-          if (slot < 0) {
-              return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          }
-          
-          let slot_x = slot & 7;
-          let slot_y = (slot >> 3u) & 7;
-          let slot_z = slot >> 6u;
-          
-          let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
-          return textureLoad(voxel_texture, atlas_coord, 0);
-      }
+           let qx = gx >> 5u;
+           let qy = gy >> 5u;
+           let qz = gz >> 5u;
+           
+           let lx = i32(u32(gx) & 31u);
+           let ly = i32(u32(gy) & 31u);
+           let lz = i32(u32(gz) & 31u);
+           
+           let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+           if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(8))) {
+               return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           }
+           
+           let idx = local_q.x + local_q.y * 8 + local_q.z * 64;
+           let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+           if (slot < 0) {
+               return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           }
+           
+           let slot_x = slot & 7;
+           let slot_y = (slot >> 3u) & 7;
+           let slot_z = slot >> 6u;
+           
+           let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
+           return textureLoad(voxel_texture, atlas_coord, 0);
+       }
 
       fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
           let tx = p / 1.0 - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
           
-          let lx = c0.x & 31;
-          let ly = c0.y & 31;
-          let lz = c0.z & 31;
+          let lx = i32(u32(c0.x) & 31u);
+          let ly = i32(u32(c0.y) & 31u);
+          let lz = i32(u32(c0.z) & 31u);
           
           var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
@@ -258,13 +258,13 @@
           var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
 
           if (lx < 31 && ly < 31 && lz < 31) {
-              let qx = c0.x >> 5;
-              let qy = c0.y >> 5;
-              let qz = c0.z >> 5;
+              let qx = c0.x >> 5u;
+              let qy = c0.y >> 5u;
+              let qz = c0.z >> 5u;
               let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
               if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(8))) {
                   let idx = local_q.x + local_q.y * 8 + local_q.z * 64;
-                  let slot = chunk_lookup.slots[idx >> 2][idx & 3];
+                  let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
                   if (slot >= 0) {
                       let slot_x = slot & 7;
                       let slot_y = (slot >> 3) & 7;
@@ -291,7 +291,15 @@
               v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1);
               v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1);
           }
-          let sf = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+           v0.x = min(v0.x, 1.5);
+           v1.x = min(v1.x, 1.5);
+           v2.x = min(v2.x, 1.5);
+           v3.x = min(v3.x, 1.5);
+           v4.x = min(v4.x, 1.5);
+           v5.x = min(v5.x, 1.5);
+           v6.x = min(v6.x, 1.5);
+           v7.x = min(v7.x, 1.5);
+          let sf = f;
           let v_01 = mix(v0, v1, sf.x);
           let v_23 = mix(v2, v3, sf.x);
           let v_45 = mix(v4, v5, sf.x);
@@ -618,10 +626,10 @@
                     return 0.0;
                 }
                 let y = h * h / (2.0 * last_h);
-                let d = sqrt(h * h - y * y);
+                let d = sqrt(max(0.0, h * h - y * y));
                 res = min(res, k * d / max(0.0001, t - y));
                 last_h = h;
-                t += clamp(sdf_val.x, 0.01, 0.3);
+                t += h;
                 if (t > maxt) {
                     break;
                 }
@@ -650,22 +658,28 @@
            let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
            var t = 0.0;
            var hitId = -1.0;
-           for(var i = 0; i < 80; i = i + 1) {
-               let p = ro + rd * t;
-               let res = worldSDFPoint(p, rd);
-               if (res.x < 0.001) { hitId = res.z; break; }
-               t += res.x;
-               if (t > 100.0) { break; }
-           }
-           if (t <= 100.0) {
-               for (var j = 0; j < 3; j = j + 1) {
-                   let p = ro + rd * t;
-                   let res = worldSDF(p, rd);
-                   hitId = res.z;
-                   t += res.y;
-               }
-           }
-           var color = u.bg_color.rgb;
+             for(var i = 0; i < 80; i = i + 1) {
+                 let p = ro + rd * t;
+                 let res_pt = worldSDFPoint(p, rd);
+                 if (res_pt.x < 1.5) {
+                     let res_tri = worldSDF(p, rd);
+                     hitId = res_tri.z;
+                     if (res_tri.y < 0.001) { break; }
+                     t += res_tri.y * 0.66667;
+                 } else {
+                     t += res_pt.x;
+                 }
+                 if (t > 100.0) { break; }
+             }
+             if (t <= 100.0) {
+                 for (var j = 0; j < 2; j = j + 1) {
+                     let p = ro + rd * t;
+                     let res = worldSDF(p, rd);
+                     hitId = res.z;
+                     t += res.y * 0.66667;
+                 }
+             }
+            var color = u.bg_color.rgb;
            if (t <= 100.0) {
                let p = ro + rd * t;
                let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
@@ -690,12 +704,16 @@
                    let d2 = worldSDF(p + vec3<f32>(-eps, -eps,  eps), rd).y;
                    let d3 = worldSDF(p + vec3<f32>(-eps,  eps, -eps), rd).y;
                    let d4 = worldSDF(p + vec3<f32>( eps,  eps,  eps), rd).y;
-                   normal = normalize(
-                       vec3<f32>( eps, -eps, -eps) * d1 +
-                       vec3<f32>(-eps, -eps,  eps) * d2 +
-                       vec3<f32>(-eps,  eps, -eps) * d3 +
-                       vec3<f32>( eps,  eps,  eps) * d4
-                   );
+                   let grad = vec3<f32>( eps, -eps, -eps) * d1 +
+                              vec3<f32>(-eps, -eps,  eps) * d2 +
+                              vec3<f32>(-eps,  eps, -eps) * d3 +
+                              vec3<f32>( eps,  eps,  eps) * d4;
+                   let len = length(grad);
+                   if (len > 1e-6) {
+                       normal = grad / len;
+                   } else {
+                       normal = vec3<f32>(0.0, 1.0, 0.0);
+                   }
                }
 
               let diffuse = max(dot(normal, light_dir), 0.0);
@@ -781,7 +799,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     var val = voxel_gpu_buffer[idx];
     let old_dist = val.x;
-    let new_dist = max(old_dist, neg_crater_dist);
+    var new_dist = max(old_dist, neg_crater_dist);
+    if (new_dist < 0.0 && new_dist > -0.1) {
+        new_dist = 1.0;
+    }
     val.x = new_dist;
     voxel_gpu_buffer[idx] = val;
 }")
@@ -1055,8 +1076,9 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                         crater-dist (- dist-to-crater-center radius)
                         idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
                         old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                        new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
-                                   (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
+                        new-dist (let [neg-crater-dist (- 0.0 crater-dist)
+                                       d (if (> old-dist neg-crater-dist) old-dist neg-crater-dist)]
+                                   (if (and (< d 0.0) (> d -0.1)) 1.0 d))]
                     (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))
 
 
