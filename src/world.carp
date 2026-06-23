@@ -152,16 +152,16 @@
           (Maybe.Nothing))))
 
   (defn get-voxel-at-world-grid [world gx gy gz]
-    (let [res (World.voxel-resolution)
-          qx (if (< gx 0) (dec (/ (inc gx) res)) (/ gx res))
-          qy (if (< gy 0) (dec (/ (inc gy) res)) (/ gy res))
-          qz (if (< gz 0) (dec (/ (inc gz) res)) (/ gz res))
-          lx (Int.positive-mod gx res)
-          ly (Int.positive-mod gy res)
-          lz (Int.positive-mod gz res)
+    (let [qx (Int.bit-shift-right gx 5)
+          qy (Int.bit-shift-right gy 5)
+          qz (Int.bit-shift-right gz 5)
+          lx (Int.bit-and gx 31)
+          ly (Int.bit-and gy 31)
+          lz (Int.bit-and gz 31)
           clx (+ qx 1)
           cly (+ qy 1)
-          clz (+ qz 1)]
+          clz (+ qz 1)
+          res 32]
       (if (and (and (>= clx 0) (< clx 3))
                (and (and (>= cly 0) (< cly 3))
                     (and (>= clz 0) (< clz 3))))
