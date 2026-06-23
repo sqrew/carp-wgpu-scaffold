@@ -64,13 +64,6 @@
                 _ 1.0)
             eye-pos (Vector3.add (RigidBody.position p-rb) &(Vector3.init 0.0 (* 0.8 r) 0.0))]
         (do
-          ;; Void Bounds Check: Reset player if they fall off the block
-          (when (< @(Vector3.y (RigidBody.position p-rb)) -30.0)
-            (do
-              (RigidBody.set-position! p-rb (Vector3.init 5.0 1.0 5.0))
-              (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-              (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
-          
           (Camera.set-pos! cam eye-pos)
           (Camera.set-front! cam (Transform.forward-quat &look-rot))
           (Camera.set-right! cam (Transform.right-quat &look-rot))

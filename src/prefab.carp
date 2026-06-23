@@ -19,8 +19,10 @@
 
   (defn spawn-bullet! [world db pos vel ang-vel scale bouncy]
     (let [bullet-ent (GameWorld.create-entity! world)
-          rb (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1)
-          shape-type (Int.random-between 0 6)
+          rb (if bouncy
+                 (RigidBody.new @pos (Quaternion.identity) 0.5 0.05 0.1 0.95 0.95 1.0)
+                 (RigidBody.new @pos (Quaternion.identity) 0.5 0.6 0.4 0.99 0.99 0.1))
+          shape-type (if bouncy 0 (Int.random-between 0 6))
           vol (let [c-sdf (cond (= shape-type 0) (SDF.init-sphere 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
                                 (= shape-type 1) (SDF.init-box (Vector3.init 0.4 0.4 0.4) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
                                 (= shape-type 2) (SDF.init-cylinder 0.4 0.4 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))
@@ -31,12 +33,14 @@
                   (SDF.set-scale! &c-sdf scale)
                   (Volume.Sdf c-sdf)))
           col (Collidable.init @(ECS.Entity.handle &bullet-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-          color (Color.init (cond (= shape-type 0) (Vector3.init 1.0 1.0 0.0)
-                                  (= shape-type 1) (Vector3.init 0.0 1.0 1.0)
-                                  (= shape-type 2) (Vector3.init 1.0 0.0 1.0)
-                                  (= shape-type 3) (Vector3.init 1.0 0.5 0.0)
-                                  (= shape-type 4) (Vector3.init 0.0 1.0 0.0)
-                                  (Vector3.init 0.5 0.5 1.0)))
+          color (Color.init (if bouncy
+                                (Vector3.init 0.1 0.5 1.0)
+                                (cond (= shape-type 0) (Vector3.init 1.0 1.0 0.0)
+                                      (= shape-type 1) (Vector3.init 0.0 1.0 1.0)
+                                      (= shape-type 2) (Vector3.init 1.0 0.0 1.0)
+                                      (= shape-type 3) (Vector3.init 1.0 0.5 0.0)
+                                      (= shape-type 4) (Vector3.init 0.0 1.0 0.0)
+                                      (Vector3.init 0.5 0.5 1.0))))
           c-val (Color.v &color)
           p-x 0.4 p-y 0.4 p-z 0.4 p-w 0.0
           _ (cond (= shape-type 0) (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0))
@@ -46,7 +50,8 @@
                   (= shape-type 4) (do (set! p-x 0.4) (set! p-y 0.1) (set! p-z 0.0))
                   (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0)))
           params (Vector4.init p-x p-y p-z p-w)
-          inst (SdfInstance.init (+ shape-type 1) params @pos (Quaternion.identity) scale -1 @c-val)
+          root-csg-idx (if bouncy -99 -1)
+          inst (SdfInstance.init (+ shape-type 1) params @pos (Quaternion.identity) scale root-csg-idx @c-val)
           geom-id (SdfDatabase.register-instance! db &inst)]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)
@@ -54,7 +59,7 @@
         (ECS.add-component! world &bullet-ent rb)
         (ECS.add-component! world &bullet-ent col)
         (ECS.add-component! world &bullet-ent color)
-        (ECS.add-component! world &bullet-ent (Lifetime.init 5.0))
+        (ECS.add-component! world &bullet-ent (Lifetime.init (if bouncy 12.0 5.0)))
         (ECS.add-component! world &bullet-ent (GeometryRef.init geom-id))
         (when bouncy
           (ECS.add-component! world &bullet-ent (BouncyTag.init))))))

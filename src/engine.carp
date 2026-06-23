@@ -232,8 +232,14 @@
         (SdfDatabase.release-instance! db @(GeometryRef.id g-ref)))
       (GameWorld.destroy-entity! world ent)))
 
+  (def last-fire-time 0.0)
+
   (defn spawn-bullet! [e bouncy]
-    (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
+    (let [current-time (Clock.total (Engine.clock e))]
+      (when (or (not bouncy) (>= (- current-time @&last-fire-time) 0.05))
+        (do
+          (when bouncy (set! last-fire-time current-time))
+          (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
       (let [p-pos (RigidBody.position p-rb)
             p-scale (match-ref (Collidable.volume p-col)
                       (Volume.Ball sphere) @(Sphere.radius sphere)
@@ -258,7 +264,7 @@
             
             data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel p-scale bouncy)
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
-        (Coordinator.dispatch! (Engine.coordinator e) ev))))
+        (Coordinator.dispatch! (Engine.coordinator e) ev)))))))
 
   (defn scale-player! [e factor]
     (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-tag PlayerTag)]
@@ -417,7 +423,7 @@
                   (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0)))))))
         (when (InputManager.action-pressed? mgr "Fire")
           (spawn-bullet! e false))
-        (when (InputManager.action-pressed? mgr "FireBouncy")
+        (when (InputManager.action-digital? mgr "FireBouncy")
           (spawn-bullet! e true))
         (when (InputManager.action-pressed? mgr "Laser")
           (fire-laser! e))
@@ -480,7 +486,7 @@
                       (when (and (> id (Uint32.from-long 4l)) (not (ECS.has-component? world &ent PlayerTag)))
                         (let [pos (RigidBody.position rb)
                               dist (Vector3.dist pos &p-pos)]
-                          (when (or (> dist 80.0) (< @(Vector3.y pos) -10.0))
+                          (when (or (> dist 150.0) (< @(Vector3.y pos) -100.0))
                             (Array.push-back! &to-destroy ent))))))
                   
                   (for [i 0 (Array.length &to-destroy)]
