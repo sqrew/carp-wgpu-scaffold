@@ -15,8 +15,14 @@
   (defn flatten-in-place! [world grid max-ids data]
     (let [total-cells (GPUSpatial.cell-count grid)
           st (GPUSpatial.stride max-ids)
-          buckets (SpatialGrid.buckets grid)]
+          buckets (SpatialGrid.buckets grid)
+          max-entities (Array.length (ECSRegistry.generations (GameWorld.registry world)))
+          geom-map (the (Array Int) (replicate max-entities &-1))]
       (do
+        (ECS.query world [ent (g-ref GeometryRef)]
+          (let [eid (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))]
+            (when (< eid max-entities)
+              (Array.aset! &geom-map eid @(GeometryRef.id g-ref)))))
         (for [i 0 total-cells]
           (let [bucket (Array.unsafe-nth buckets i)
                 count (min (Array.length bucket) max-ids)
@@ -25,11 +31,9 @@
               (Array.aset! data base-idx (the Float (Double.to-float (Double.from-int count))))
               (for [j 0 count]
                 (let [ent-idx-u32 @(Array.unsafe-nth bucket j)
-                      ent (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long ent-idx-u32)) (Uint32.from-long 1l)))
-                      geom-id -1]
-                  (do
-                    (ECS.with-components world ent [e (g-ref GeometryRef)]
-                      (set! geom-id @(GeometryRef.id g-ref)))
-                    (Array.aset! data (+ base-idx (+ 4 j)) (the Float (Double.to-float (Double.from-int geom-id))))))))))
-        ())))
+                      eid-int (Long.to-int (Uint32.to-long ent-idx-u32))
+                      geom-id (if (and (>= eid-int 0) (< eid-int max-entities))
+                                  @(Array.unsafe-nth &geom-map eid-int)
+                                  -1)]
+                  (Array.aset! data (+ base-idx (+ 4 j)) (the Float (Double.to-float (Double.from-int geom-id))))))))))))
 )

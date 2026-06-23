@@ -106,8 +106,8 @@
       @(World.grid-origin w)))
 
   (defn voxel-resolution [] 32)
-  (defn voxel-cell-size [] 5.0)
-  (defn chunk-size [] 160.0)
+  (defn voxel-cell-size [] 1.0)
+  (defn chunk-size [] 32.0)
 
   (defn camera-chunk-qx [cam-pos]
     (the Int (Double.to-int (Double.floor (/ @(Vector3.x cam-pos) (World.chunk-size))))))

@@ -240,7 +240,7 @@
       }
 
       fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
-          let tx = p / 5.0 - vec3<f32>(0.5);
+          let tx = p / 1.0 - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
           
@@ -757,12 +757,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
-          c-min-x (* (Double.from-int qx) 160.0)
-          c-min-y (* (Double.from-int qy) 160.0)
-          c-min-z (* (Double.from-int qz) 160.0)
-          c-max-x (+ c-min-x 160.0)
-          c-max-y (+ c-min-y 160.0)
-          c-max-z (+ c-min-z 160.0)
+          c-min-x (* (Double.from-int qx) 32.0)
+          c-min-y (* (Double.from-int qy) 32.0)
+          c-min-z (* (Double.from-int qz) 32.0)
+          c-max-x (+ c-min-x 32.0)
+          c-max-y (+ c-min-y 32.0)
+          c-max-z (+ c-min-z 32.0)
           cx @(Vector3.x center)
           cy @(Vector3.y center)
           cz @(Vector3.z center)
@@ -779,10 +779,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
-          ox (* (Double.from-int qx) 160.0)
-          oy (* (Double.from-int qy) 160.0)
-          oz (* (Double.from-int qz) 160.0)
-          cell-size 5.0
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
           cx @(Vector3.x center)
           cy @(Vector3.y center)
           cz @(Vector3.z center)
@@ -814,10 +814,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
           qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
-          ox (* (Double.from-int qx) 160.0)
-          oy (* (Double.from-int qy) 160.0)
-          oz (* (Double.from-int qz) 160.0)
-          cell-size 5.0
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
           w-dim 32
           h-dim 32
           d-dim 32
@@ -882,10 +882,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
-          ox (* (Double.from-int qx) 160.0)
-          oy (* (Double.from-int qy) 160.0)
-          oz (* (Double.from-int qz) 160.0)
-          cell-size 5.0
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
           voxel-data (Chunk.voxel-data chunk)
           cx @(Vector3.x center)
           cy @(Vector3.y center)
@@ -912,23 +912,23 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
           end-z (Int.clamp 0 31 idx-max-z)]
       (do
         (for [sz start-z (inc end-z)]
-          (for [sy start-y (inc end-y)]
-            (for [sx start-x (inc end-x)]
-              (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
-                    py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
-                    pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
-                    
-                    dx (- px cx)
+          (let [pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
+                dz (- pz cz)
+                dz2 (* dz dz)]
+            (for [sy start-y (inc end-y)]
+              (let [py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
                     dy (- py cy)
-                    dz (- pz cz)
-                    dist-to-crater-center (Double.sqrt (+ (* dx dx) (+ (* dy dy) (* dz dz))))
-                    crater-dist (- dist-to-crater-center radius)
-                    
-                    idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
-                    old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                    new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
-                               (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
-                (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))
+                    dy2_dz2 (+ (* dy dy) dz2)]
+                (for [sx start-x (inc end-x)]
+                  (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                        dx (- px cx)
+                        dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
+                        crater-dist (- dist-to-crater-center radius)
+                        idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
+                        old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                        new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
+                                   (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
+                    (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))
 
 
 
