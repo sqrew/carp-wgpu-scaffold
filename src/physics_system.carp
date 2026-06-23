@@ -407,15 +407,33 @@
                                         (Array.push-back! &manifolds @(Collision.contact-set &actual-col))))))
                             _ ())))))))))))
         ;; 4. Solve Constraints Iteratively over Cached Manifolds
-        (for [iter-idx 0 iterations]
-          (for [m-idx 0 (Array.length &manifolds)]
-            (let [m (Array.unsafe-nth &manifolds m-idx)
-                  h-a (ContactSet.a m)
-                  h-b (ContactSet.b m)
-                  ent-a (ECS.Entity.init @h-a)
-                  ent-b (ECS.Entity.init @h-b)]
-              (ECS.with-components world ent-a [e-a (rb-a RigidBody) (col-a Collidable)]
-                (ECS.with-components world ent-b [e-b (rb-b RigidBody) (col-b Collidable)]
+        (let [resolved-manifolds []]
+          (do
+            (for [m-idx 0 (Array.length &manifolds)]
+              (let [m (Array.unsafe-nth &manifolds m-idx)
+                    h-a (ContactSet.a m)
+                    h-b (ContactSet.b m)
+                    ent-a (ECS.Entity.init @h-a)
+                    ent-b (ECS.Entity.init @h-b)
+                    ptr-a (ECS.get-component-ptr world &ent-a)
+                    ptr-b (ECS.get-component-ptr world &ent-b)]
+                (match ptr-a
+                  (Maybe.Just p-a)
+                    (match ptr-b
+                      (Maybe.Just p-b)
+                        (Array.push-back! &resolved-manifolds (Pair.init m-idx (Pair.init p-a p-b)))
+                      _ ())
+                  _ ())))
+            (for [iter-idx 0 iterations]
+              (for [rm-idx 0 (Array.length &resolved-manifolds)]
+                (let [rm (Array.unsafe-nth &resolved-manifolds rm-idx)
+                      m-idx @(Pair.a rm)
+                      m (Array.unsafe-nth &manifolds m-idx)
+                      ptrs (Pair.b rm)
+                      ptr-a @(Pair.a ptrs)
+                      ptr-b @(Pair.b ptrs)
+                      rb-a (ECS.ptr->ref ptr-a world)
+                      rb-b (ECS.ptr->ref ptr-b world)]
                   (Solver.solve! rb-a rb-b m fixed-dt))))))
 
         collision-occurred)))
