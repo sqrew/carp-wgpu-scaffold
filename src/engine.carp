@@ -61,21 +61,7 @@
         (InputManager.add-binding! &mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
         (InputManager.add-binding! &mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
 
-        ;; Create Floor Entity (Large static platform for dynamic chunk loading: center (0.0, -50.0, 0.0), extents (500.0, 50.0, 500.0))
-        (let [f-ent (GameWorld.create-entity! &world)
-              f-pos (Vector3.init 0.0 -50.0 0.0)
-              f-rb (RigidBody.static @&f-pos (Quaternion.identity) 0.8 0.8)
-              f-vol (Volume.Sdf (SDF.init-box (Vector3.init 500.0 50.0 500.0) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-              f-col (Collidable.init @(ECS.Entity.handle &f-ent) f-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-              f-color (Color.init (Vector3.init 0.25 0.25 0.25))
-              params (Vector4.init 500.0 50.0 500.0 0.0)
-              inst (SdfInstance.init 2 params f-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.25 0.25 0.25))
-              geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)]
-          (do
-            (ECS.add-component! &world &f-ent f-rb)
-            (ECS.add-component! &world &f-ent f-col)
-            (ECS.add-component! &world &f-ent f-color)
-            (ECS.add-component! &world &f-ent (GeometryRef.init geom-id))))
+        ()
 
         ;; Create CSG Root Shape (Static Box) and Child Shape (Cylinder)
         (let [root-ent (GameWorld.create-entity! &world)
@@ -108,7 +94,7 @@
 
         ;; Create Player Entity
         (let [p-ent (GameWorld.create-entity! &world)
-              p-pos (Vector3.init 5.0 1.0 5.0)
+              p-pos (Vector3.init 5.0 35.0 5.0)
               p-rb (RigidBody.new p-pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)
               p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
               p-col (Collidable.init @(ECS.Entity.handle &p-ent) p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -234,6 +220,7 @@
                   (do
                     (when (< op 0.5)
                       (Engine.spawn-crater! e @pos rad))
+                    (Engine.set-voxel-dirty! e true)
                     (Array.push-back! (Engine.craters e) @data)
                     (Result.Success ())))
               _ (Result.Success ()))
@@ -425,7 +412,7 @@
                   (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
               (when (InputManager.action-pressed? mgr "ResetPlayer")
                 (do
-                  (RigidBody.set-position! p-rb (Vector3.init 0.0 0.0 0.0))
+                  (RigidBody.set-position! p-rb (Vector3.init 0.0 35.0 0.0))
                   (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
                   (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0)))))))
         (when (InputManager.action-pressed? mgr "Fire")
