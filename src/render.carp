@@ -291,16 +291,16 @@
               v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1);
               v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1);
           }
+          let sf = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+          let v_01 = mix(v0, v1, sf.x);
+          let v_23 = mix(v2, v3, sf.x);
+          let v_45 = mix(v4, v5, sf.x);
+          let v_67 = mix(v6, v7, sf.x);
           
-          let v_01 = mix(v0, v1, f.x);
-          let v_23 = mix(v2, v3, f.x);
-          let v_45 = mix(v4, v5, f.x);
-          let v_67 = mix(v6, v7, f.x);
+          let v_y0 = mix(v_01, v_23, sf.y);
+          let v_y1 = mix(v_45, v_67, sf.y);
           
-          let v_y0 = mix(v_01, v_23, f.y);
-          let v_y1 = mix(v_45, v_67, f.y);
-          
-          let tex_val = mix(v_y0, v_y1, f.z);
+          let tex_val = mix(v_y0, v_y1, sf.z);
           
           let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
           let dummy = dummy_sample.r * 1e-10;
@@ -610,15 +610,18 @@
         fn getShadow(ro: vec3<f32>, rd: vec3<f32>, mint: f32, maxt: f32, k: f32) -> f32 {
             var res = 1.0;
             var t = mint;
+            var last_h = 1e10;
             for (var i = 0; i < 30; i = i + 1) {
                 let sdf_val = worldSDF(ro + rd * t, rd);
-                let h_step = sdf_val.x;
-                if (h_step < 0.001) {
+                let h = sdf_val.y;
+                if (h < 0.001) {
                     return 0.0;
                 }
-                let h_true = sdf_val.y;
-                res = min(res, k * h_true / t);
-                t += clamp(h_step, 0.01, 0.3);
+                let y = h * h / (2.0 * last_h);
+                let d = sqrt(h * h - y * y);
+                res = min(res, k * d / max(0.0001, t - y));
+                last_h = h;
+                t += clamp(sdf_val.x, 0.01, 0.3);
                 if (t > maxt) {
                     break;
                 }
@@ -659,7 +662,7 @@
                    let p = ro + rd * t;
                    let res = worldSDF(p, rd);
                    hitId = res.z;
-                   t += res.x;
+                   t += res.y;
                }
            }
            var color = u.bg_color.rgb;
@@ -733,6 +736,8 @@
               }
 
               color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
+              let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
+              color += vec3<f32>(dither_noise) * (1.0 / 255.0);
           }
           return vec4<f32>(color, 1.0);
       }
