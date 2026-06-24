@@ -1,0 +1,25 @@
+;; src/engine_type.carp
+
+(defmodule Engine
+  (deftype Engine [
+    camera Camera
+    clock Clock
+    input InputManager
+    grid (SpatialGrid Uint32)
+    world GameWorld
+    bg-color (Vector3 Double)
+    accumulator Double
+    coordinator Coordinator
+    world-data World
+    csg-dirty Bool
+    grid-dirty Bool
+    voxel-dirty Bool
+    craters (Array CraterSpawnData)
+    metaball-k Double
+    show-debug-lines Bool
+    view-mode Int
+  ])
+
+  (defn spawn-crater! [e pos rad]
+    ())
+)

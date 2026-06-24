@@ -22,4 +22,42 @@
         (ECS.add-component! world &exp-ent (Lifetime.init 0.5))
         (ECS.add-component! world &exp-ent (Explosion.init 0.1 20.0 max-radius force pres-val temp-val))
         ())))
+
+  (defn step-explosions! [e world db dt]
+    (ECS.query world [ent (exp Explosion) (g-ref GeometryRef) (rb RigidBody)]
+      (let [current-r (Explosion.radius exp)
+            max-r @(Explosion.max-radius exp)
+            speed @(Explosion.radius-speed exp)
+            pos (RigidBody.position rb)
+            new-r (+ @current-r (* speed dt))]
+        (if (< new-r max-r)
+            (do
+              (Explosion.set-radius! exp new-r)
+              (Engine.set-grid-dirty! e true)
+              ;; Update scale in the FieldDatabase
+              (Array.aset! (FieldDatabase.scales db) @(GeometryRef.id g-ref) new-r)
+              ;; Decay values dynamically
+              (let [raw-decay (- 1.0 (/ new-r max-r))
+                    decay-factor (if (< raw-decay 0.0) 0.0 raw-decay)
+                    new-pres (* @(Explosion.pressure exp) decay-factor)
+                    raw-temp (* @(Explosion.temperature exp) decay-factor)
+                    new-temp (if (< raw-temp 0.001) 0.001 raw-temp)]
+                (do
+                  (Array.aset! (FieldDatabase.pressures db) @(GeometryRef.id g-ref) new-pres)
+                  (Array.aset! (FieldDatabase.temperatures db) @(GeometryRef.id g-ref) new-temp)))
+              ;; 1. Carve terrain dynamically as shockwave expands
+              (Engine.spawn-crater! e @pos new-r)
+              ;; 2. Apply physics forces to dynamic entities
+              (ECS.query world [other-ent (other-rb RigidBody)]
+                (when (and (not (Handle.equal? (ECS.Entity.handle &ent) (ECS.Entity.handle &other-ent)))
+                           (not (match-ref (Body.body-type (RigidBody.body other-rb)) (BodyType.Static) true _ false)))
+                  (let [other-pos (RigidBody.position other-rb)
+                        to-other (Vector3.sub other-pos pos)
+                        dist (Vector3.mag &to-other)]
+                    (when (< dist new-r)
+                      (let [dir (Vector3.normalize &to-other)
+                            force-mag (/ (* @(Explosion.force exp) (- 1.0 (/ dist max-r))) (+ (* dist dist) 0.1))
+                            force-vec (Vector3.mul &dir force-mag)]
+                        (RigidBody.apply-force! other-rb &force-vec)))))))
+            ()))))
 )
