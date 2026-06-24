@@ -238,7 +238,8 @@
               (let [raw-decay (- 1.0 (/ new-r max-r))
                     decay-factor (if (< raw-decay 0.0) 0.0 raw-decay)
                     new-pres (* @(Explosion.pressure exp) decay-factor)
-                    new-temp (* @(Explosion.temperature exp) decay-factor)]
+                    raw-temp (* @(Explosion.temperature exp) decay-factor)
+                    new-temp (if (< raw-temp 0.001) 0.001 raw-temp)]
                 (do
                   (Array.aset! (FieldDatabase.pressures db) @(GeometryRef.id g-ref) new-pres)
                   (Array.aset! (FieldDatabase.temperatures db) @(GeometryRef.id g-ref) new-temp)))
@@ -664,11 +665,13 @@
                               (Array.aset! (FieldDatabase.rotations db) id (Quaternion.identity)))))))
                     (do
                       (Array.aset! (FieldDatabase.rotations db) id @(RigidBody.rotation rb))
-                      (Array.aset! (FieldDatabase.temperatures db) id 0.0)
-                      (Array.aset! (FieldDatabase.ages db) id 0.0)
-                      (Array.aset! (FieldDatabase.humidities db) id 0.0)
-                      (Array.aset! (FieldDatabase.pressures db) id 0.0)
-                      (Array.aset! (FieldDatabase.charges db) id 0.0))))))))
+                      (when (not (ECS.has-component? world &ent Explosion))
+                        (do
+                          (Array.aset! (FieldDatabase.temperatures db) id 0.0)
+                          (Array.aset! (FieldDatabase.ages db) id 0.0)
+                          (Array.aset! (FieldDatabase.humidities db) id 0.0)
+                          (Array.aset! (FieldDatabase.pressures db) id 0.0)
+                          (Array.aset! (FieldDatabase.charges db) id 0.0))))))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]

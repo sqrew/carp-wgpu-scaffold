@@ -721,7 +721,7 @@
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let raw_w = s_data.pos.w;
-                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color.w < 0.0 && s_data.color.w > -99.0) {
+                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color.w < 0.0 && s_data.color.w > -99.0 && s_data.extra.x == 0.0) {
                         is_sphere = true;
                     }
                     if (s_data.color.w <= -99.0) {
