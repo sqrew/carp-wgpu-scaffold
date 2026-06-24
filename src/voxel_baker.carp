@@ -1,0 +1,295 @@
+;; src/voxel_baker.carp
+
+(defmodule WGPURenderer
+  (use Vector3)
+  (use ECS)
+  (use RigidBody)
+  (use Collidable)
+  (use Volume)
+  (use SDF)
+
+  (defn pack-and-copy-chunk! [ctx ren slot]
+    (let [v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+          v-half-b @(WGPURenderer.voxel-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          bufs [v-gpu-b v-half-b]
+          slot-x (Int.mod slot 8)
+          slot-y (Int.mod (/ slot 8) 8)
+          slot-z (/ slot 64)
+          ox (* slot-x 32)
+          oy (* slot-y 32)
+          oz (* slot-z 32)]
+      (match (WGPU.create-bind-group ctx pipe &bufs)
+        (Result.Error e) (IO.println &(format "Pack Bind Group error: %s" &e))
+        (Result.Success bg)
+          (do
+            (WGPU.dispatch ctx pipe bg 512)
+            (WGPU.free-bind-group bg)
+            (WGPURender.copy-buffer-to-3d-texture-offset 
+              ctx 
+              v-half-b 
+              @(WGPURenderer.voxel-texture ren) 
+              ox oy oz 32 32 32)))))
+
+  (defn chunk-overlaps-sphere? [chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          c-min-x (* (Double.from-int qx) 32.0)
+          c-min-y (* (Double.from-int qy) 32.0)
+          c-min-z (* (Double.from-int qz) 32.0)
+          c-max-x (+ c-min-x 32.0)
+          c-max-y (+ c-min-y 32.0)
+          c-max-z (+ c-min-z 32.0)
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          px (Double.clamp c-min-x c-max-x cx)
+          py (Double.clamp c-min-y c-max-y cy)
+          pz (Double.clamp c-min-z c-max-z cz)
+          dx (- px cx)
+          dy (- py cy)
+          dz (- pz cz)
+          dist-sq (+ (* dx dx) (+ (* dy dy) (* dz dz)))]
+      (< dist-sq (* radius radius))))
+
+  (defn run-voxel-action-gpu! [ctx ren chunk center radius op-type]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
+                       (Double.to-float cell-size)
+                       (Double.to-float cx) (Double.to-float cy) (Double.to-float cz)
+                       (Double.to-float radius)
+                       (Double.to-float op-type)
+                       0.0f 0.0f 0.0f]
+          v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+          c-params-b @(WGPURenderer.carve-params-buffer ren)
+          pipe @(WGPURenderer.carve-pipeline ren)]
+      (do
+        (WGPU.write-floats ctx v-gpu-b (Chunk.voxel-data chunk))
+        (WGPU.write-floats ctx c-params-b &params-data)
+        (let [bufs [v-gpu-b c-params-b]]
+          (match (WGPU.create-bind-group ctx pipe &bufs)
+            (Result.Error e) (IO.println &(format "Voxel action Bind Group error: %s" &e))
+            (Result.Success bg)
+              (do
+                (WGPU.dispatch ctx pipe bg 512)
+                (WGPU.free-bind-group bg))))
+        (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
+        (let [updated-floats (WGPU.read-floats ctx v-gpu-b 131072)]
+          (Chunk.set-voxel-data! chunk updated-floats))
+        )))
+
+  (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
+    (run-voxel-action-gpu! ctx ren chunk center radius 0.0))
+
+  (defn build-voxel-grid-gpu! [ctx ren chunk center radius]
+    (run-voxel-action-gpu! ctx ren chunk center radius 1.0))
+
+  (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
+    (let [voxel-data (Chunk.voxel-data chunk)
+          qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          w-dim 32
+          h-dim 32
+          d-dim 32
+          num-shapes (Array.length static-sdfs)]
+      (do
+        (for [z 0 d-dim]
+          (for [y 0 h-dim]
+            (for [x 0 w-dim]
+              (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
+                    py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
+                    pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
+                    p (Vector3.init px py pz)
+                    
+                    ;; Compute procedural terrain height using 2D fBm
+                    terrain-h (* (fbm2d (* px 0.015) (* pz 0.015)) 25.0)
+                    ;; Center heightfield so hills go up and down
+                    final-h (- terrain-h 15.0)
+                    
+                    ;; Base SDF is the distance to the terrain height
+                    terrain-d (- py final-h)
+                    
+                    ;; Carve out caves if below terrain height using 3D noise
+                    cave-val (if (< terrain-d 0.0)
+                                 (noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
+                                 0.0)
+                    
+                    ;; Compute smooth cave SDF (using optimal 1/0.08 = 12.5 scale factor for correct gradient of 1.0)
+                    cave-sdf (if (< terrain-d 0.0)
+                                 (* (- cave-val 0.65) 12.5)
+                                 -1000.0)
+                    
+                    ;; Combine terrain and cave smoothly
+                    voxel-d (if (> cave-sdf terrain-d) cave-sdf terrain-d)
+                    
+                    min-d voxel-d
+                    mat-id (if (< min-d 0.0) 1.0f 0.0f)]
+                (do
+                  ;; Bake static CSG/SDF colliders on top
+                  (for [i 0 num-shapes]
+                    (let [sdf (Array.unsafe-nth static-sdfs i)
+                          d (SDF.distance-world sdf &p)]
+                      (when (< d min-d)
+                        (do
+                          (set! min-d d)
+                          (set! mat-id @(Array.unsafe-nth static-mat-ids i))))))
+                  (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
+                    (do
+                      (Array.aset! voxel-data idx (Double.to-float min-d))
+                      (Array.aset! voxel-data (+ idx 1) mat-id)
+                      (Array.aset! voxel-data (+ idx 2) 0.0f)
+                      (Array.aset! voxel-data (+ idx 3) 0.0f))))))))
+        (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) voxel-data)
+        (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
+        )))
+
+  (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
+    (let [static-sdfs []
+          static-mat-ids []]
+      (do
+        (IO.println "BAKING VOXEL GRID (CHUNKED)...")
+        (ECS.query ecs-world [ent (rb RigidBody) (col Collidable)]
+          (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf sdf)
+                (do
+                  (SDF.set-position! sdf @(RigidBody.position rb))
+                  (SDF.set-rotation! sdf @(RigidBody.rotation rb))
+                  (let [saved-nodes @(SDF.csg-nodes sdf)]
+                    (do
+                      (SDF.set-csg-nodes! sdf [])
+                      (Array.push-back! &static-sdfs @sdf)
+                      (SDF.set-csg-nodes! sdf saved-nodes)))
+                  (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
+              _ ())))
+        (let [num-shapes (Array.length &static-sdfs)
+              chunks (World.chunks world-data)]
+          (do
+            (IO.println &(format "NUM STATIC SHAPES: %d" num-shapes))
+            (for [i 0 (Array.length chunks)]
+              (let [chunk (Array.unsafe-nth chunks i)]
+                (bake-chunk! ctx ren chunk &static-sdfs &static-mat-ids)))))
+        )))
+
+  (defn carve-voxel-grid-cpu! [chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          voxel-data (Chunk.voxel-data chunk)
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          min-x (- cx radius)
+          max-x (+ cx radius)
+          min-y (- cy radius)
+          max-y (+ cy radius)
+          min-z (- cz radius)
+          max-z (+ cz radius)
+          
+          idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
+          idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))
+          idx-min-y (the Int (Double.to-int (Double.floor (/ (- min-y oy) cell-size))))
+          idx-max-y (the Int (Double.to-int (Double.floor (/ (- max-y oy) cell-size))))
+          idx-min-z (the Int (Double.to-int (Double.floor (/ (- min-z oz) cell-size))))
+          idx-max-z (the Int (Double.to-int (Double.floor (/ (- max-z oz) cell-size))))
+          
+          start-x (Int.clamp 0 31 idx-min-x)
+          end-x (Int.clamp 0 31 idx-max-x)
+          start-y (Int.clamp 0 31 idx-min-y)
+          end-y (Int.clamp 0 31 idx-max-y)
+          start-z (Int.clamp 0 31 idx-min-z)
+          end-z (Int.clamp 0 31 idx-max-z)]
+      (do
+        (for [sz start-z (inc end-z)]
+          (let [pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
+                dz (- pz cz)
+                dz2 (* dz dz)]
+            (for [sy start-y (inc end-y)]
+              (let [py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
+                    dy (- py cy)
+                    dy2_dz2 (+ (* dy dy) dz2)]
+                (for [sx start-x (inc end-x)]
+                  (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                        dx (- px cx)
+                        dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
+                        crater-dist (- dist-to-crater-center radius)
+                        idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
+                        old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                        new-dist (let [neg-crater-dist (- 0.0 crater-dist)
+                                       d (if (> old-dist neg-crater-dist) old-dist neg-crater-dist)]
+                                   (if (and (< d 0.0) (> d -0.1)) 1.0 d))]
+                    (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))
+
+  (defn build-voxel-grid-cpu! [chunk center radius]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          voxel-data (Chunk.voxel-data chunk)
+          cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          min-x (- cx radius)
+          max-x (+ cx radius)
+          min-y (- cy radius)
+          max-y (+ cy radius)
+          min-z (- cz radius)
+          max-z (+ cz radius)
+          
+          idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
+          idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))
+          idx-min-y (the Int (Double.to-int (Double.floor (/ (- min-y oy) cell-size))))
+          idx-max-y (the Int (Double.to-int (Double.floor (/ (- max-y oy) cell-size))))
+          idx-min-z (the Int (Double.to-int (Double.floor (/ (- min-z oz) cell-size))))
+          idx-max-z (the Int (Double.to-int (Double.floor (/ (- max-z oz) cell-size))))
+          
+          start-x (Int.clamp 0 31 idx-min-x)
+          end-x (Int.clamp 0 31 idx-max-x)
+          start-y (Int.clamp 0 31 idx-min-y)
+          end-y (Int.clamp 0 31 idx-max-y)
+          start-z (Int.clamp 0 31 idx-min-z)
+          end-z (Int.clamp 0 31 idx-max-z)]
+      (do
+        (for [sz start-z (inc end-z)]
+          (let [pz (+ oz (* (+ (Double.from-int sz) 0.5) cell-size))
+                dz (- pz cz)
+                dz2 (* dz dz)]
+            (for [sy start-y (inc end-y)]
+              (let [py (+ oy (* (+ (Double.from-int sy) 0.5) cell-size))
+                    dy (- py cy)
+                    dy2_dz2 (+ (* dy dy) dz2)]
+                (for [sx start-x (inc end-x)]
+                  (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                        dx (- px cx)
+                        dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
+                        sphere-dist (- dist-to-sphere-center radius)
+                        idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
+                        old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                        new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
+                    (do
+                      (Array.aset! voxel-data idx-full (Double.to-float new-dist))
+                      (when (< sphere-dist 0.0)
+                        (Array.aset! voxel-data (+ idx-full 1) 2.0f))))))))))))
+)

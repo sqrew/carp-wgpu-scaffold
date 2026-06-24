@@ -1,65 +1,5 @@
 ;; src/world.carp
 
-(deftype Vector4 [x Double y Double z Double w Double])
-(defmodule Vector4
-  (defn init-zero [] (Vector4.init 0.0 0.0 0.0 0.0))
-)
-
-(deftype SdfInstance [
-  shape-type Int
-  params Vector4
-  pos (Vector3 Double)
-  rot Quaternion
-  scale Double
-  root-csg-idx Int
-  color (Vector3 Double)
-  extra-data Vector4
-])
-
-(defmodule SdfInstance
-  (use Vector3)
-  (use Quaternion)
-
-  (defn init-inactive []
-    (SdfInstance.init -1 (Vector4.init-zero) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 1.0 -1 (Vector3.init 0.0 0.0 0.0) (Vector4.init-zero)))
-)
-
-(deftype SdfDatabase [
-  instances (Array SdfInstance)
-])
-
-(defmodule SdfDatabase
-  (use Array)
-
-  (defn new []
-    (let [insts (the (Array SdfInstance) (allocate 128))]
-      (do
-        (for [i 0 128]
-          (Array.aset! &insts i (SdfInstance.init-inactive)))
-        (SdfDatabase.init insts))))
-
-  (defn register-instance! [db inst]
-    (let [found-idx -1
-          insts (SdfDatabase.instances db)]
-      (do
-        (for [i 0 (Array.length insts)]
-          (when (= @(SdfInstance.shape-type (Array.unsafe-nth insts i)) -1)
-            (when (= found-idx -1)
-              (set! found-idx i))))
-        (if (= found-idx -1)
-            (let [new-id (Array.length insts)]
-              (do
-                (Array.push-back! insts @inst)
-                new-id))
-            (do
-              (Array.aset! insts found-idx @inst)
-              found-idx)))))
-
-  (defn release-instance! [db id]
-    (let [inst (Array.unsafe-nth (SdfDatabase.instances db) id)]
-      (SdfInstance.set-shape-type! inst -1)))
-)
-
 (deftype Chunk [
   coord-x Int
   coord-y Int
@@ -69,7 +9,7 @@
 ])
 
 (deftype World [
-  sdf-db SdfDatabase
+  sdf-db FieldDatabase
   grid-origin (Vector3 Double)
   cell-size Double
   grid-width Int
@@ -83,7 +23,7 @@
 
 (defmodule World
   (use Vector3)
-  (use SdfDatabase)
+  (use FieldDatabase)
   (use SpatialGrid)
 
   (defn create-initial-chunks []
@@ -99,7 +39,7 @@
         arr)))
 
   (defn new [origin cell-size w h d]
-    (World.init (SdfDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999))
+    (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin

@@ -62,4 +62,17 @@
   (implements zero GeometryRef.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef)
+(deftype Explosion [
+  radius Double
+  radius-speed Double
+  max-radius Double
+  force Double
+  pressure Double
+  temperature Double
+])
+(defmodule Explosion
+  (defn zero [] (Explosion.init 0.0 0.0 0.0 0.0 0.0 0.0))
+  (implements zero Explosion.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef Explosion)

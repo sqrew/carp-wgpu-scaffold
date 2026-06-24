@@ -1,0 +1,92 @@
+;; src/field_database.carp
+
+(deftype Vector4 [x Double y Double z Double w Double])
+(defmodule Vector4
+  (defn init-zero [] (Vector4.init 0.0 0.0 0.0 0.0))
+)
+
+(deftype FieldDatabase [
+  active (Array Bool)
+  shape-types (Array Int)
+  params (Array Vector4)
+  positions (Array (Vector3 Double))
+  rotations (Array Quaternion)
+  scales (Array Double)
+  root-csg-indices (Array Int)
+  colors (Array (Vector3 Double))
+  temperatures (Array Double)
+  ages (Array Double)
+  humidities (Array Double)
+  pressures (Array Double)
+  charges (Array Double)
+])
+
+(defmodule FieldDatabase
+  (use Array)
+  (use Vector3)
+  (use Quaternion)
+
+  (defn new []
+    (let [n 128
+          act (the (Array Bool) (replicate n &false))
+          st (the (Array Int) (replicate n &-1))
+          pm (the (Array Vector4) (replicate n &(Vector4.init-zero)))
+          pos (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
+          rot (the (Array Quaternion) (replicate n &(Quaternion.identity)))
+          sc (the (Array Double) (replicate n &1.0))
+          csg (the (Array Int) (replicate n &-1))
+          col (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
+          temp (the (Array Double) (replicate n &0.0))
+          age (the (Array Double) (replicate n &0.0))
+          hum (the (Array Double) (replicate n &0.0))
+          pres (the (Array Double) (replicate n &0.0))
+          ch (the (Array Double) (replicate n &0.0))]
+      (FieldDatabase.init act st pm pos rot sc csg col temp age hum pres ch)))
+
+  (defn register-instance! [db shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val]
+    (let [found-idx -1
+          active-arr (FieldDatabase.active db)
+          len (Array.length active-arr)]
+      (do
+        (for [i 0 len]
+          (when (not @(Array.unsafe-nth active-arr i))
+            (when (= found-idx -1)
+              (set! found-idx i))))
+        (if (= found-idx -1)
+            (let [new-id len]
+              (do
+                (Array.push-back! active-arr true)
+                (Array.push-back! (FieldDatabase.shape-types db) shape-type-val)
+                (Array.push-back! (FieldDatabase.params db) params-val)
+                (Array.push-back! (FieldDatabase.positions db) pos-val)
+                (Array.push-back! (FieldDatabase.rotations db) rot-val)
+                (Array.push-back! (FieldDatabase.scales db) scale-val)
+                (Array.push-back! (FieldDatabase.root-csg-indices db) csg-idx-val)
+                (Array.push-back! (FieldDatabase.colors db) color-val)
+                (Array.push-back! (FieldDatabase.temperatures db) temp-val)
+                (Array.push-back! (FieldDatabase.ages db) age-val)
+                (Array.push-back! (FieldDatabase.humidities db) hum-val)
+                (Array.push-back! (FieldDatabase.pressures db) pres-val)
+                (Array.push-back! (FieldDatabase.charges db) charge-val)
+                new-id))
+            (do
+              (Array.aset! active-arr found-idx true)
+              (Array.aset! (FieldDatabase.shape-types db) found-idx shape-type-val)
+              (Array.aset! (FieldDatabase.params db) found-idx params-val)
+              (Array.aset! (FieldDatabase.positions db) found-idx pos-val)
+              (Array.aset! (FieldDatabase.rotations db) found-idx rot-val)
+              (Array.aset! (FieldDatabase.scales db) found-idx scale-val)
+              (Array.aset! (FieldDatabase.root-csg-indices db) found-idx csg-idx-val)
+              (Array.aset! (FieldDatabase.colors db) found-idx color-val)
+              (Array.aset! (FieldDatabase.temperatures db) found-idx temp-val)
+              (Array.aset! (FieldDatabase.ages db) found-idx age-val)
+              (Array.aset! (FieldDatabase.humidities db) found-idx hum-val)
+              (Array.aset! (FieldDatabase.pressures db) found-idx pres-val)
+              (Array.aset! (FieldDatabase.charges db) found-idx charge-val)
+              found-idx)))))
+
+  (defn release-instance! [db id]
+    (do
+      (Array.aset! (FieldDatabase.active db) id false)
+      (Array.aset! (FieldDatabase.shape-types db) id -1)))
+)

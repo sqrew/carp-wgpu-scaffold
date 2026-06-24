@@ -15,7 +15,7 @@
   (use ECS)
   (use WGPURenderer)
   (use Coordinator)
-  (use SdfDatabase)
+  (use FieldDatabase)
   (use World)
   (use Raymarch)
   (use Ray)
@@ -78,8 +78,7 @@
               root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
               params (Vector4.init 1.5 1.5 1.5 0.0)
-              inst (SdfInstance.init 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) (Vector4.init-zero))
-              geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)
+              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) 0.0 0.0 0.0 0.0 0.0)
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -134,8 +133,7 @@
                                     (Vector3.init 1.0 1.0 0.0))))
                   color (Color.init @&c-val)
                   params (Vector4.init 0.5 0.5 0.5 0.0)
-                  inst (SdfInstance.init 2 params pos (Quaternion.identity) 1.0 -1 c-val (Vector4.init-zero))
-                  geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)]
+                  geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0)]
               (do
                 (ECS.add-component! &world &ent rb)
                 (ECS.add-component! &world &ent col)
@@ -207,6 +205,57 @@
                                   (Engine.set-grid-dirty! e true)))))))))
                 _ ())))))))
 
+) ;; close Engine module
+
+(defmodule ExplosionSystem
+  (use Vector3)
+  (use Quaternion)
+  (use ECS)
+  (use RigidBody)
+  (use Collidable)
+  (use Volume)
+  (use Color)
+  (use Lifetime)
+
+  (defn step-explosions! [e world db dt]
+    (ECS.query world [ent (exp Explosion) (g-ref GeometryRef) (rb RigidBody)]
+      (let [current-r (Explosion.radius exp)
+            max-r @(Explosion.max-radius exp)
+            speed @(Explosion.radius-speed exp)
+            pos (RigidBody.position rb)
+            new-r (+ @current-r (* speed dt))]
+        (if (< new-r max-r)
+            (do
+              (Explosion.set-radius! exp new-r)
+              ;; Update scale in the FieldDatabase
+              (Array.aset! (FieldDatabase.scales db) @(GeometryRef.id g-ref) new-r)
+              ;; Decay values dynamically
+              (let [raw-decay (- 1.0 (/ new-r max-r))
+                    decay-factor (if (< raw-decay 0.0) 0.0 raw-decay)
+                    new-pres (* @(Explosion.pressure exp) decay-factor)
+                    new-temp (* @(Explosion.temperature exp) decay-factor)]
+                (do
+                  (Array.aset! (FieldDatabase.pressures db) @(GeometryRef.id g-ref) new-pres)
+                  (Array.aset! (FieldDatabase.temperatures db) @(GeometryRef.id g-ref) new-temp)))
+              ;; 1. Carve terrain dynamically as shockwave expands
+              (Engine.spawn-crater! e @pos new-r)
+              ;; 2. Apply physics forces to dynamic entities
+              (ECS.query world [other-ent (other-rb RigidBody)]
+                (when (and (not (Handle.equal? (ECS.Entity.handle &ent) (ECS.Entity.handle &other-ent)))
+                           (not (match-ref (Body.body-type (RigidBody.body other-rb)) (BodyType.Static) true _ false)))
+                  (let [other-pos (RigidBody.position other-rb)
+                        to-other (Vector3.sub other-pos pos)
+                        dist (Vector3.mag &to-other)]
+                    (when (< dist new-r)
+                      (let [dir (Vector3.normalize &to-other)
+                            force-mag (/ (* @(Explosion.force exp) (- 1.0 (/ dist max-r))) (+ (* dist dist) 0.1))
+                            force-vec (Vector3.mul &dir force-mag)]
+                        (RigidBody.apply-force! other-rb &force-vec)))))))
+            ()))))
+)
+
+(defmodule Engine
+
   (defn register-internal-handlers! [e]
     (Coordinator.subscribe! (Engine.coordinator e)
       &(fn [ev]
@@ -229,7 +278,9 @@
                       op @(CraterSpawnData.op-type data)]
                   (do
                     (when (< op 0.5)
-                      (Engine.spawn-crater! e @pos rad))
+                      (do
+                        (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos (* rad 3.0) 800.0 120.0 30.0)
+                        (Engine.spawn-crater! e @pos rad)))
                     (Engine.set-voxel-dirty! e true)
                     (Array.push-back! (Engine.craters e) @data)
                     (Result.Success ())))
@@ -239,7 +290,7 @@
   (defn destroy-sdf-entity! [world db ent]
     (do
       (ECS.with-components world @ent [e (g-ref GeometryRef)]
-        (SdfDatabase.release-instance! db @(GeometryRef.id g-ref)))
+        (FieldDatabase.release-instance! db @(GeometryRef.id g-ref)))
       (GameWorld.destroy-entity! world ent)))
 
   (def last-fire-time 0.0)
@@ -491,6 +542,7 @@
           (do
             (when (PhysicsSystem.step-ecs! world (Engine.world-data e) grid (Engine.coordinator e) @(Engine.metaball-k e))
                   (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
+            (ExplosionSystem.step-explosions! e world (Engine.db e) PhysicsSystem.fixed-dt)
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 
         ;; Update Camera using live RotationState to decouple from physics roll & run bounds check
@@ -567,9 +619,9 @@
         (ECS.query world [ent (rb RigidBody) (g-ref GeometryRef)]
           (let [id @(GeometryRef.id g-ref)]
             (when (>= id 0)
-              (let [inst (Array.unsafe-nth (SdfDatabase.instances (Engine.db e)) id)]
+              (let [db (Engine.db e)]
                 (do
-                  (SdfInstance.set-pos! inst @(RigidBody.position rb))
+                  (Array.aset! (FieldDatabase.positions db) id @(RigidBody.position rb))
                   (if (ECS.has-component? world &ent BouncyTag)
                     (let [vel (Body.velocity (RigidBody.body rb))
                           speed (Double.sqrt (Vector3.mag-sq vel))
@@ -591,20 +643,27 @@
                               humidity (let [h (* 100.0 (/ y-val -300.0))]
                                          (if (< h 0.0) 0.0 (if (> h 100.0) 100.0 h)))
                               pressure (let [p (+ 1.0 (/ y-val -10.0))]
-                                         (if (< p 1.0) 1.0 p))
-                              extra-vec (Vector4.init temp age humidity pressure)]
+                                         (if (< p 1.0) 1.0 p))]
                           (do
-                            (SdfInstance.set-extra-data! inst extra-vec)
-                            (SdfInstance.set-root-csg-idx! inst csg-idx)
+                            (Array.aset! (FieldDatabase.temperatures db) id temp)
+                            (Array.aset! (FieldDatabase.ages db) id age)
+                            (Array.aset! (FieldDatabase.humidities db) id humidity)
+                            (Array.aset! (FieldDatabase.pressures db) id pressure)
+                            (Array.aset! (FieldDatabase.charges db) id 0.0)
+                            (Array.aset! (FieldDatabase.root-csg-indices db) id csg-idx)
                             (if (> speed 0.1)
                               (let [dir (Vector3.mul vel (/ 1.0 speed))
                                     up-axis (Vector3.init 0.0 1.0 0.0)
                                     rot (rotation-between &up-axis &dir)]
-                                (SdfInstance.set-rot! inst rot))
-                              (SdfInstance.set-rot! inst (Quaternion.identity)))))))
+                                (Array.aset! (FieldDatabase.rotations db) id rot))
+                              (Array.aset! (FieldDatabase.rotations db) id (Quaternion.identity)))))))
                     (do
-                      (SdfInstance.set-rot! inst @(RigidBody.rotation rb))
-                      (SdfInstance.set-extra-data! inst (Vector4.init-zero)))))))))
+                      (Array.aset! (FieldDatabase.rotations db) id @(RigidBody.rotation rb))
+                      (Array.aset! (FieldDatabase.temperatures db) id 0.0)
+                      (Array.aset! (FieldDatabase.ages db) id 0.0)
+                      (Array.aset! (FieldDatabase.humidities db) id 0.0)
+                      (Array.aset! (FieldDatabase.pressures db) id 0.0)
+                      (Array.aset! (FieldDatabase.charges db) id 0.0))))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]

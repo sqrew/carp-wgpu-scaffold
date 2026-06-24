@@ -51,8 +51,7 @@
                   (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0)))
           params (Vector4.init p-x p-y p-z p-w)
           root-csg-idx (if bouncy -99 -1)
-          inst (SdfInstance.init (+ shape-type 1) params @pos (Quaternion.identity) scale root-csg-idx @c-val (Vector4.init-zero))
-          geom-id (SdfDatabase.register-instance! db &inst)]
+          geom-id (FieldDatabase.register-instance! db (+ shape-type 1) params @pos (Quaternion.identity) scale root-csg-idx @c-val 0.0 0.0 0.0 0.0 0.0)]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)
         (Body.set-angular-velocity! (RigidBody.body &rb) @ang-vel)

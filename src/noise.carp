@@ -1,0 +1,71 @@
+;; src/noise.carp
+
+(defmodule WGPURenderer
+  (defn hash2d [x z]
+    (let [s (Double.sin (+ (* x 12.9898) (* z 78.233)))
+          mult (* s 43758.5453123)]
+      (- mult (Double.floor mult))))
+
+  (defn lerp [a b t]
+    (+ a (* t (- b a))))
+
+  (defn fade [t]
+    (* (* t t) (- 3.0 (* 2.0 t))))
+
+  (defn noise2d [x z]
+    (let [fx (Double.floor x)
+          fz (Double.floor z)
+          tx (- x fx)
+          tz (- z fz)
+          ix (Double.to-int fx)
+          iz (Double.to-int fz)
+          v00 (hash2d (Double.from-int ix) (Double.from-int iz))
+          v10 (hash2d (Double.from-int (inc ix)) (Double.from-int iz))
+          v01 (hash2d (Double.from-int ix) (Double.from-int (inc iz)))
+          v11 (hash2d (Double.from-int (inc ix)) (Double.from-int (inc iz)))
+          u (fade tx)
+          v (fade tz)
+          x0 (lerp v00 v10 u)
+          x1 (lerp v01 v11 u)]
+      (lerp x0 x1 v)))
+
+  (defn fbm2d [x z]
+    (let [n1 (noise2d x z)
+          n2 (* 0.5 (noise2d (* x 2.0) (* z 2.0)))
+          n3 (* 0.25 (noise2d (* x 4.0) (* z 4.0)))]
+      (+ n1 (+ n2 n3))))
+
+  (defn hash3d [x y z]
+    (let [s (Double.sin (+ (+ (* x 12.9898) (* y 78.233)) (* z 144.7272)))
+          mult (* s 43758.5453123)]
+      (- mult (Double.floor mult))))
+
+  (defn noise3d [x y z]
+    (let [fx (Double.floor x)
+          fy (Double.floor y)
+          fz (Double.floor z)
+          tx (- x fx)
+          ty (- y fy)
+          tz (- z fz)
+          ix (Double.to-int fx)
+          iy (Double.to-int fy)
+          iz (Double.to-int fz)
+          v000 (hash3d (Double.from-int ix) (Double.from-int iy) (Double.from-int iz))
+          v100 (hash3d (Double.from-int (inc ix)) (Double.from-int iy) (Double.from-int iz))
+          v010 (hash3d (Double.from-int ix) (Double.from-int (inc iy)) (Double.from-int iz))
+          v110 (hash3d (Double.from-int (inc ix)) (Double.from-int (inc iy)) (Double.from-int iz))
+          v001 (hash3d (Double.from-int ix) (Double.from-int iy) (Double.from-int (inc iz)))
+          v101 (hash3d (Double.from-int (inc ix)) (Double.from-int iy) (Double.from-int (inc iz)))
+          v011 (hash3d (Double.from-int ix) (Double.from-int (inc iy)) (Double.from-int (inc iz)))
+          v111 (hash3d (Double.from-int (inc ix)) (Double.from-int (inc iy)) (Double.from-int (inc iz)))
+          u (fade tx)
+          v (fade ty)
+          w (fade tz)
+          x00 (lerp v000 v100 u)
+          x10 (lerp v010 v110 u)
+          x01 (lerp v001 v101 u)
+          x11 (lerp v011 v111 u)
+          y0 (lerp x00 x10 v)
+          y1 (lerp x01 x11 v)]
+      (lerp y0 y1 w)))
+)
