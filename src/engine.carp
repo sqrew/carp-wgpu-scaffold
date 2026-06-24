@@ -164,11 +164,15 @@
   (defn spawn-crater! [e pos rad]
     (let [world (Engine.world e)]
       (ECS.query world [ent (col Collidable)]
-        (let [has-parent false]
+        (let [has-parent false
+              is-static false]
           (do
             (ECS.with-components world @&ent [e (p Parent)]
               (set! has-parent true))
-            (when (not has-parent)
+            (ECS.with-components world @&ent [e (rb RigidBody)]
+              (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+                (set! is-static true)))
+            (when (and (not has-parent) is-static)
               (match-ref (Collidable.volume col)
                 (Volume.Sdf parent-sdf)
                   (let [d (SDF.distance-world parent-sdf &pos)]
@@ -227,6 +231,7 @@
         (if (< new-r max-r)
             (do
               (Explosion.set-radius! exp new-r)
+              (Engine.set-grid-dirty! e true)
               ;; Update scale in the FieldDatabase
               (Array.aset! (FieldDatabase.scales db) @(GeometryRef.id g-ref) new-r)
               ;; Decay values dynamically

@@ -353,6 +353,19 @@
           return mix(v_z0, v_z1, u.z) * 0.15;
       }
 
+      fn evaluateFbm(p: vec3<f32>) -> f32 {
+          var v = 0.0;
+          var a = 0.5;
+          var shift = vec3<f32>(100.0);
+          var cur_p = p;
+          for (var i = 0; i < 3; i = i + 1) {
+              v += a * evaluateNoise(cur_p) * 6.666;
+              cur_p = cur_p * 2.0 + shift;
+              a *= 0.5;
+          }
+          return v;
+      }
+
       fn evaluateCsgTree(local_p: vec3<f32>, root_idx: i32) -> f32 {
           let base_idx = root_idx - (root_idx % 2);
           if (base_idx == root_idx) {
@@ -477,6 +490,12 @@
                             } else {
                                 if (raw_w > 0.0 && raw_w < 500.0) {
                                   local_dist = sdSphere(local_p, raw_w);
+                                  if (s_data.extra.x > 0.0) {
+                                      let noise_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                                      let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
+                                      let n = evaluateFbm(local_p * 2.5 - scroll);
+                                      local_dist -= n * 0.4 * raw_w * noise_factor;
+                                  }
                                 } else if (raw_w < 0.0 && raw_w > -1000.0) {
                                   let size = -raw_w;
                                   local_dist = sdBox(local_p, vec3<f32>(size));
@@ -562,6 +581,12 @@
                             } else {
                                 if (raw_w > 0.0 && raw_w < 500.0) {
                                   local_dist = sdSphere(local_p, raw_w);
+                                  if (s_data.extra.x > 0.0) {
+                                      let noise_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                                      let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
+                                      let n = evaluateFbm(local_p * 2.5 - scroll);
+                                      local_dist -= n * 0.4 * raw_w * noise_factor;
+                                  }
                                 } else if (raw_w < 0.0 && raw_w > -1000.0) {
                                   let size = -raw_w;
                                   local_dist = sdBox(local_p, vec3<f32>(size));
@@ -755,15 +780,23 @@
                var base_col = terr_col;
                var edge = 0.0;
 
-               if (hitId != -1.0 && !is_metaball) {
-                   let s_idx = i32(hitId);
-                   let s_data = u.instances[s_idx];
-                   base_col = s_data.color.rgb;
-                   let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                   if (s_data.color.w < 0.0) {
-                       edge = get_wireframe_edge(lp, s_data.pos.w, 0.08);
-                   }
-               } else {
+                if (hitId != -1.0 && !is_metaball) {
+                    let s_idx = i32(hitId);
+                    let s_data = u.instances[s_idx];
+                    let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                    if (s_data.extra.x > 0.0) {
+                        let temp_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                        let n_col = evaluateFbm(lp * 5.0 - vec3<f32>(0.0, u.time * 4.0, 0.0));
+                        let fire = mix(vec3<f32>(1.0, 0.2, 0.0), vec3<f32>(1.0, 0.9, 0.1), n_col);
+                        let ash = vec3<f32>(0.1, 0.1, 0.1);
+                        base_col = mix(ash, fire, temp_factor * (0.3 + 0.7 * n_col));
+                    } else {
+                        base_col = s_data.color.rgb;
+                        if (s_data.color.w < 0.0) {
+                            edge = get_wireframe_edge(lp, s_data.pos.w, 0.08);
+                        }
+                    }
+                } else {
                     let fields = getInterpolatedFields(p);
                     let view_mode = u.grid_origin.w;
 
@@ -824,9 +857,26 @@
                     base_col = mix(base_col, sky_ref, 0.25 * fresnel * h);
                }
 
-               color = base_col * (lit + 0.15) * ao + vec3<f32>(specular);
+                color = base_col * (lit + 0.15) * ao + vec3<f32>(specular);
 
-              if (edge > 0.0) {
+               var is_exp = false;
+               if (hitId != -1.0 && !is_metaball) {
+                   let s_idx = i32(hitId);
+                   if (u.instances[s_idx].extra.x > 0.0) {
+                       is_exp = true;
+                   }
+               }
+               if (is_exp) {
+                   let s_idx = i32(hitId);
+                   let s_data = u.instances[s_idx];
+                   let temp_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                   let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                   let n_glow = evaluateFbm(lp * 5.0 - vec3<f32>(0.0, u.time * 4.0, 0.0));
+                   let glow = mix(vec3<f32>(1.0, 0.2, 0.0), vec3<f32>(1.0, 0.9, 0.2), n_glow);
+                   color = mix(color, base_col + glow * 1.5, temp_factor * (0.4 + 0.6 * n_glow));
+               }
+
+               if (edge > 0.0) {
                   let glow_col = base_col * 2.5 + vec3<f32>(0.25);
                   color = mix(color, glow_col, edge);
               }

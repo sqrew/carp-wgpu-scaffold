@@ -329,21 +329,28 @@
                             c-val (Color.v color)
                             is-static (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
                             is-bouncy (ECS.has-component? world &ent BouncyTag)
-                            rad (if is-static 0.0
-                                  (match-ref (Collidable.volume col)
-                                    (Volume.Ball b) (if is-bouncy (* 2.0 @(Sphere.radius b)) @(Sphere.radius b))
-                                    (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
-                                    (Volume.Sdf sdf)
-                                      (let [scale @(SDF.scale sdf)]
-                                        (match-ref (SDF.base sdf)
-                                          (BaseShape.Ball r) (if is-bouncy (* 2.0 (* @r scale)) (* @r scale))
-                                          (BaseShape.Box e) (- 0.0 (* @(Vector3.x e) scale))
-                                          (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
-                                          (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
-                                          (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
-                                          (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
-                                          _ 0.0))
-                                    _ 0.0))
+                            is-exp false
+                            exp-rad 0.0
+                            _ (ECS.with-components world @&ent [e (exp Explosion)]
+                                (do
+                                  (set! is-exp true)
+                                  (set! exp-rad @(Explosion.radius exp))))
+                            rad (if is-exp exp-rad
+                                  (if is-static 0.0
+                                    (match-ref (Collidable.volume col)
+                                      (Volume.Ball b) (if is-bouncy (* 2.0 @(Sphere.radius b)) @(Sphere.radius b))
+                                      (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
+                                      (Volume.Sdf sdf)
+                                        (let [scale @(SDF.scale sdf)]
+                                          (match-ref (SDF.base sdf)
+                                            (BaseShape.Ball r) (if is-bouncy (* 2.0 (* @r scale)) (* @r scale))
+                                            (BaseShape.Box e) (- 0.0 (* @(Vector3.x e) scale))
+                                            (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
+                                            (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
+                                            (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
+                                            (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
+                                            _ 0.0))
+                                      _ 0.0)))
                             root-csg-idx (if is-bouncy -99 -1)]
                         (do
                           (when csg-dirty
