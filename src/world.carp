@@ -13,6 +13,7 @@
   scale Double
   root-csg-idx Int
   color (Vector3 Double)
+  extra-data Vector4
 ])
 
 (defmodule SdfInstance
@@ -20,7 +21,7 @@
   (use Quaternion)
 
   (defn init-inactive []
-    (SdfInstance.init -1 (Vector4.init-zero) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 1.0 -1 (Vector3.init 0.0 0.0 0.0)))
+    (SdfInstance.init -1 (Vector4.init-zero) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity) 1.0 -1 (Vector3.init 0.0 0.0 0.0) (Vector4.init-zero)))
 )
 
 (deftype SdfDatabase [

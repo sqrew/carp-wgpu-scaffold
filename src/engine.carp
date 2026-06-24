@@ -36,6 +36,7 @@
     craters (Array CraterSpawnData)
     metaball-k Double
     show-debug-lines Bool
+    view-mode Int
   ])
 
   (defn new [win aspect backend]
@@ -65,6 +66,7 @@
         (InputManager.add-binding! &mgr "MorphLess" (InputSource.Key GLFW.Keycode.COMMA) 1.0)
         (InputManager.add-binding! &mgr "MorphMore" (InputSource.Key GLFW.Keycode.PERIOD) 1.0)
         (InputManager.add-binding! &mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
+        (InputManager.add-binding! &mgr "CycleViewMode" (InputSource.Key GLFW.Keycode.M) 1.0)
 
         ()
 
@@ -76,7 +78,7 @@
               root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
               params (Vector4.init 1.5 1.5 1.5 0.0)
-              inst (SdfInstance.init 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2))
+              inst (SdfInstance.init 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) (Vector4.init-zero))
               geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
@@ -132,7 +134,7 @@
                                     (Vector3.init 1.0 1.0 0.0))))
                   color (Color.init @&c-val)
                   params (Vector4.init 0.5 0.5 0.5 0.0)
-                  inst (SdfInstance.init 2 params pos (Quaternion.identity) 1.0 -1 c-val)
+                  inst (SdfInstance.init 2 params pos (Quaternion.identity) 1.0 -1 c-val (Vector4.init-zero))
                   geom-id (SdfDatabase.register-instance! (World.sdf-db &world-data) &inst)]
               (do
                 (ECS.add-component! &world &ent rb)
@@ -155,7 +157,8 @@
             true
             []
             1.2
-            true))))
+            true
+            0))))
 
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
@@ -458,7 +461,19 @@
                 new-show (not show)]
             (do
               (Engine.set-show-debug-lines! e new-show)
-              (IO.println &(str* "Debug Lines: " (if new-show "ON" "OFF")))))))))
+              (IO.println &(str* "Debug Lines: " (if new-show "ON" "OFF"))))))
+        (when (InputManager.action-pressed? mgr "CycleViewMode")
+          (let [mode @(Engine.view-mode e)
+                new-mode (Int.mod (+ mode 1) 5)]
+            (do
+              (Engine.set-view-mode! e new-mode)
+              (Engine.set-grid-dirty! e true)
+              (IO.println &(str* "Active Scalar Field View: "
+                (if (= new-mode 0) "Normal (Water Volume)"
+                (if (= new-mode 1) "Temperature"
+                (if (= new-mode 2) "Age / Spawn Time"
+                (if (= new-mode 3) "Humidity"
+                "Pressure"))))))))))))
 
   (defn tick! [e]
     (let [cam (Engine.camera e)
@@ -562,16 +577,34 @@
                           s-val (+ 0.6 (* speed stretch-factor))
                           s-clamped (if (< s-val 0.6) 0.6 (if (> s-val 2.5) 2.5 s-val))
                           stretch-amt (Double.to-int (* s-clamped 100.0))
-                          csg-idx (- -99 stretch-amt)]
+                          csg-idx (- -99 stretch-amt)
+                          lt-time 0.0
+                          max-lt 12.0]
                       (do
-                        (SdfInstance.set-root-csg-idx! inst csg-idx)
-                        (if (> speed 0.1)
-                          (let [dir (Vector3.mul vel (/ 1.0 speed))
-                                up-axis (Vector3.init 0.0 1.0 0.0)
-                                rot (rotation-between &up-axis &dir)]
-                            (SdfInstance.set-rot! inst rot))
-                          (SdfInstance.set-rot! inst (Quaternion.identity)))))
-                    (SdfInstance.set-rot! inst @(RigidBody.rotation rb))))))))
+                        (ECS.with-components world @&ent [e (lt Lifetime)] (set! lt-time @(Lifetime.time lt)))
+                        (let [age (- max-lt lt-time)
+                              base-temp (* 100.0 (/ lt-time max-lt))
+                              temp (let [t (+ base-temp (* speed 10.0))]
+                                     (if (< t 0.0) 0.0 (if (> t 150.0) 150.0 t)))
+                              pos (RigidBody.position rb)
+                              y-val @(Vector3.y pos)
+                              humidity (let [h (* 100.0 (/ y-val -300.0))]
+                                         (if (< h 0.0) 0.0 (if (> h 100.0) 100.0 h)))
+                              pressure (let [p (+ 1.0 (/ y-val -10.0))]
+                                         (if (< p 1.0) 1.0 p))
+                              extra-vec (Vector4.init temp age humidity pressure)]
+                          (do
+                            (SdfInstance.set-extra-data! inst extra-vec)
+                            (SdfInstance.set-root-csg-idx! inst csg-idx)
+                            (if (> speed 0.1)
+                              (let [dir (Vector3.mul vel (/ 1.0 speed))
+                                    up-axis (Vector3.init 0.0 1.0 0.0)
+                                    rot (rotation-between &up-axis &dir)]
+                                (SdfInstance.set-rot! inst rot))
+                              (SdfInstance.set-rot! inst (Quaternion.identity)))))))
+                    (do
+                      (SdfInstance.set-rot! inst @(RigidBody.rotation rb))
+                      (SdfInstance.set-extra-data! inst (Vector4.init-zero)))))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]

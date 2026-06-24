@@ -26,6 +26,10 @@
   "WGPUBuffer $NAME(WGPUUniformBufferWrapper* ub)"
   "$DECL { return ub->buffer; }")
 
+(deftemplate array-zero-floats! (Fn [(Ref (Array Float))] ())
+  "void $NAME(Array* arr)"
+  "$DECL { if (arr->data) { memset(arr->data, 0, arr->len * sizeof(float)); } }")
+
 (deftype WGPURenderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
   u-buffer (Ptr WGPUUniformBufferWrapper)
@@ -54,7 +58,7 @@
   (def max-spheres 512)
   (def max-ids-per-cell 64)
   (def header-size 128)
-  (def sphere-data-size 48)
+  (def sphere-data-size 64)
 
   (sig float-from-int (Fn [Int] Float))
   (defn float-from-int [x]
@@ -167,6 +171,7 @@
           pos: vec4<f32>,
           rot: vec4<f32>,
           color: vec4<f32>,
+          extra: vec4<f32>,
       }
       struct Cell {
           header: vec4<f32>,
@@ -345,6 +350,45 @@
           let h = max(k - abs(a - b), 0.0) / k;
           return min(a, b) - h * h * h * k * (1.0 / 6.0);
       }
+
+       fn getInterpolatedFields(p: vec3<f32>) -> vec4<f32> {
+           let p_local = p - u.grid_origin.xyz;
+           let gx = i32(floor(p_local.x / u.cell_size));
+           let gy = i32(floor(p_local.y / u.cell_size));
+           let gz = i32(floor(p_local.z / u.cell_size));
+           var sum_fields = vec4<f32>(0.0);
+           var sum_w = 0.0;
+           if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
+               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
+               let cell = grid[idx];
+               let count = min(i32(round(cell.header.x)), 16);
+               for(var i = 0; i < count; i = i + 1) {
+                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                   if (s_idx >= 0 && s_idx < 1024) {
+                     let s_data = u.instances[s_idx];
+                     let raw_w = s_data.pos.w;
+                     if (raw_w != 0.0) {
+                       let csg_root_idx = i32(round(s_data.color.w));
+                       var s = 1.0;
+                       if (csg_root_idx <= -99) {
+                           s = f32(-99 - csg_root_idx) / 100.0;
+                           if (s < 0.05) { s = 0.6; }
+                       }
+                       let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                       let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
+                       let d = (length(squashed_p) - raw_w) * min(1.0, s);
+                       let w = 1.0 / (d * d + 0.01);
+                       sum_fields = sum_fields + s_data.extra * w;
+                       sum_w = sum_w + w;
+                     }
+                   }
+               }
+           }
+           if (sum_w > 0.0) {
+               return sum_fields / sum_w;
+           }
+           return vec4<f32>(0.0);
+       }
 
       fn getMetaballDist(p: vec3<f32>) -> f32 {
           let p_local = p - u.grid_origin.xyz;
@@ -812,10 +856,12 @@
                 let is_wet = is_metaball || (metaball_d < voxel_d + u.grid_dims.w);
 
                 if (is_wet) {
-                    let w_speed = u.time * 2.5;
-                    let rx = sin(p.x * 12.0 + w_speed) * cos(p.z * 12.0 + w_speed) * 0.12;
-                    let ry = sin(p.y * 15.0 - w_speed) * 0.06;
-                    let rz = cos(p.x * 10.0 - w_speed) * sin(p.z * 14.0 + w_speed) * 0.12;
+                    let fields = getInterpolatedFields(p);
+                    let temp_factor = clamp(fields.x / 100.0, 0.0, 1.0);
+                    let w_speed = u.time * (2.5 + temp_factor * 5.0);
+                    let rx = sin(p.x * 10.0 + p.z * 6.0 + w_speed) * cos(p.z * 12.0 - p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
+                    let ry = sin(p.y * 15.0 - w_speed) * (0.06 + temp_factor * 0.08);
+                    let rz = cos(p.x * 8.0 - p.z * 6.0 - w_speed) * sin(p.z * 12.0 + p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
                     let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
                     normal = normalize(normal + vec3<f32>(rx, ry, rz) * h);
                 }
@@ -857,17 +903,64 @@
                        edge = get_wireframe_edge(lp, s_data.pos.w, 0.08);
                    }
                } else {
-                   // Calculate water color at p (using world coordinates for waves layout)
-                    let w_speed1 = u.time * 2.8;
-                    let w_speed2 = u.time * -1.8;
-                    let wave_val1 = sin(p.x * 5.0 + w_speed1) * cos(p.z * 5.0 + w_speed1) * 0.5 + 0.5;
-                    let wave_val2 = sin(p.x * 12.0 + w_speed2) * cos(p.z * 10.0 - w_speed2) * 0.5 + 0.5;
-                    let wave_val = mix(wave_val1, wave_val2, 0.35);
-                    let water_col = mix(vec3<f32>(0.02, 0.25, 0.75), vec3<f32>(0.15, 0.65, 0.95), wave_val);
+                    let fields = getInterpolatedFields(p);
+                    let view_mode = u.grid_origin.w;
 
-                   // Blend terrain color and water color smoothly
-                   let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
-                   base_col = mix(terr_col, water_col, h);
+                    // Calculate water color at p (using world coordinates for waves layout)
+                    let temp_factor = clamp(fields.x / 100.0, 0.0, 1.0);
+                    let w_speed1 = u.time * (2.2 + temp_factor * 4.0);
+                    let w_speed2 = u.time * (-1.5 - temp_factor * 3.0);
+                    let wave_val1 = sin(p.x * 3.0 + p.z * 2.0 + w_speed1) * cos(p.x * -1.0 + p.z * 2.5 + w_speed1) * 0.5 + 0.5;
+                    let wave_val2 = sin(p.x * 7.5 - p.z * 5.0 + w_speed2) * sin(p.x * 3.0 + p.z * 8.0 - w_speed2) * 0.5 + 0.5;
+                    let wave_val = mix(wave_val1, wave_val2, 0.4);
+
+                    var water_base = vec3<f32>(0.02, 0.25, 0.75);
+                    var water_tip = vec3<f32>(0.15, 0.65, 0.95);
+
+                    if (view_mode == 1.0) {
+                        // Temperature
+                        let norm_t = clamp(fields.x / 120.0, 0.0, 1.0);
+                        water_base = mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(0.5, 0.5, 0.0), norm_t);
+                        water_tip = mix(vec3<f32>(0.0, 0.8, 0.8), vec3<f32>(1.0, 0.1, 0.0), norm_t);
+                    } else if (view_mode == 2.0) {
+                        // Age / Time
+                        let norm_age = clamp(fields.y / 12.0, 0.0, 1.0);
+                        water_base = mix(vec3<f32>(0.1, 0.9, 0.1), vec3<f32>(0.1, 0.2, 0.9), norm_age);
+                        water_tip = mix(vec3<f32>(0.8, 1.0, 0.2), vec3<f32>(0.9, 0.1, 0.9), norm_age);
+                    } else if (view_mode == 3.0) {
+                        // Humidity
+                        let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
+                        water_base = mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.4, 0.6), norm_hum);
+                        water_tip = mix(vec3<f32>(0.6, 0.5, 0.2), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
+                    } else if (view_mode == 4.0) {
+                        // Pressure
+                        let norm_pres = clamp((fields.w - 1.0) / 30.0, 0.0, 1.0);
+                        water_base = mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.0, 0.4, 0.8), norm_pres);
+                        water_tip = mix(vec3<f32>(0.2, 0.1, 0.6), vec3<f32>(0.2, 0.8, 1.0), norm_pres);
+                    }
+
+                    let water_col = mix(water_base, water_tip, wave_val);
+
+                    // Blend terrain color and water color smoothly (pow-based shallow transparency)
+                    let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
+                    let blend_h = pow(h, 1.8);
+                    base_col = mix(terr_col, water_col, blend_h);
+
+                    // Add animated foam froth at the shoreline intersections
+                    let foam_edge = 1.0 - abs(h - 0.5) * 2.0;
+                    var foam_intensity = 0.3;
+                    if (view_mode == 4.0) {
+                        foam_intensity = 0.3 + 0.5 * clamp((fields.w - 1.0) / 30.0, 0.0, 1.0);
+                    }
+                    let foam = pow(max(0.0, foam_edge), 8.0) * foam_intensity * (sin(p.x * 15.0 + p.z * 10.0 + u.time * 6.0) * sin(p.z * 18.0 - p.x * 8.0 - u.time * 4.0) * 0.5 + 0.5);
+                    base_col += vec3<f32>(foam);
+
+                    // Add glossy sky reflections
+                    let view_dir = normalize(u.cam_pos.xyz - p);
+                    let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
+                    let ref_dir = reflect(-view_dir, normal);
+                    let sky_ref = mix(vec3<f32>(0.05, 0.15, 0.35), vec3<f32>(0.65, 0.85, 1.0), max(0.0, ref_dir.y) * 0.5 + 0.5);
+                    base_col = mix(base_col, sky_ref, 0.25 * fresnel * h);
                }
 
                color = base_col * (lit + 0.15) * ao + vec3<f32>(specular);
@@ -1381,7 +1474,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
   (defn submit! [ren cmd]
     (Array.push-back! (WGPURenderer.commands ren) cmd))
 
-  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k]
+  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k view-mode]
     (let [db (World.sdf-db world-data)
           bg-color (Vector3.init 0.1 0.1 0.1)
           commands (WGPURenderer.commands ren)
@@ -1401,15 +1494,12 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
           csg-data (WGPURenderer.csg-data ren)]
       (do
         (when csg-dirty
-          (for [i 0 (Array.length csg-data)]
-            (Array.aset! csg-data i 0.0f)))
+          (array-zero-floats! csg-data))
 
         (when grid-dirty
           (do
-            (for [i 32 (Array.length data)]
-              (Array.aset! data i 0.0f))
-            (for [i 0 (Array.length flat-grid)]
-              (Array.aset! flat-grid i 0.0f))))
+            (array-zero-floats! data)
+            (array-zero-floats! flat-grid)))
 
         (let [next-csg-node-idx 0]
           (do
@@ -1451,7 +1541,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             (Array.aset! data 28 (Double.to-float @(Vector3.x origin)))
             (Array.aset! data 29 (Double.to-float @(Vector3.y origin)))
             (Array.aset! data 30 (Double.to-float @(Vector3.z origin)))
-            (Array.aset! data 31 0.0f)
+            (Array.aset! data 31 (Double.to-float (Double.from-int view-mode)))
 
 
 
@@ -1496,9 +1586,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                                 _ ())
                               (let [inst (Array.unsafe-nth (SdfDatabase.instances db) id)]
                                 (SdfInstance.set-root-csg-idx! inst (if is-bouncy @(SdfInstance.root-csg-idx inst) root-csg-idx)))))
-                          (let [base (+ (/ WGPURenderer.header-size 4) (* id 12))
+                          (let [base (+ (/ WGPURenderer.header-size 4) (* id 16))
                                 inst (Array.unsafe-nth (SdfDatabase.instances db) id)
-                                final-csg-idx @(SdfInstance.root-csg-idx inst)]
+                                final-csg-idx @(SdfInstance.root-csg-idx inst)
+                                extra (SdfInstance.extra-data inst)]
                             (do
                               (Array.aset! data base (Double.to-float @(Vector3.x pos)))
                               (Array.aset! data (+ base 1) (Double.to-float @(Vector3.y pos)))
@@ -1511,7 +1602,11 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                               (Array.aset! data (+ base 8) (Double.to-float @(Vector3.x c-val)))
                               (Array.aset! data (+ base 9) (Double.to-float @(Vector3.y c-val)))
                               (Array.aset! data (+ base 10) (Double.to-float @(Vector3.z c-val)))
-                              (Array.aset! data (+ base 11) (Double.to-float (Double.from-int final-csg-idx))))))))))))))
+                              (Array.aset! data (+ base 11) (Double.to-float (Double.from-int final-csg-idx)))
+                              (Array.aset! data (+ base 12) (Double.to-float @(Vector4.x extra)))
+                              (Array.aset! data (+ base 13) (Double.to-float @(Vector4.y extra)))
+                              (Array.aset! data (+ base 14) (Double.to-float @(Vector4.z extra)))
+                              (Array.aset! data (+ base 15) (Double.to-float @(Vector4.w extra))))))))))))))
 
             (WGPURender.update-uniform-buffer ctx @(WGPURenderer.u-buffer ren) data)
 
