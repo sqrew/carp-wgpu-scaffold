@@ -24,6 +24,13 @@
                   csg-node (CsgNode.init boxed-shape @(CsgNode.op node))]
               (SDF.add-csg-node! parent-sdf csg-node))))))))
 
+  (defn get-static-world-handle [world]
+    (let [h (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l))]
+      (do
+        (ECS.query world [ent (swt StaticWorldTag)]
+          (set! h @(ECS.Entity.handle &ent)))
+        h)))
+
   (defn sample-static-world [world-data p]
     (World.sample-voxel-grid-trilinear world-data p))
 
@@ -97,12 +104,12 @@
                                          (AABB.init (Vector3.sub (AABB.min &swept) &pad-vec)
                                                     (Vector3.add (AABB.max &swept) &pad-vec)))
                                        swept)]
-                (when (not (Uint32.= (ECS.Entity.id &ent) (Uint32.from-long 0l)))
+                (when (not (ECS.has-component? world &ent StaticWorldTag))
                   (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
 
         ;; 3. Detect Collisions between Entities (including the static floor)
         (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
-          (when (not (Uint32.= (ECS.Entity.id &ent1) (Uint32.from-long 0l)))
+          (when (not (ECS.has-component? world &ent1 StaticWorldTag))
             (let [aabb (Collision.get-aabb (Collidable.volume col1))
                   candidates (SpatialGrid.query-unique grid &aabb)]
               (do
@@ -295,7 +302,7 @@
                                   (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))
                       _ ())
                     (when (not (Array.empty? &contacts))
-                      (let [m (ContactSet.init @(Collidable.handle col1) (Handle.init (Uint64.from-long 0l) (Uint32.from-long 1l)) @&contacts)
+                      (let [m (ContactSet.init @(Collidable.handle col1) (get-static-world-handle world) @&contacts)
                             is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
                                                  (not (ECS.has-component? world &ent1 BouncyTag)))]
                         (if is-dig-bullet-1

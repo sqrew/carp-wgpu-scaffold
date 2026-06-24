@@ -75,4 +75,10 @@
   (implements zero Explosion.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef Explosion)
+(deftype StaticWorldTag [])
+(defmodule StaticWorldTag
+  (defn zero [] (StaticWorldTag.init))
+  (implements zero StaticWorldTag.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef Explosion StaticWorldTag)

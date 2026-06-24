@@ -90,6 +90,7 @@
             (ECS.add-component! &world &root-ent root-col)
             (ECS.add-component! &world &root-ent root-color)
             (ECS.add-component! &world &root-ent (GeometryRef.init geom-id))
+            (ECS.add-component! &world &root-ent (StaticWorldTag.init))
             (ECS.add-component! &world &child-ent child-col)
             (ECS.add-component! &world &child-ent parent-comp)
             (ECS.add-component! &world &child-ent csg-comp)
@@ -599,12 +600,12 @@
               (let [to-destroy []]
                 (do
                   (ECS.query world [ent (rb RigidBody)]
-                    (let [id (ECS.Entity.id &ent)]
-                      (when (and (> id (Uint32.from-long 4l)) (not (ECS.has-component? world &ent PlayerTag)))
+                    (when (and (not (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false))
+                               (not (ECS.has-component? world &ent PlayerTag)))
                         (let [pos (RigidBody.position rb)
                               dist (Vector3.dist pos &p-pos)]
                           (when (or (> dist 350.0) (< @(Vector3.y pos) -280.0))
-                            (Array.push-back! &to-destroy ent))))))
+                            (Array.push-back! &to-destroy ent)))))
                   
                   (for [i 0 (Array.length &to-destroy)]
                     (do
