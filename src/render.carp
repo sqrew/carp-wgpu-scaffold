@@ -243,7 +243,7 @@
   (sig carve-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
   (sig build-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
 
-  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k view-mode]
+  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k view-mode show-debug]
     (let [db (World.sdf-db world-data)
           bg-color (Vector3.init 0.1 0.1 0.1)
           commands (WGPURenderer.commands ren)
@@ -302,7 +302,7 @@
             (Array.aset! data 20 (Double.to-float @(Vector3.x &bg-color)))
             (Array.aset! data 21 (Double.to-float @(Vector3.y &bg-color)))
             (Array.aset! data 22 (Double.to-float @(Vector3.z &bg-color)))
-            (Array.aset! data 23 1.0f)
+            (Array.aset! data 23 (if show-debug 1.0f 0.0f))
             (Array.aset! data 24 (Double.to-float cols))
             (Array.aset! data 25 (Double.to-float rows))
             (Array.aset! data 26 (Double.to-float layers))

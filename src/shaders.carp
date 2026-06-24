@@ -907,6 +907,13 @@
               let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
               color += vec3<f32>(dither_noise) * (1.0 / 255.0);
           }
+          if (u.bg_color.w > 0.5) {
+              let dx = abs(frag_in.uv.x) * u.width * 0.5;
+              let dy = abs(frag_in.uv.y) * u.height * 0.5;
+              if ((dx < 8.0 && dy < 1.0 && dx > 2.0) || (dy < 8.0 && dx < 1.0 && dy > 2.0)) {
+                  color = vec3<f32>(0.0, 1.0, 0.0);
+              }
+          }
           return vec4<f32>(color, 1.0);
       }
     "))
