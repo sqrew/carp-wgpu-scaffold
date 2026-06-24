@@ -19,6 +19,10 @@
   last-cam-x Int
   last-cam-y Int
   last-cam-z Int
+  cache-qx Int
+  cache-qy Int
+  cache-qz Int
+  cache-idx Int
 ])
 
 (defmodule World
@@ -39,7 +43,7 @@
         arr)))
 
   (defn new [origin cell-size w h d]
-    (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999))
+    (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999 -999 -999 -999 -1))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -104,18 +108,27 @@
           lz (Int.bit-and gz 31)
           res 32
           chunks (World.chunks world)
-          found-idx -1
-          i 0
-          len (Array.length chunks)]
+          found-idx -1]
       (do
-        (while (and (< i len) (= found-idx -1))
-          (let [chunk (Array.unsafe-nth chunks i)]
-            (do
-              (when (and (= @(Chunk.coord-x chunk) qx)
-                         (and (= @(Chunk.coord-y chunk) qy)
-                              (= @(Chunk.coord-z chunk) qz)))
-                (set! found-idx i))
-              (set! i (inc i)))))
+        (if (and (= qx @(World.cache-qx world))
+                 (and (= qy @(World.cache-qy world))
+                      (= qz @(World.cache-qz world))))
+            (set! found-idx @(World.cache-idx world))
+            (let [len (Array.length chunks)
+                  i 0]
+              (do
+                (while (and (< i len) (= found-idx -1))
+                  (let [chunk (Array.unsafe-nth chunks i)]
+                    (do
+                      (when (and (= @(Chunk.coord-x chunk) qx)
+                                 (and (= @(Chunk.coord-y chunk) qy)
+                                      (= @(Chunk.coord-z chunk) qz)))
+                        (set! found-idx i))
+                      (set! i (inc i)))))
+                (World.set-cache-qx! world qx)
+                (World.set-cache-qy! world qy)
+                (World.set-cache-qz! world qz)
+                (World.set-cache-idx! world found-idx))))
         (if (= found-idx -1)
             1.5
             (let [chunk (Array.unsafe-nth chunks found-idx)
