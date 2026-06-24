@@ -84,8 +84,6 @@
                 (WGPU.dispatch ctx pipe bg 512)
                 (WGPU.free-bind-group bg))))
         (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
-        (let [updated-floats (WGPU.read-floats ctx v-gpu-b 131072)]
-          (Chunk.set-voxel-data! chunk updated-floats))
         )))
 
   (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
