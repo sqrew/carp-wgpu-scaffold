@@ -3,11 +3,11 @@
 (defmodule Shaders
   (defn shader-wgsl [limit max-ids]
     (str*
-      "struct SdfInstance {
-          pos: vec4<f32>,
+      "struct PointInstance {
+          pos_scale: vec4<f32>,
           rot: vec4<f32>,
-          color: vec4<f32>,
-          extra: vec4<f32>,
+          color_csg: vec4<f32>,
+          sph_fields: vec4<f32>,
       }
       struct Cell {
           header: vec4<f32>,
@@ -25,7 +25,7 @@
           bg_color: vec4<f32>,
           grid_dims: vec4<f32>,
           grid_origin: vec4<f32>,
-          instances: array<SdfInstance, " (Int.str limit) ">
+          instances: array<PointInstance, " (Int.str limit) ">
       }
       struct CsgNode {
           info: vec4<f32>,
@@ -202,19 +202,19 @@
                    let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                    if (s_idx >= 0 && s_idx < 1024) {
                      let s_data = u.instances[s_idx];
-                     let raw_w = s_data.pos.w;
+                     let raw_w = s_data.pos_scale.w;
                      if (raw_w != 0.0) {
-                       let csg_root_idx = i32(round(s_data.color.w));
+                       let csg_root_idx = i32(round(s_data.color_csg.w));
                        var s = 1.0;
                        if (csg_root_idx <= -99) {
                            s = f32(-99 - csg_root_idx) / 100.0;
                            if (s < 0.05) { s = 0.6; }
                        }
-                       let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                       let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                        let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                        let d = (length(squashed_p) - raw_w) * min(1.0, s);
                        let w = 1.0 / (d * d + 0.01);
-                       sum_fields = sum_fields + s_data.extra * w;
+                       sum_fields = sum_fields + s_data.sph_fields * w;
                        sum_w = sum_w + w;
                      }
                    }
@@ -240,13 +240,13 @@
                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                   if (s_idx >= 0 && s_idx < 1024) {
                     let s_data = u.instances[s_idx];
-                    let raw_w = s_data.pos.w;
+                    let raw_w = s_data.pos_scale.w;
                     if (raw_w != 0.0) {
-                      let csg_root_idx = i32(round(s_data.color.w));
+                      let csg_root_idx = i32(round(s_data.color_csg.w));
                       if (csg_root_idx <= -99) {
                           var s = f32(-99 - csg_root_idx) / 100.0;
                           if (s < 0.05) { s = 0.6; }
-                          let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                          let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                           let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                           let local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
                           metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
@@ -484,11 +484,11 @@
                     let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                     if (s_idx >= 0 && s_idx < 1024) {
                       let s_data = u.instances[s_idx];
-                      let raw_w = s_data.pos.w;
+                      let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
                         var local_dist = 10000.0;
-                        let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                        let csg_root_idx = i32(round(s_data.color.w));
+                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                        let csg_root_idx = i32(round(s_data.color_csg.w));
                         if (csg_root_idx <= -99) {
                             var s = f32(-99 - csg_root_idx) / 100.0;
                             if (s < 0.05) { s = 0.6; }
@@ -503,8 +503,8 @@
                             } else {
                                 if (raw_w > 0.0 && raw_w < 500.0) {
                                   local_dist = sdSphere(local_p, raw_w);
-                                  if (s_data.extra.x > 0.0) {
-                                      let noise_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                                  if (s_data.sph_fields.x > 0.0) {
+                                      let noise_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
                                       let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
                                       let n = evaluateFbm(local_p * 2.5 - scroll);
                                       local_dist -= n * 0.4 * raw_w * noise_factor;
@@ -575,11 +575,11 @@
                     let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                     if (s_idx >= 0 && s_idx < 1024) {
                       let s_data = u.instances[s_idx];
-                      let raw_w = s_data.pos.w;
+                      let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
                         var local_dist = 10000.0;
-                        let local_p = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                        let csg_root_idx = i32(round(s_data.color.w));
+                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                        let csg_root_idx = i32(round(s_data.color_csg.w));
                         if (csg_root_idx <= -99) {
                             var s = f32(-99 - csg_root_idx) / 100.0;
                             if (s < 0.05) { s = 0.6; }
@@ -594,8 +594,8 @@
                             } else {
                                 if (raw_w > 0.0 && raw_w < 500.0) {
                                   local_dist = sdSphere(local_p, raw_w);
-                                  if (s_data.extra.x > 0.0) {
-                                      let noise_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                                  if (s_data.sph_fields.x > 0.0) {
+                                      let noise_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
                                       let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
                                       let n = evaluateFbm(local_p * 2.5 - scroll);
                                       local_dist -= n * 0.4 * raw_w * noise_factor;
@@ -720,11 +720,11 @@
                 if (hitId != -1.0) {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
-                    let raw_w = s_data.pos.w;
-                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color.w < 0.0 && s_data.color.w > -99.0 && s_data.extra.x == 0.0) {
+                    let raw_w = s_data.pos_scale.w;
+                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color_csg.w < 0.0 && s_data.color_csg.w > -99.0 && s_data.sph_fields.x == 0.0) {
                         is_sphere = true;
                     }
-                    if (s_data.color.w <= -99.0) {
+                    if (s_data.color_csg.w <= -99.0) {
                         is_metaball = true;
                     }
                 }
@@ -732,7 +732,7 @@
                 if (is_sphere) {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
-                    normal = normalize(p - s_data.pos.xyz);
+                    normal = normalize(p - s_data.pos_scale.xyz);
                 } else {
                     let eps = 0.01;
                     let d1 = worldSDF(p + vec3<f32>( eps, -eps, -eps), rd, dither_threshold).y;
@@ -799,9 +799,9 @@
                 if (hitId != -1.0 && !is_metaball) {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
-                    let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
-                    if (s_data.extra.x > 0.0) {
-                        let temp_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
+                    let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                    if (s_data.sph_fields.x > 0.0) {
+                        let temp_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
                         let scroll_col = vec3<f32>(0.0, u.time * 4.0, 0.0);
                         let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
                         let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
@@ -810,9 +810,9 @@
                         let ash = vec3<f32>(0.05, 0.05, 0.05);
                         base_col = mix(ash, fire, temp_factor * (0.2 + 0.8 * n_col));
                     } else {
-                        base_col = s_data.color.rgb;
-                        if (s_data.color.w < 0.0) {
-                            edge = get_wireframe_edge(lp, s_data.pos.w, 0.08);
+                        base_col = s_data.color_csg.rgb;
+                        if (s_data.color_csg.w < 0.0) {
+                            edge = get_wireframe_edge(lp, s_data.pos_scale.w, 0.08);
                         }
                     }
                 } else {
@@ -881,15 +881,15 @@
                var is_exp = false;
                if (hitId != -1.0 && !is_metaball) {
                    let s_idx = i32(hitId);
-                   if (u.instances[s_idx].extra.x > 0.0) {
+                   if (u.instances[s_idx].sph_fields.x > 0.0) {
                        is_exp = true;
                     }
                }
                if (is_exp) {
                    let s_idx = i32(hitId);
                    let s_data = u.instances[s_idx];
-                   let temp_factor = clamp(s_data.extra.x / 120.0, 0.0, 1.0);
-                   let lp = rotateVector(p - s_data.pos.xyz, q_inv(s_data.rot));
+                   let temp_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
+                   let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                    let scroll_col = vec3<f32>(0.0, u.time * 4.0, 0.0);
                    let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
                    let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
