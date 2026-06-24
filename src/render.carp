@@ -56,6 +56,16 @@
   chunk-lookup-buffer (Ptr WGPUUniformBufferWrapper)
 ])
 
+(defmodule VoxelBaker
+  (sig bake-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Array SDF)) (Ref (Array Float))] ()))
+  (sig bake-voxel-grid! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref (SpatialGrid Uint32)) (Ref GameWorld) (Ref World)] ()))
+  (sig chunk-overlaps-sphere? (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] Bool))
+  (sig carve-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double] ()))
+  (sig build-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double] ()))
+  (sig carve-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
+  (sig build-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
+)
+
 (defmodule WGPURenderer
   (def max-spheres 512)
   (def max-ids-per-cell 64)
@@ -234,14 +244,6 @@
 
   (defn submit! [ren cmd]
     (Array.push-back! (WGPURenderer.commands ren) cmd))
-
-  (sig bake-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Array SDF)) (Ref (Array Float))] ()))
-  (sig bake-voxel-grid! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref (SpatialGrid Uint32)) (Ref GameWorld) (Ref World)] ()))
-  (sig chunk-overlaps-sphere? (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] Bool))
-  (sig carve-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double] ()))
-  (sig build-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double] ()))
-  (sig carve-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
-  (sig build-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
 
   (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k view-mode show-debug]
     (let [db (World.sdf-db world-data)
@@ -466,7 +468,7 @@
             (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
               (do
                 (if (Array.empty? craters)
-                  (bake-voxel-grid! ctx ren grid world world-data)
+                  (VoxelBaker.bake-voxel-grid! ctx ren grid world world-data)
                   (do
                     (for [i 0 (Array.length craters)]
                       (let [crater (Array.unsafe-nth craters i)
@@ -476,14 +478,14 @@
                             chunks (World.chunks world-data)]
                         (for [j 0 (Array.length chunks)]
                           (let [chunk (Array.unsafe-nth chunks j)]
-                            (when (chunk-overlaps-sphere? chunk pos rad)
+                            (when (VoxelBaker.chunk-overlaps-sphere? chunk pos rad)
                               (if (< op 0.5)
                                   (do
-                                    (carve-voxel-grid-cpu! chunk pos rad)
-                                    (carve-voxel-grid-gpu! ctx ren chunk pos rad))
+                                    (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad)
+                                    (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad))
                                   (do
-                                    (build-voxel-grid-cpu! chunk pos rad)
-                                    (build-voxel-grid-gpu! ctx ren chunk pos rad))))))))))
+                                    (VoxelBaker.build-voxel-grid-cpu! chunk pos rad)
+                                    (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad))))))))))
                 (WGPURenderer.set-voxel-dirty! ren false)))
             
             (when grid-dirty
