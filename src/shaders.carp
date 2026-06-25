@@ -544,7 +544,7 @@
                     res = min(res, k * h / t);
                 }
                 last_h = h;
-                dt = clamp(sdf_val.x, 0.05, 0.8);
+                dt = clamp(sdf_val.x, 0.05, 2.0);
                 t += dt;
                 if (t > maxt) {
                     break;

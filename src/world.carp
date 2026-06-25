@@ -89,15 +89,16 @@
 
   (defn find-chunk [world qx qy qz]
     (let [chunks (World.chunks world)
-          lx (+ qx 1)
-          ly (+ qy 1)
-          lz (+ qz 1)]
-      (if (and (and (>= lx 0) (< lx 3))
-               (and (and (>= ly 0) (< ly 3))
-                    (and (>= lz 0) (< lz 3))))
-          (let [idx (+ lx (+ (* ly 3) (* lz 9)))]
-            (Maybe.Just @(Array.unsafe-nth chunks idx)))
-          (Maybe.Nothing))))
+          len (Array.length chunks)
+          found (Maybe.Nothing)]
+      (do
+        (for [i 0 len]
+          (let [chunk (Array.unsafe-nth chunks i)]
+            (when (and (= qx @(Chunk.coord-x chunk))
+                       (and (= qy @(Chunk.coord-y chunk))
+                            (= qz @(Chunk.coord-z chunk))))
+              (set! found (Maybe.Just @chunk)))))
+        found)))
 
   (defn get-voxel-at-world-grid [world gx gy gz]
     (let [qx (Int.bit-shift-right gx 5)
