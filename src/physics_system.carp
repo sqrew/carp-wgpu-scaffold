@@ -309,8 +309,9 @@
                       _ ())
                     (when (not (Array.empty? &contacts))
                       (let [m (ContactSet.init @(Collidable.handle col1) (get-static-world-handle world) @&contacts)
-                            is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
-                                                 (not (ECS.has-component? world &ent1 BouncyTag)))]
+                            is-dig-bullet-1 (and (and (ECS.has-component? world &ent1 Lifetime)
+                                                      (not (ECS.has-component? world &ent1 BouncyTag)))
+                                                 (not (ECS.has-component? world &ent1 Explosion)))]
                         (if is-dig-bullet-1
                             (let [bullet-ent &ent1]
                               (do
@@ -335,10 +336,12 @@
                           (match res
                             (Maybe.Just (CollisionResult.Physical actual-col))
                               (do
-                                (let [is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
-                                                           (not (ECS.has-component? world &ent1 BouncyTag)))
-                                      is-dig-bullet-2 (and (ECS.has-component? world &ent2 Lifetime)
-                                                           (not (ECS.has-component? world &ent2 BouncyTag)))]
+                                 (let [is-dig-bullet-1 (and (and (ECS.has-component? world &ent1 Lifetime)
+                                                                 (not (ECS.has-component? world &ent1 BouncyTag)))
+                                                            (not (ECS.has-component? world &ent1 Explosion)))
+                                       is-dig-bullet-2 (and (and (ECS.has-component? world &ent2 Lifetime)
+                                                                 (not (ECS.has-component? world &ent2 BouncyTag)))
+                                                            (not (ECS.has-component? world &ent2 Explosion)))]
                                   (if (or is-dig-bullet-1 is-dig-bullet-2)
                                       (let [bullet-ent (if is-dig-bullet-1 &ent1 &ent2)
                                             other-ent (if is-dig-bullet-1 &ent2 &ent1)

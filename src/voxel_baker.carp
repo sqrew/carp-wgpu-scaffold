@@ -226,16 +226,19 @@
                     dy (- py cy)
                     dy2_dz2 (+ (* dy dy) dz2)]
                 (for [sx start-x (inc end-x)]
-                  (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
-                        dx (- px cx)
-                        dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
-                        crater-dist (- dist-to-crater-center radius)
-                        idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
-                        old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                        new-dist (let [neg-crater-dist (- 0.0 crater-dist)
-                                       d (if (> old-dist neg-crater-dist) old-dist neg-crater-dist)]
-                                   (if (and (< d 0.0) (> d -0.1)) 1.0 d))]
-                    (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))
+                  (let [idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)]
+                    (do
+                      (when (or (>= idx-full (Array.length voxel-data)) (< idx-full 0))
+                        (IO.println &(str* "CARVE OOB: idx-full=" (Int.str idx-full) " len=" (Int.str (Array.length voxel-data)) " sx=" (Int.str sx) " sy=" (Int.str sy) " sz=" (Int.str sz) " start-x=" (Int.str start-x) " end-x=" (Int.str end-x))))
+                      (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                            dx (- px cx)
+                            dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
+                            crater-dist (- dist-to-crater-center radius)
+                            old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                            new-dist (let [neg-crater-dist (- 0.0 crater-dist)
+                                           d (if (> old-dist neg-crater-dist) old-dist neg-crater-dist)]
+                                       (if (and (< d 0.0) (> d -0.1)) 1.0 d))]
+                        (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))))
 
   (defn build-voxel-grid-cpu! [chunk center radius]
     (let [qx @(Chunk.coord-x chunk)
@@ -279,15 +282,18 @@
                     dy (- py cy)
                     dy2_dz2 (+ (* dy dy) dz2)]
                 (for [sx start-x (inc end-x)]
-                  (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
-                        dx (- px cx)
-                        dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
-                        sphere-dist (- dist-to-sphere-center radius)
-                        idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)
-                        old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                        new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
+                  (let [idx-full (* (+ sx (+ (* sy 32) (* (* sz 32) 32))) 4)]
                     (do
-                      (Array.aset! voxel-data idx-full (Double.to-float new-dist))
-                      (when (< sphere-dist 0.0)
-                        (Array.aset! voxel-data (+ idx-full 1) 2.0f))))))))))))
+                      (when (or (>= idx-full (Array.length voxel-data)) (< idx-full 0) (>= (+ idx-full 1) (Array.length voxel-data)))
+                        (IO.println &(str* "BUILD OOB: idx-full=" (Int.str idx-full) " len=" (Int.str (Array.length voxel-data)) " sx=" (Int.str sx) " sy=" (Int.str sy) " sz=" (Int.str sz) " start-x=" (Int.str start-x) " end-x=" (Int.str end-x))))
+                      (let [px (+ ox (* (+ (Double.from-int sx) 0.5) cell-size))
+                            dx (- px cx)
+                            dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
+                            sphere-dist (- dist-to-sphere-center radius)
+                            old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                            new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
+                        (do
+                          (Array.aset! voxel-data idx-full (Double.to-float new-dist))
+                          (when (< sphere-dist 0.0)
+                            (Array.aset! voxel-data (+ idx-full 1) 2.0f))))))))))))))
 )
