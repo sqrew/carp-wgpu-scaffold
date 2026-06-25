@@ -19,6 +19,12 @@
     show-debug-lines Bool
     view-mode Int
     shadow-quality Int
+    pressure-field (Field FieldKernelStorage Double)
+    velocity-field (Field FieldKernelStorageVector (Vector3 Double))
+    temperature-field (Field FieldKernelStorage Double)
+    age-field (Field FieldKernelStorage Double)
+    humidity-field (Field FieldKernelStorage Double)
+    charge-field (Field FieldKernelStorage Double)
   ])
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))

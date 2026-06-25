@@ -1,0 +1,278 @@
+;; src/fields.carp
+
+(load "../carp-geometry/geometry.carp")
+(use Vector3)
+
+(deftemplate ptr->ref (Fn [(Ptr t)] (Ref t))
+  "$t* $NAME($t* p)"
+  "$DECL { return p; }")
+
+(deftype (Field s t) [
+  storage s
+  sample-fn (Fn [(Ref s) (Ref (Vector3 Double))] t)
+  update-fn (Fn [(Ref s) Double] ())
+])
+
+(defmodule Field
+  (defn sample [field pos]
+    (@(Field.sample-fn field) (Field.storage field) pos))
+
+  (defn update! [field dt]
+    (@(Field.update-fn field) (Field.storage field) dt))
+
+  (sig sample-gradient (Fn [(Ref (Field s Double)) (Ref (Vector3 Double)) Double] (Vector3 Double)))
+  (defn sample-gradient [field pos eps]
+    (let [ex (Vector3.init eps 0.0 0.0)
+          ey (Vector3.init 0.0 eps 0.0)
+          ez (Vector3.init 0.0 0.0 eps)
+          p-x+ (Vector3.add pos &ex)
+          p-x- (Vector3.sub pos &ex)
+          p-y+ (Vector3.add pos &ey)
+          p-y- (Vector3.sub pos &ey)
+          p-z+ (Vector3.add pos &ez)
+          p-z- (Vector3.sub pos &ez)
+          dx (- (Field.sample field &p-x+) (Field.sample field &p-x-))
+          dy (- (Field.sample field &p-y+) (Field.sample field &p-y-))
+          dz (- (Field.sample field &p-z+) (Field.sample field &p-z-))]
+      (Vector3.init (/ dx (* 2.0 eps)) (/ dy (* 2.0 eps)) (/ dz (* 2.0 eps)))))
+)
+
+;; --- STORAGE TYPES ---
+
+;; 1. Procedural Storage
+(deftype (ProceduralStorage t) [
+  func (Fn [(Ref (Vector3 Double))] t)
+])
+
+(defmodule ProceduralStorage
+  (defn sample [storage pos]
+    (@(ProceduralStorage.func storage) pos))
+
+  (defn update [storage dt]
+    ())
+)
+
+;; 2. Scalar Voxel Grid Storage
+(deftype VoxelStorage [
+  data (Array Double)
+  res-x Int
+  res-y Int
+  res-z Int
+  origin (Vector3 Double)
+  cell-size Double
+])
+
+(defmodule VoxelStorage
+  (defn sample [storage pos]
+    (let [ox @(Vector3.x (VoxelStorage.origin storage))
+          oy @(Vector3.y (VoxelStorage.origin storage))
+          oz @(Vector3.z (VoxelStorage.origin storage))
+          cs @(VoxelStorage.cell-size storage)
+          rx @(VoxelStorage.res-x storage)
+          ry @(VoxelStorage.res-y storage)
+          rz @(VoxelStorage.res-z storage)
+          data (VoxelStorage.data storage)
+          
+          tx (/ (- @(Vector3.x pos) ox) cs)
+          ty (/ (- @(Vector3.y pos) oy) cs)
+          tz (/ (- @(Vector3.z pos) oz) cs)
+          
+          x0 (Double.to-int (Double.floor tx))
+          y0 (Double.to-int (Double.floor ty))
+          z0 (Double.to-int (Double.floor tz))
+          
+          x1 (inc x0)
+          y1 (inc y0)
+          z1 (inc z0)
+          
+          fx (- tx (Double.from-int x0))
+          fy (- ty (Double.from-int y0))
+          fz (- tz (Double.from-int z0))
+          
+          x0c (clamp 0 (dec rx) x0)
+          x1c (clamp 0 (dec rx) x1)
+          y0c (clamp 0 (dec ry) y0)
+          y1c (clamp 0 (dec ry) y1)
+          z0c (clamp 0 (dec rz) z0)
+          z1c (clamp 0 (dec rz) z1)
+          
+          idx (fn [x y z] (+ x (* rx (+ y (* ry z)))))
+          
+          c000 @(Array.unsafe-nth data (idx x0c y0c z0c))
+          c100 @(Array.unsafe-nth data (idx x1c y0c z0c))
+          c010 @(Array.unsafe-nth data (idx x0c y1c z0c))
+          c110 @(Array.unsafe-nth data (idx x1c y1c z0c))
+          c001 @(Array.unsafe-nth data (idx x0c y0c z1c))
+          c101 @(Array.unsafe-nth data (idx x1c y0c z1c))
+          c011 @(Array.unsafe-nth data (idx x0c y1c z1c))
+          c111 @(Array.unsafe-nth data (idx x1c y1c z1c))
+          
+          c00 (+ (* c000 (- 1.0 fx)) (* c100 fx))
+          c10 (+ (* c010 (- 1.0 fx)) (* c110 fx))
+          c01 (+ (* c001 (- 1.0 fx)) (* c101 fx))
+          c11 (+ (* c011 (- 1.0 fx)) (* c111 fx))
+          
+          c0 (+ (* c00 (- 1.0 fy)) (* c10 fy))
+          c1 (+ (* c01 (- 1.0 fy)) (* c11 fy))
+          
+          c (+ (* c0 (- 1.0 fz)) (* c1 fz))]
+      c))
+
+  (defn update [storage dt]
+    ())
+)
+
+;; 3. Vector Voxel Grid Storage
+(deftype VoxelStorageVector [
+  data (Array (Vector3 Double))
+  res-x Int
+  res-y Int
+  res-z Int
+  origin (Vector3 Double)
+  cell-size Double
+])
+
+(defmodule VoxelStorageVector
+  (defn sample [storage pos]
+    (let [ox @(Vector3.x (VoxelStorageVector.origin storage))
+          oy @(Vector3.y (VoxelStorageVector.origin storage))
+          oz @(Vector3.z (VoxelStorageVector.origin storage))
+          cs @(VoxelStorageVector.cell-size storage)
+          rx @(VoxelStorageVector.res-x storage)
+          ry @(VoxelStorageVector.res-y storage)
+          rz @(VoxelStorageVector.res-z storage)
+          data (VoxelStorageVector.data storage)
+          
+          tx (/ (- @(Vector3.x pos) ox) cs)
+          ty (/ (- @(Vector3.y pos) oy) cs)
+          tz (/ (- @(Vector3.z pos) oz) cs)
+          
+          x0 (Double.to-int (Double.floor tx))
+          y0 (Double.to-int (Double.floor ty))
+          z0 (Double.to-int (Double.floor tz))
+          
+          x1 (inc x0)
+          y1 (inc y0)
+          z1 (inc z0)
+          
+          fx (- tx (Double.from-int x0))
+          fy (- ty (Double.from-int y0))
+          fz (- tz (Double.from-int z0))
+          
+          x0c (clamp 0 (dec rx) x0)
+          x1c (clamp 0 (dec rx) x1)
+          y0c (clamp 0 (dec ry) y0)
+          y1c (clamp 0 (dec ry) y1)
+          z0c (clamp 0 (dec rz) z0)
+          z1c (clamp 0 (dec rz) z1)
+          
+          idx (fn [x y z] (+ x (* rx (+ y (* ry z)))))
+          
+          c000 (Array.unsafe-nth data (idx x0c y0c z0c))
+          c100 (Array.unsafe-nth data (idx x1c y0c z0c))
+          c010 (Array.unsafe-nth data (idx x0c y1c z0c))
+          c110 (Array.unsafe-nth data (idx x1c y1c z0c))
+          c001 (Array.unsafe-nth data (idx x0c y0c z1c))
+          c101 (Array.unsafe-nth data (idx x1c y0c z1c))
+          c011 (Array.unsafe-nth data (idx x0c y1c z1c))
+          c111 (Array.unsafe-nth data (idx x1c y1c z1c))
+          
+          c00 (Vector3.add &(Vector3.mul c000 (- 1.0 fx)) &(Vector3.mul c100 fx))
+          c10 (Vector3.add &(Vector3.mul c010 (- 1.0 fx)) &(Vector3.mul c110 fx))
+          c01 (Vector3.add &(Vector3.mul c001 (- 1.0 fx)) &(Vector3.mul c101 fx))
+          c11 (Vector3.add &(Vector3.mul c011 (- 1.0 fx)) &(Vector3.mul c111 fx))
+          
+          c0 (Vector3.add &(Vector3.mul &c00 (- 1.0 fy)) &(Vector3.mul &c10 fy))
+          c1 (Vector3.add &(Vector3.mul &c01 (- 1.0 fy)) &(Vector3.mul &c11 fy))
+          
+          c (Vector3.add &(Vector3.mul &c0 (- 1.0 fz)) &(Vector3.mul &c1 fz))]
+      c))
+
+  (defn update [storage dt]
+    ())
+)
+
+;; 4. Field Instance Kernel Scalar Field Storage
+(deftype FieldKernelStorage [
+  db-ptr (Ptr FieldDatabase)
+  array-idx Int ;; 0=temp, 1=age, 2=hum, 3=pres, 4=charge
+])
+
+(defmodule FieldKernelStorage
+  (defn sample [storage pos]
+    (let [db (ptr->ref @(FieldKernelStorage.db-ptr storage))
+          idx @(FieldKernelStorage.array-idx storage)
+          active (FieldDatabase.active db)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          
+          values (if (= idx 0) (FieldDatabase.temperatures db)
+                 (if (= idx 1) (FieldDatabase.ages db)
+                 (if (= idx 2) (FieldDatabase.humidities db)
+                 (if (= idx 3) (FieldDatabase.pressures db)
+                 (FieldDatabase.charges db)))))
+          
+          sum-val 0.0
+          sum-W 0.0
+          len (Array.length active)
+          epsilon 0.01]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active i)
+            (let [inst-pos (Array.unsafe-nth positions i)
+                  scale @(Array.unsafe-nth scales i)
+                  val @(Array.unsafe-nth values i)
+                  to-pos (Vector3.sub pos inst-pos)
+                  dist (Vector3.mag &to-pos)
+                  d (- dist scale)
+                  w-denom (+ (* d d) epsilon)
+                  w (/ 1.0 w-denom)]
+              (do
+                (set! sum-val (+ sum-val (* val w)))
+                (set! sum-W (+ sum-W w))))))
+        (if (> sum-W 0.00001)
+          (/ sum-val sum-W)
+          0.0))))
+
+  (defn update [storage dt]
+    ())
+)
+
+;; 5. Field Instance Kernel Vector Field Storage
+(deftype FieldKernelStorageVector [
+  db-ptr (Ptr FieldDatabase)
+])
+
+(defmodule FieldKernelStorageVector
+  (defn sample [storage pos]
+    (let [db (ptr->ref @(FieldKernelStorageVector.db-ptr storage))
+          active (FieldDatabase.active db)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          velocities (FieldDatabase.velocities db)
+          
+          sum-vel (Vector3.init 0.0 0.0 0.0)
+          sum-W 0.0
+          len (Array.length active)
+          epsilon 0.01]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active i)
+            (let [inst-pos (Array.unsafe-nth positions i)
+                  scale @(Array.unsafe-nth scales i)
+                  vel (Array.unsafe-nth velocities i)
+                  to-pos (Vector3.sub pos inst-pos)
+                  dist (Vector3.mag &to-pos)
+                  d (- dist scale)
+                  w-denom (+ (* d d) epsilon)
+                  w (/ 1.0 w-denom)]
+              (do
+                (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
+                (set! sum-W (+ sum-W w))))))
+        (if (> sum-W 0.00001)
+          (Vector3.mul &sum-vel (/ 1.0 sum-W))
+          (Vector3.init 0.0 0.0 0.0)))))
+
+  (defn update [storage dt]
+    ())
+)

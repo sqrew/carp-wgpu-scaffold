@@ -66,21 +66,24 @@
               _ ())))
         (Vector2.init min-d mat-id))))
 
-  (defn step-ecs! [world world-data grid coord metaball-k]
-    (let [collision-occurred false
+  (defn step-ecs! [e world grid metaball-k]
+    (let [world-data (Engine.world-data e)
+          coord (Engine.coordinator e)
+          pres-field (Engine.pressure-field e)
+          vel-field (Engine.velocity-field e)
+          collision-occurred false
           manifolds []]
       (do
         
         ;; 1. Apply Gravity, SPH Pressure, Aerodynamic Wake/Drag Forces, and Step Bodies
-        (let [db (World.sdf-db world-data)
-              coeff -30.0
+        (let [coeff -30.0
               drag-coeff 0.15]
           (ECS.query world [ent (rb RigidBody)]
             (let [pos (RigidBody.position rb)
                   vel (Body.velocity (RigidBody.body rb))
-                  grad (FieldDatabase.calculate-pressure-gradient db pos)
+                  grad (Field.sample-gradient pres-field pos 0.05)
                   p-force (Vector3.mul &grad coeff)
-                  ind-vel (FieldDatabase.calculate-induced-velocity db pos)
+                  ind-vel (Field.sample vel-field pos)
                   rel-vel (Vector3.sub &ind-vel vel)
                   drag-force (Vector3.mul &rel-vel drag-coeff)
                   total-force (Vector3.add &(Vector3.add &gravity &p-force) &drag-force)]

@@ -39,7 +39,9 @@
 (load "commands.carp")
 (load "components.carp")
 (load "field_database.carp")
+(load "fields.carp")
 (load "world.carp")
+(load "engine_type.carp")
 (load "prefab.carp")
 (load "init.carp")
 (load "gpu_spatial.carp")
@@ -47,7 +49,6 @@
 (load "render.carp")
 (load "physics_system.carp")
 (load "debug_draw.carp")
-(load "engine_type.carp")
 (load "player_system.carp")
 (load "explosions.carp")
 (load "engine.carp")
@@ -76,6 +77,7 @@
               eng (Engine.new (glfw-window->voidptr win) aspect backend)]
               (do
               (let [_ (Engine.register-internal-handlers! &eng)] ())
+              (let [_ (Engine.init-fields! &eng)] ())
               (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))              (Result.Error e) (do (println* "Renderer Error: " &e) -2)
               (Result.Success ren)
                 (do
