@@ -374,8 +374,7 @@
 
         (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
           (do
-            (when (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e))
-                  (Engine.set-bg-color! e (Vector3.init 0.8 0.2 0.2)))
+            (ignore (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e)))
             (ExplosionSystem.step-explosions! e world (Engine.db e) PhysicsSystem.fixed-dt)
             (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
 

@@ -548,16 +548,19 @@
                 }
                 if (i > 0) {
                     let y = (h * h - last_h * last_h + dt * dt) / (2.0 * dt);
-                    let d = sqrt(max(0.0, h * h - y * y));
-                    res = min(res, k * d / max(0.0001, t - y));
+                    let d2 = h * h - y * y;
+                    if (d2 >= 0.0) {
+                        let d = sqrt(d2);
+                        res = min(res, k * d / max(0.0001, t - y));
+                    } else {
+                        res = min(res, k * h / t);
+                    }
                 } else {
                     res = min(res, k * h / t);
                 }
                 last_h = h;
-                dt = clamp(sdf_val.x, 0.05, 2.0);
-                if (h < 1.5) {
-                    dt = clamp(sdf_val.x * 0.5, 0.02, 2.0);
-                }
+                let min_dt = 0.05 + 0.2 * t;
+                dt = clamp(max(h, min_dt), 0.02, 5.0);
                 t += dt;
                 if (t > maxt) {
                     break;
@@ -694,17 +697,21 @@
 
                 var shadow = 1.0;
                 if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                    let max_steps = select(30, 15, u.shadow_ao_quality.x == 1.0);
-                    shadow = getShadow(p + normal * 0.02, light_dir, 0.02, 20.0, 16.0, dither_threshold, max_steps);
+                    let max_steps = select(40, 24, u.shadow_ao_quality.x == 1.0);
+                    shadow = getShadow(p + normal * 0.02, light_dir, 0.02, 120.0, 16.0, dither_threshold, max_steps);
                 }
 
                 // Hemispherical ambient skylight (cool blueish sky, warm dark grey ground bounce)
                 let sky_color = vec3<f32>(0.15, 0.18, 0.25);
                 let ground_color = vec3<f32>(0.06, 0.05, 0.05);
-                let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5);
+                var sky_visibility = 1.0;
+                if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                    sky_visibility = getShadow(p + normal * 0.05, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, 32);
+                }
+                let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5) * sky_visibility;
 
                 // Combine direct diffuse lighting and hemispherical ambient
-                let lighting = shadow * diffuse * vec3<f32>(1.0) + ambient;
+                var lighting = shadow * diffuse * vec3<f32>(1.0) + ambient;
 
                 var ao = 1.0;
                 if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
@@ -830,7 +837,8 @@
                   color = mix(color, glow_col, edge);
               }
 
-              color = mix(color, u.bg_color.rgb, 1.0 - exp(-0.02 * t));
+               let fog_color = u.bg_color.rgb * sky_visibility;
+               color = mix(color, fog_color, 1.0 - exp(-0.02 * t));
               let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
               color += vec3<f32>(dither_noise) * (1.0 / 255.0);
           }
