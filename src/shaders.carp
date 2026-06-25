@@ -44,6 +44,8 @@
       @group(0) @binding(3) var voxel_texture: texture_3d<f32>;
       @group(0) @binding(4) var voxel_sampler: sampler;
       @group(0) @binding(5) var<uniform> chunk_lookup: ChunkLookup;
+      @group(0) @binding(6) var noise_texture: texture_3d<f32>;
+      @group(0) @binding(7) var noise_sampler: sampler;
 
       fn positive_mod(n: i32, m: i32) -> i32 {
           let r = n % m;
@@ -320,39 +322,9 @@
           return d;
       }
 
-      fn hash3(p: vec3<f32>) -> vec3<f32> {
-          var q = vec3<f32>(
-              dot(p, vec3<f32>(127.1, 311.7, 74.7)),
-              dot(p, vec3<f32>(269.5, 183.3, 246.1)),
-              dot(p, vec3<f32>(113.5, 271.9, 124.6))
-          );
-          return fract(sin(q) * 43758.5453123);
-      }
-
-      fn evaluateNoise(p: vec3<f32>) -> f32 {
-          let i = floor(p * 2.0);
-          let f = fract(p * 2.0);
-          let u = f * f * (3.0 - 2.0 * f);
-          
-          let n000 = dot(hash3(i + vec3<f32>(0.0, 0.0, 0.0)) - 0.5, f - vec3<f32>(0.0, 0.0, 0.0));
-          let n100 = dot(hash3(i + vec3<f32>(1.0, 0.0, 0.0)) - 0.5, f - vec3<f32>(1.0, 0.0, 0.0));
-          let n010 = dot(hash3(i + vec3<f32>(0.0, 1.0, 0.0)) - 0.5, f - vec3<f32>(0.0, 1.0, 0.0));
-          let n110 = dot(hash3(i + vec3<f32>(1.0, 1.0, 0.0)) - 0.5, f - vec3<f32>(1.0, 1.0, 0.0));
-          let n001 = dot(hash3(i + vec3<f32>(0.0, 0.0, 1.0)) - 0.5, f - vec3<f32>(0.0, 0.0, 1.0));
-          let n101 = dot(hash3(i + vec3<f32>(1.0, 0.0, 1.0)) - 0.5, f - vec3<f32>(1.0, 0.0, 1.0));
-          let n011 = dot(hash3(i + vec3<f32>(0.0, 1.0, 1.0)) - 0.5, f - vec3<f32>(0.0, 1.0, 1.0));
-          let n111 = dot(hash3(i + vec3<f32>(1.0, 1.0, 1.0)) - 0.5, f - vec3<f32>(1.0, 1.0, 1.0));
-
-          let v_y00 = mix(n000, n100, u.x);
-          let v_y10 = mix(n010, n110, u.x);
-          let v_y01 = mix(n001, n101, u.x);
-          let v_y11 = mix(n011, n111, u.x);
-
-          let v_z0 = mix(v_y00, v_y10, u.y);
-          let v_z1 = mix(v_y01, v_y11, u.y);
-
-          return mix(v_z0, v_z1, u.z) * 0.15;
-      }
+       fn evaluateNoise(p: vec3<f32>) -> f32 {
+           return textureSampleLevel(noise_texture, noise_sampler, p * 0.1, 0.0).r - 0.5;
+       }
 
       fn evaluateFbm(p: vec3<f32>) -> f32 {
           var v = 0.0;
@@ -457,101 +429,14 @@
       }
 
          fn worldSDF(p: vec3<f32>, rd: vec3<f32>, dither_threshold: f32, eval_metaballs: bool) -> vec4<f32> {
-            let voxel_val = sampleVoxelGrid(p);
-            var d = vec2<f32>(voxel_val.x, -1.0);
-            let p_local = p - u.grid_origin.xyz;
-            let gx = i32(floor(p_local.x / u.cell_size));
-            let gy = i32(floor(p_local.y / u.cell_size));
-            let gz = i32(floor(p_local.z / u.cell_size));
-            var metaball_d = 10000.0;
-
-            if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
-                let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
-                let cell_max = cell_min + vec3<f32>(u.cell_size);
-                var t_exit = 100.0;
-                if (rd.x > 0.0001) { t_exit = min(t_exit, (cell_max.x - p_local.x) / rd.x); }
-                else if (rd.x < -0.0001) { t_exit = min(t_exit, (cell_min.x - p_local.x) / rd.x); }
-                if (rd.y > 0.0001) { t_exit = min(t_exit, (cell_max.y - p_local.y) / rd.y); }
-                else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p_local.y) / rd.y); }
-                if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p_local.z) / rd.z); }
-                else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p_local.z) / rd.z); }
-
-                let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
-                let cell = grid[idx];
-                let count = min(i32(round(cell.header.x)), 16);
-                var has_metaballs = false;
-                var metaball_idx = -1.0;
-                for(var i = 0; i < count; i = i + 1) {
-                    let s_idx = i32(round(cell.ids[i / 4][i % 4]));
-                    if (s_idx >= 0 && s_idx < 1024) {
-                      let s_data = u.instances[s_idx];
-                      let raw_w = s_data.pos_scale.w;
-                      if (raw_w != 0.0) {
-                        var local_dist = 10000.0;
-                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                        let csg_root_idx = i32(round(s_data.color_csg.w));
-                        if (csg_root_idx <= -99) {
-                            if (!eval_metaballs) { continue; }
-                            var s = f32(-99 - csg_root_idx) / 100.0;
-                            if (s < 0.05) { s = 0.6; }
-                            let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
-                            local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
-                            metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
-                            has_metaballs = true;
-                            metaball_idx = f32(s_idx);
-                        } else {
-                            if (csg_root_idx >= 0) {
-                                local_dist = evaluateCsgTree(local_p, csg_root_idx);
-                            } else {
-                                if (raw_w > 0.0 && raw_w < 500.0) {
-                                  local_dist = sdSphere(local_p, raw_w);
-                                  if (s_data.sph_fields.x > 0.0) {
-                                      let noise_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
-                                      let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
-                                      let n = evaluateFbm(local_p * 2.5 - scroll);
-                                      local_dist -= n * 0.4 * raw_w * noise_factor;
-                                  }
-                                } else if (raw_w < 0.0 && raw_w > -1000.0) {
-                                  let size = -raw_w;
-                                  local_dist = sdBox(local_p, vec3<f32>(size));
-                                } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
-                                  let size = -raw_w - 1000.0;
-                                  local_dist = sdCapsule(local_p, size, size);
-                                } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
-                                  let size = raw_w - 1000.0;
-                                  local_dist = sdCylinder(local_p, size, size);
-                                } else if (raw_w >= 2000.0) {
-                                  let size = raw_w - 2000.0;
-                                  local_dist = sdTorus(local_p, vec2<f32>(size, 0.25 * size));
-                                } else {
-                                  let size = -raw_w - 2000.0;
-                                  local_dist = sdOctahedron(local_p, size);
-                                }
-                            }
-                            if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
-                        }
-                      }
-                    }
-                }
-                if (has_metaballs && eval_metaballs) {
-                    let blended_d = smin(d.x, metaball_d, u.grid_dims.w);
-                    var idx = d.y;
-                    if (metaball_d < d.x) {
-                        idx = metaball_idx;
-                    }
-                    d = vec2<f32>(blended_d, idx);
-                }
-                let h_step = min(d.x, max(t_exit + 0.01, 0.05));
-                return vec4<f32>(h_step, d.x, d.y, metaball_d);
-            } else {
-                return vec4<f32>(d.x, d.x, d.y, 10000.0);
-            }
-         }
-
-         fn worldSDFPoint(p: vec3<f32>, rd: vec3<f32>, dither_threshold: f32, eval_metaballs: bool) -> vec4<f32> {
-            let voxel_val = sampleVoxelGridPoint(p);
-            var d = vec2<f32>(voxel_val.x, -1.0);
-            let p_local = p - u.grid_origin.xyz;
+             let voxel_pt = sampleVoxelGridPoint(p);
+             var voxel_dist = voxel_pt.x;
+             if (voxel_dist < 2.0) {
+                 let voxel_tri = sampleVoxelGrid(p);
+                 voxel_dist = voxel_tri.x;
+             }
+             var d = vec2<f32>(voxel_dist, -1.0);
+             let p_local = p - u.grid_origin.xyz;
             let gx = i32(floor(p_local.x / u.cell_size));
             let gy = i32(floor(p_local.y / u.cell_size));
             let gz = i32(floor(p_local.z / u.cell_size));
@@ -693,20 +578,19 @@
            var t = 0.0;
            var hitId = -1.0;
            var final_metaball_d = 10000.0;
-             for(var i = 0; i < 80; i = i + 1) {
-                 let p = ro + rd * t;
-                 let res_pt = worldSDFPoint(p, rd, dither_threshold, true);
-                 if (res_pt.x < 1.5) {
-                     let res_tri = worldSDF(p, rd, dither_threshold, true);
-                     hitId = res_tri.z;
-                     final_metaball_d = res_tri.w;
-                     if (res_tri.y < 0.001) { break; }
-                     t += res_tri.y * 0.66667;
-                 } else {
-                     t += res_pt.x;
-                 }
-                 if (t > 350.0) { break; }
-             }
+              for(var i = 0; i < 80; i = i + 1) {
+                  let p = ro + rd * t;
+                  let res = worldSDF(p, rd, dither_threshold, true);
+                  hitId = res.z;
+                  final_metaball_d = res.w;
+                  if (res.y < 0.001) { break; }
+                  if (res.y < 1.5) {
+                      t += res.y * 0.66667;
+                  } else {
+                      t += res.x;
+                  }
+                  if (t > 350.0) { break; }
+              }
              if (t <= 350.0) {
                  for (var j = 0; j < 2; j = j + 1) {
                      let p = ro + rd * t;
@@ -723,6 +607,9 @@
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
                 var is_sphere = false;
                 var is_metaball = false;
+                var is_exp = false;
+                var exp_temp_factor = 0.0;
+                var exp_n_col = 0.0;
                 if (hitId != -1.0) {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
@@ -816,14 +703,14 @@
                // Determine the base terrain color at p
                let mat_id = i32(round(voxel_val.y));
                var terr_col = vec3<f32>(0.4, 0.4, 0.5);
-               if (mat_id == 1) {
-                   terr_col = vec3<f32>(0.25, 0.25, 0.25);
-               } else if (mat_id == 2) {
-                   terr_col = vec3<f32>(0.2, 0.8, 0.2);
-               }
+                if (mat_id == 1) {
+                    terr_col = vec3<f32>(0.25, 0.25, 0.25);
+                } else if (mat_id == 2) {
+                    terr_col = vec3<f32>(0.2, 0.8, 0.2);
+                }
 
-               var base_col = terr_col;
-               var edge = 0.0;
+                var base_col = terr_col;
+                var edge = 0.0;
 
                 if (hitId != -1.0 && !is_metaball) {
                     let s_idx = i32(hitId);
@@ -838,6 +725,9 @@
                         let fire = mix(vec3<f32>(1.0, 0.15, 0.0), vec3<f32>(1.0, 0.9, 0.2), n_col);
                         let ash = vec3<f32>(0.05, 0.05, 0.05);
                         base_col = mix(ash, fire, temp_factor * (0.2 + 0.8 * n_col));
+                        is_exp = true;
+                        exp_temp_factor = temp_factor;
+                        exp_n_col = n_col;
                     } else {
                         base_col = s_data.color_csg.rgb;
                         if (s_data.color_csg.w < 0.0) {
@@ -907,24 +797,9 @@
 
                 color = base_col * (lit + 0.15) * ao + vec3<f32>(specular);
 
-               var is_exp = false;
-               if (hitId != -1.0 && !is_metaball) {
-                   let s_idx = i32(hitId);
-                   if (u.instances[s_idx].sph_fields.x > 0.0) {
-                       is_exp = true;
-                    }
-               }
                if (is_exp) {
-                   let s_idx = i32(hitId);
-                   let s_data = u.instances[s_idx];
-                   let temp_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
-                   let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                   let scroll_col = vec3<f32>(0.0, u.time * 4.0, 0.0);
-                   let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
-                   let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
-                   let n_glow = clamp(base_noise * 0.7 + detail_noise * 0.3, 0.0, 1.0);
-                   let glow = mix(vec3<f32>(1.0, 0.15, 0.0), vec3<f32>(1.0, 0.9, 0.25), n_glow);
-                   color = mix(color, base_col + glow * 2.0, temp_factor * (0.3 + 0.7 * n_glow));
+                   let glow = mix(vec3<f32>(1.0, 0.15, 0.0), vec3<f32>(1.0, 0.9, 0.25), exp_n_col);
+                   color = mix(color, base_col + glow * 2.0, exp_temp_factor * (0.3 + 0.7 * exp_n_col));
                }
 
                if (edge > 0.0) {
