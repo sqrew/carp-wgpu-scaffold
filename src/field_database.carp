@@ -116,4 +116,44 @@
 
   (defn set-root-csg-index! [db id val]
     (Array.aset! (FieldDatabase.root-csg-indices db) id val))
+
+  (sig calculate-pressure-gradient (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector3 Double)))
+  (defn calculate-pressure-gradient [db pos]
+    (let [sum-grad-S (Vector3.init 0.0 0.0 0.0)
+          sum-grad-W (Vector3.init 0.0 0.0 0.0)
+          sum-S 0.0
+          sum-W 0.0
+          active-arr (FieldDatabase.active db)
+          len (Array.length active-arr)
+          epsilon 0.01]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                  scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                  pres @(Array.unsafe-nth (FieldDatabase.pressures db) i)
+                  to-pos (Vector3.sub pos inst-pos)
+                  dist (Vector3.mag &to-pos)
+                  d (- dist scale)
+                  w-denom (+ (* d d) epsilon)
+                  w (/ 1.0 w-denom)]
+              (do
+                (set! sum-S (+ sum-S (* pres w)))
+                (set! sum-W (+ sum-W w))
+                (when (> dist 0.00001)
+                  (let [dir (Vector3.mul &to-pos (/ 1.0 dist))
+                        ;; grad w = -2.0 * d * dir / (w-denom * w-denom)
+                        grad-w-mag (/ (* -2.0 d) (* w-denom w-denom))
+                        grad-w (Vector3.mul &dir grad-w-mag)
+                        grad-s (Vector3.mul &grad-w pres)]
+                    (do
+                      (set! sum-grad-S (Vector3.add &sum-grad-S &grad-s))
+                      (set! sum-grad-W (Vector3.add &sum-grad-W &grad-w)))))))))
+        (if (> sum-W 0.00001)
+          (let [term1 (Vector3.mul &sum-grad-S sum-W)
+                term2 (Vector3.mul &sum-grad-W sum-S)
+                num (Vector3.sub &term1 &term2)
+                grad (Vector3.mul &num (/ 1.0 (* sum-W sum-W)))]
+            grad)
+          (Vector3.init 0.0 0.0 0.0)))))
 )

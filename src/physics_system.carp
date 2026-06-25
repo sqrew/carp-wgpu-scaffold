@@ -71,11 +71,17 @@
           manifolds []]
       (do
         
-        ;; 1. Apply Gravity and Step Bodies
-        (ECS.query world [ent (rb RigidBody)]
-          (do
-            (RigidBody.apply-force! rb &gravity)
-            (RigidBody.step-custom! rb fixed-dt fixed-dt)))
+        ;; 1. Apply Gravity, SPH Pressure Forces, and Step Bodies
+        (let [db (World.sdf-db world-data)
+              coeff -30.0]
+          (ECS.query world [ent (rb RigidBody)]
+            (let [pos (RigidBody.position rb)
+                  grad (FieldDatabase.calculate-pressure-gradient db pos)
+                  p-force (Vector3.mul &grad coeff)
+                  total-force (Vector3.add &gravity &p-force)]
+              (do
+                (RigidBody.apply-force! rb &total-force)
+                (RigidBody.step-custom! rb fixed-dt fixed-dt)))))
 
         ;; 2. Rebuild Spatial Grid
         (SpatialGrid.clear! grid)
