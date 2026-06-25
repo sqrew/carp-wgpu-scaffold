@@ -199,7 +199,7 @@
           u-data (the (Array Float) (replicate (/ u-size 4) &0.0f))
           s-data (the (Array Float) (replicate (/ s-size 4) &0.0f))
           csg-data (the (Array Float) (replicate (/ csg-size 4) &0.0f))]
-      (match (WGPURender.create-3d-texture ctx 256 256 256 "rgba16float")
+      (match (WGPURender.create-3d-texture ctx 384 384 384 "rgba16float")
         (Result.Error e) (Result.Error (str* "3D Texture failed: " e))
         (Result.Success voxel-tex)
           (match (WGPURender.create-sampler ctx)
@@ -214,7 +214,7 @@
                       (match (WGPU.create-buffer ctx csg-size)
                         (Result.Error e) (do (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "CSG buffer failed: " e)))
                         (Result.Success csg-b)
-                          (match (WGPURender.create-uniform-buffer ctx 2064)
+                          (match (WGPURender.create-uniform-buffer ctx 6928)
                             (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Chunk lookup buffer failed: " e)))
                             (Result.Success chunk-lookup-b)
                                (let [raw-lookup-buf (uniform-buffer-get-buffer chunk-lookup-b)]
@@ -439,7 +439,7 @@
                                 dist-x (Int.abs (- cqx cam-qx))
                                 dist-y (Int.abs (- cqy cam-qy))
                                 dist-z (Int.abs (- cqz cam-qz))]
-                             (if (and (<= dist-x 3) (and (<= dist-y 3) (<= dist-z 3)))
+                             (if (and (<= dist-x 6) (and (<= dist-y 6) (<= dist-z 6)))
                                   (Array.push-back! &keep @chunk)
                                   (when @(Chunk.modified chunk)
                                     (World.save-modified-chunk! world-data chunk)))))
@@ -448,62 +448,67 @@
                 ;; 2. Load missing chunks dynamically around player (up to 1 chunk per frame to prevent hiccups)
                 (let [loaded-any false]
                   (do
-                    (for [dy -2 3]
-                      (for [dz -2 3]
-                        (for [dx -2 3]
-                          (let [qx (+ cam-qx dx)
-                                qy (+ cam-qy dy)
-                                qz (+ cam-qz dz)]
-                            (when (and (not loaded-any) (not (World.has-chunk? world-data qx qy qz)))
-                              (let [slot (World.find-unused-atlas-slot world-data)]
-                                (when (>= slot 0)
-                                  (let [saved-list (World.modified-chunks world-data)
-                                        len (Array.length saved-list)
-                                        found-idx -1]
-                                    (do
-                                      (for [i 0 len]
-                                        (let [c (Array.unsafe-nth saved-list i)]
-                                          (when (and (= @(Chunk.coord-x c) qx)
-                                                     (and (= @(Chunk.coord-y c) qy)
-                                                          (= @(Chunk.coord-z c) qz)))
-                                            (set! found-idx i))))
-                                      (if (= found-idx -1)
-                                          (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
-                                                chunk (Chunk.init qx qy qz voxel-data slot false)
-                                                static-sdfs []
-                                                static-mat-ids []]
-                                            (do
-                                              (ECS.query world [ent (rb RigidBody) (col Collidable)]
-                                                (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-                                                  (match-ref (Collidable.volume col)
-                                                    (Volume.Sdf sdf)
-                                                      (do
-                                                        (SDF.set-position! sdf @(RigidBody.position rb))
-                                                        (SDF.set-rotation! sdf @(RigidBody.rotation rb))
-                                                        (let [saved-nodes @(SDF.csg-nodes sdf)]
+                    (for [r 0 6]
+                      (for [dy (- 0 r) (inc r)]
+                        (for [dz (- 0 r) (inc r)]
+                          (for [dx (- 0 r) (inc r)]
+                            (let [qx (+ cam-qx dx)
+                                  yq (+ cam-qy dy)
+                                  qz (+ cam-qz dz)]
+                              (when (and (not loaded-any)
+                                         (and (or (= (Int.abs dx) r)
+                                                  (or (= (Int.abs dy) r)
+                                                      (= (Int.abs dz) r)))
+                                              (not (World.has-chunk? world-data qx yq qz))))
+                                (let [slot (World.find-unused-atlas-slot world-data)]
+                                  (when (>= slot 0)
+                                    (let [saved-list (World.modified-chunks world-data)
+                                          len (Array.length saved-list)
+                                          found-idx -1]
+                                      (do
+                                        (for [i 0 len]
+                                          (let [c (Array.unsafe-nth saved-list i)]
+                                            (when (and (= @(Chunk.coord-x c) qx)
+                                                       (and (= @(Chunk.coord-y c) yq)
+                                                            (= @(Chunk.coord-z c) qz)))
+                                              (set! found-idx i))))
+                                        (if (= found-idx -1)
+                                            (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+                                                  chunk (Chunk.init qx yq qz voxel-data slot false)
+                                                  static-sdfs []
+                                                  static-mat-ids []]
+                                                (do
+                                                  (ECS.query world [ent (rb RigidBody) (col Collidable)]
+                                                    (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+                                                      (match-ref (Collidable.volume col)
+                                                        (Volume.Sdf sdf)
                                                           (do
-                                                            (SDF.set-csg-nodes! sdf [])
-                                                            (Array.push-back! &static-sdfs @sdf)
-                                                            (SDF.set-csg-nodes! sdf saved-nodes)))
-                                                        (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
-                                                    _ ())))
-                                              (bake-chunk! ctx ren &chunk &static-sdfs &static-mat-ids)
-                                              (Array.push-back! (World.chunks world-data) chunk)))
-                                          (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
-                                                voxel-data @(Chunk.voxel-data saved-chunk)]
-                                            (do
-                                              (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
-                                              (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
-                                              (let [chunk (Chunk.init qx qy qz voxel-data slot true)]
-                                                (Array.push-back! (World.chunks world-data) chunk)))))
-                                      (set! loaded-any true))))))))))))))
+                                                            (SDF.set-position! sdf @(RigidBody.position rb))
+                                                            (SDF.set-rotation! sdf @(RigidBody.rotation rb))
+                                                            (let [saved-nodes @(SDF.csg-nodes sdf)]
+                                                              (do
+                                                                (SDF.set-csg-nodes! sdf [])
+                                                                (Array.push-back! &static-sdfs @sdf)
+                                                                (SDF.set-csg-nodes! sdf saved-nodes)))
+                                                            (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
+                                                        _ ())))
+                                                  (bake-chunk! ctx ren &chunk &static-sdfs &static-mat-ids)
+                                                  (Array.push-back! (World.chunks world-data) chunk)))
+                                            (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
+                                                  voxel-data @(Chunk.voxel-data saved-chunk)]
+                                              (do
+                                                (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
+                                                (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
+                                                (let [chunk (Chunk.init qx yq qz voxel-data slot true)]
+                                                  (Array.push-back! (World.chunks world-data) chunk)))))
+                                        (set! loaded-any true)))))))))))))))
 
             (let [cam-qx (World.camera-chunk-qx cam-pos)
                   cam-qy (World.camera-chunk-qy cam-pos)
                   cam-qz (World.camera-chunk-qz cam-pos)
-                  origin-x (- cam-qx 4)
-                  origin-y (- cam-qy 4)
-                  origin-z (- cam-qz 4)
+                  origin-x (- cam-qx 6)
+                  origin-y (- cam-qy 6)
+                  origin-z (- cam-qz 6)
                   lookup-data (World.build-chunk-lookup-data world-data origin-x origin-y origin-z)]
               (WGPURenderer.write-ints ctx (uniform-buffer-get-buffer @(WGPURenderer.chunk-lookup-buffer ren)) &lookup-data))
 

@@ -67,7 +67,7 @@
     (the Int (Double.to-int (Double.floor (/ @(Vector3.z cam-pos) (World.chunk-size))))))
 
   (defn build-chunk-lookup-data [world origin-x origin-y origin-z]
-    (let [arr (the (Array Int) (replicate 516 &-1))
+    (let [arr (the (Array Int) (replicate 1732 &-1))
           chunks (World.chunks world)]
       (do
         (Array.aset! &arr 0 origin-x)
@@ -82,10 +82,10 @@
                 lx (- qx origin-x)
                 ly (- qy origin-y)
                 lz (- qz origin-z)]
-            (when (and (and (>= lx 0) (< lx 8))
-                       (and (and (>= ly 0) (< ly 8))
-                            (and (>= lz 0) (< lz 8))))
-              (let [idx (+ 4 (+ lx (+ (* ly 8) (* lz 64))))]
+            (when (and (and (>= lx 0) (< lx 12))
+                       (and (and (>= ly 0) (< ly 12))
+                            (and (>= lz 0) (< lz 12))))
+              (let [idx (+ 4 (+ lx (+ (* ly 12) (* lz 144))))]
                 (Array.aset! &arr idx @(Chunk.atlas-slot chunk))))))
         arr)))
 
@@ -187,17 +187,17 @@
 
   (defn find-unused-atlas-slot [world]
     (let [chunks (World.chunks world)
-          used-slots (the (Array Bool) (replicate 512 &false))]
+          used-slots (the (Array Bool) (replicate 1728 &false))]
       (do
         (for [i 0 (Array.length chunks)]
           (let [chunk (Array.unsafe-nth chunks i)
                 slot @(Chunk.atlas-slot chunk)]
-            (when (and (>= slot 0) (< slot 512))
+            (when (and (>= slot 0) (< slot 1728))
               (Array.aset! &used-slots slot true))))
         (let [found-slot -1
               s 0]
           (do
-            (while (and (< s 512) (= found-slot -1))
+            (while (and (< s 1728) (= found-slot -1))
               (do
                 (when (not @(Array.unsafe-nth &used-slots s))
                   (set! found-slot s))

@@ -15,9 +15,9 @@
           v-half-b @(WGPURenderer.voxel-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
           bufs [v-gpu-b v-half-b]
-          slot-x (Int.mod slot 8)
-          slot-y (Int.mod (/ slot 8) 8)
-          slot-z (/ slot 64)
+          slot-x (Int.mod slot 12)
+          slot-y (Int.mod (/ slot 12) 12)
+          slot-z (/ slot 144)
           ox (* slot-x 32)
           oy (* slot-y 32)
           oz (* slot-z 32)]

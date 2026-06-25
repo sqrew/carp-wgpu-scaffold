@@ -36,7 +36,7 @@
       }
       struct ChunkLookup {
           origin: vec4<i32>,
-          slots: array<vec4<i32>, 128>,
+          slots: array<vec4<i32>, 432>,
       }
       @group(0) @binding(0) var<storage, read> grid: array<Cell>;
       @group(0) @binding(1) var<uniform> u: Uniforms;
@@ -65,19 +65,19 @@
             let lz = i32(u32(gz) & 31u);
             
             let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-            if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(8))) {
+            if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(12))) {
                 return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
             }
             
-            let idx = local_q.x + local_q.y * 8 + local_q.z * 64;
+            let idx = local_q.x + local_q.y * 12 + local_q.z * 144;
             let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
             if (slot < 0) {
                 return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
             }
             
-            let slot_x = slot & 7;
-            let slot_y = (slot >> 3u) & 7;
-            let slot_z = slot >> 6u;
+            let slot_x = slot % 12;
+            let slot_y = (slot / 12) % 12;
+            let slot_z = slot / 144;
             
             let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
             return textureLoad(voxel_texture, atlas_coord, 0);
@@ -106,13 +106,13 @@
               let qy = c0.y >> 5u;
               let qz = c0.z >> 5u;
               let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-              if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(8))) {
-                  let idx = local_q.x + local_q.y * 8 + local_q.z * 64;
+              if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(12))) {
+                  let idx = local_q.x + local_q.y * 12 + local_q.z * 144;
                   let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
                   if (slot >= 0) {
-                      let slot_x = slot & 7;
-                      let slot_y = (slot >> 3) & 7;
-                      let slot_z = slot >> 6;
+                      let slot_x = slot % 12;
+                      let slot_y = (slot / 12) % 12;
+                      let slot_z = slot / 144;
                       let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
                       
                       v0 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz),     0);
@@ -582,14 +582,33 @@
             return clamp(1.0 - 3.0 * occ, 0.0, 1.0);
         }
 
+        fn getSkyColor(rd: vec3<f32>) -> vec3<f32> {
+            let zenith_color = vec3<f32>(0.15, 0.02, 0.22);
+            let horizon_color = vec3<f32>(0.9, 0.1, 0.35);
+            let h_factor = max(0.0, rd.y);
+            var color = mix(horizon_color, zenith_color, pow(h_factor, 0.6));
+            if (rd.y < 0.0) {
+                let ground_color = vec3<f32>(0.1, 0.04, 0.12);
+                color = mix(horizon_color, ground_color, clamp(-rd.y * 3.0, 0.0, 1.0));
+            }
+            let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+            let sun_dot = max(dot(rd, light_dir), 0.0);
+            let sun_disk = pow(sun_dot, 600.0);
+            let sun_glow = pow(sun_dot, 12.0);
+            color += sun_disk * vec3<f32>(0.15, 0.55, 1.5) * 3.0;
+            color += sun_glow * vec3<f32>(0.6, 0.05, 1.0) * 1.2;
+            return color;
+        }
+
        @fragment
-       fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
-           let aspect = u.width / u.height;
-           let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
-           let ro = u.cam_pos.xyz;
-           let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
-           
-           let dither_threshold = getDitherThreshold(frag_in.position.xy);
+        fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
+            let aspect = u.width / u.height;
+            let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
+            let ro = u.cam_pos.xyz;
+            let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
+            
+            let dither_threshold = getDitherThreshold(frag_in.position.xy);
+            let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, 16);
            
            var t = 0.0;
            var hitId = -1.0;
@@ -601,7 +620,7 @@
                   final_metaball_d = res.w;
                   if (res.y < 0.001) { break; }
                   if (res.y < 1.5) {
-                      t += res.y * 0.66667;
+                      t += res.y * 0.5;
                   } else {
                       t += res.x;
                   }
@@ -613,10 +632,10 @@
                      let res = worldSDF(p, rd, dither_threshold, true);
                      hitId = res.z;
                      final_metaball_d = res.w;
-                     t += res.y * 0.66667;
+                     t += res.y * 0.5;
                  }
              }
-            var color = u.bg_color.rgb;
+             var color = getSkyColor(rd);
             if (t <= 350.0) {
                 let p = ro + rd * t;
                 let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
@@ -659,7 +678,7 @@
                         normal = vec3<f32>(0.0, 1.0, 0.0);
                     }
                 } else {
-                    let eps = 0.01;
+                    let eps = 0.06;
                     let d1 = worldSDF(p + vec3<f32>( eps, -eps, -eps), rd, dither_threshold, false).y;
                     let d2 = worldSDF(p + vec3<f32>(-eps, -eps,  eps), rd, dither_threshold, false).y;
                     let d3 = worldSDF(p + vec3<f32>(-eps,  eps, -eps), rd, dither_threshold, false).y;
@@ -821,7 +840,7 @@
                     let view_dir = normalize(u.cam_pos.xyz - p);
                     let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
                     let ref_dir = reflect(-view_dir, normal);
-                    let sky_ref = mix(vec3<f32>(0.05, 0.15, 0.35), vec3<f32>(0.65, 0.85, 1.0), max(0.0, ref_dir.y) * 0.5 + 0.5);
+                    let sky_ref = getSkyColor(ref_dir) * sky_visibility;
                     base_col = mix(base_col, sky_ref, 0.25 * fresnel * h);
                }
 
@@ -837,8 +856,8 @@
                   color = mix(color, glow_col, edge);
               }
 
-               let fog_color = u.bg_color.rgb * sky_visibility;
-               color = mix(color, fog_color, 1.0 - exp(-0.02 * t));
+                let fog_color = getSkyColor(rd) * cam_sky_visibility;
+                color = mix(color, fog_color, 1.0 - exp(-0.035 * t));
               let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
               color += vec3<f32>(dither_noise) * (1.0 / 255.0);
           }
