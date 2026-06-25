@@ -73,6 +73,7 @@
         (let [ctx @(App.ctx &app)
               win @(App.win &app)
               surf @(App.surf &app)
+              _ (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)
               backend (GLFWBackend.init)
               eng (Engine.new (glfw-window->voidptr win) aspect backend)]
               (do
