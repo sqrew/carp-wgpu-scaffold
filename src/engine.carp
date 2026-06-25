@@ -143,53 +143,65 @@
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
 
-  (defn spawn-crater! [e pos rad]
-    (let [world (Engine.world e)]
-      (ECS.query world [ent (col Collidable)]
-        (let [has-parent false
-              is-static false]
-          (do
-            (ECS.with-components world @&ent [e (p Parent)]
-              (set! has-parent true))
-            (ECS.with-components world @&ent [e (rb RigidBody)]
-              (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-                (set! is-static true)))
-            (when (and (not has-parent) is-static)
+  (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))
+  (defn spawn-crater! [e pos rad existing-crater]
+    (let [world (Engine.world e)
+          result existing-crater]
+      (do
+        (match existing-crater
+          (Maybe.Just child-handle)
+            (let [child-ent (ECS.Entity.init child-handle)]
+              (ECS.with-components world @&child-ent [c (node CsgNode)]
+                (let [child-sdf (Box.peek (CsgNode.shape node))]
+                  (do
+                    (SDF.set-base! child-sdf (BaseShape.Ball rad))
+                    (ECS.with-components world @&child-ent [c (p Parent)]
+                      (let [parent-handle (Parent.handle p)
+                            parent-ent (ECS.Entity.init @parent-handle)]
+                        (ECS.with-components world parent-ent [p-ent (col Collidable)]
+                          (match-ref (Collidable.volume col)
+                            (Volume.Sdf parent-sdf)
+                              (do
+                                (SDF.set-csg-nodes! parent-sdf [])
+                                (PhysicsSystem.build-csg-tree-rec! world parent-handle parent-sdf)
+                                (Engine.set-csg-dirty! e true)
+                                (Engine.set-voxel-dirty! e true)
+                                (Engine.set-grid-dirty! e true))
+                            _ ()))))))))
+          (Maybe.Nothing)
+            (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
               (match-ref (Collidable.volume col)
                 (Volume.Sdf parent-sdf)
                   (let [d (SDF.distance-world parent-sdf &pos)]
                     (when (< d (* rad 2.0))
                       (let [parent-pos (SDF.position parent-sdf)
                             parent-rot (SDF.rotation parent-sdf)
-                            local-pos (Quaternion.rotate &(Quaternion.inverse parent-rot) &(Vector3.sub &pos parent-pos))]
+                            local-pos (Quaternion.rotate &(Quaternion.inverse parent-rot) &(Vector3.sub &pos parent-pos))
+                            parent-handle (ECS.Entity.handle &parent-ent)
+                            child-handles []]
                         (do
-                          (IO.println &(format "CRATER SPAWNED on entity %d" (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent))))))
-                          (IO.println &(format "  world-pos: %s" &(Vector3.str &pos)))
-                          (IO.println &(format "  parent-pos: %s" &(Vector3.str parent-pos)))
-                          (IO.println &(format "  local-pos: %s" &(Vector3.str &local-pos)))
-                          (let [parent-handle (ECS.Entity.handle &ent)
-                                child-handles []]
+                          (ECS.query world [c-ent (c-p Parent)]
+                            (when (and (Handle.equal? (Parent.handle c-p) parent-handle)
+                                       (not (ECS.has-component? world &c-ent Collidable)))
+                              (Array.push-back! &child-handles @(ECS.Entity.handle &c-ent))))
+                          (when (>= (Array.length &child-handles) 64)
+                            (let [oldest-handle (Array.unsafe-nth &child-handles 0)
+                                  oldest-ent (ECS.Entity.init @oldest-handle)]
+                              (GameWorld.destroy-entity! world &oldest-ent)))
+                          (let [child-ent (GameWorld.create-entity! world)
+                                parent-comp (Parent.init @parent-handle)
+                                csg-comp (CsgNode.init (Box.init (SDF.init-sphere rad local-pos (Quaternion.identity))) 1)]
                             (do
-                              (ECS.query world [c-ent (c-p Parent)]
-                                (when (and (Handle.equal? (Parent.handle c-p) parent-handle)
-                                           (not (ECS.has-component? world &c-ent Collidable)))
-                                  (Array.push-back! &child-handles @(ECS.Entity.handle &c-ent))))
-                              (when (>= (Array.length &child-handles) 64)
-                                (let [oldest-handle (Array.unsafe-nth &child-handles 0)
-                                      oldest-ent (ECS.Entity.init @oldest-handle)]
-                                  (GameWorld.destroy-entity! world &oldest-ent)))
-                              (let [child-ent (GameWorld.create-entity! world)
-                                    parent-comp (Parent.init @(ECS.Entity.handle &ent))
-                                    csg-comp (CsgNode.init (Box.init (SDF.init-sphere rad local-pos (Quaternion.identity))) 1)]
-                                (do
-                                  (ECS.add-component! world &child-ent parent-comp)
-                                  (ECS.add-component! world &child-ent csg-comp)
-                                  (SDF.set-csg-nodes! parent-sdf [])
-                                  (PhysicsSystem.build-csg-tree-rec! world (ECS.Entity.handle &ent) parent-sdf)
-                                  (Engine.set-csg-dirty! e true)
-                                  (Engine.set-voxel-dirty! e true)
-                                  (Engine.set-grid-dirty! e true)))))))))
-                _ ())))))))
+                              (ECS.add-component! world &child-ent parent-comp)
+                              (ECS.add-component! world &child-ent csg-comp)
+                              (SDF.set-csg-nodes! parent-sdf [])
+                              (PhysicsSystem.build-csg-tree-rec! world parent-handle parent-sdf)
+                              (Engine.set-csg-dirty! e true)
+                              (Engine.set-voxel-dirty! e true)
+                              (Engine.set-grid-dirty! e true)
+                              (set! result (Maybe.Just @(ECS.Entity.handle &child-ent)))))))))
+                _ ())))
+        result)))
 
 ) ;; close Engine module
 
@@ -220,7 +232,7 @@
                     (when (< op 0.5)
                       (do
                         (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos (* rad 3.0) 800.0 120.0 30.0)
-                        (Engine.spawn-crater! e @pos rad)))
+                        (ignore (Engine.spawn-crater! e @pos rad (Maybe.Nothing)))))
                     (Engine.set-voxel-dirty! e true)
                     (Array.push-back! (Engine.craters e) @data)
                     (Result.Success ())))
@@ -408,7 +420,7 @@
             (when (>= id 0)
               (let [db (Engine.db e)]
                 (do
-                  (Array.aset! (FieldDatabase.positions db) id @(RigidBody.position rb))
+                  (FieldDatabase.set-position! db id @(RigidBody.position rb))
                   (if (ECS.has-component? world &ent BouncyTag)
                     (let [vel (Body.velocity (RigidBody.body rb))
                           speed (Double.sqrt (Vector3.mag-sq vel))
@@ -432,27 +444,27 @@
                               pressure (let [p (+ 1.0 (/ y-val -10.0))]
                                          (if (< p 1.0) 1.0 p))]
                           (do
-                            (Array.aset! (FieldDatabase.temperatures db) id temp)
-                            (Array.aset! (FieldDatabase.ages db) id age)
-                            (Array.aset! (FieldDatabase.humidities db) id humidity)
-                            (Array.aset! (FieldDatabase.pressures db) id pressure)
-                            (Array.aset! (FieldDatabase.charges db) id 0.0)
-                            (Array.aset! (FieldDatabase.root-csg-indices db) id csg-idx)
+                            (FieldDatabase.set-temperature! db id temp)
+                            (FieldDatabase.set-age! db id age)
+                            (FieldDatabase.set-humidity! db id humidity)
+                            (FieldDatabase.set-pressure! db id pressure)
+                            (FieldDatabase.set-charge! db id 0.0)
+                            (FieldDatabase.set-root-csg-index! db id csg-idx)
                             (if (> speed 0.1)
                               (let [dir (Vector3.mul vel (/ 1.0 speed))
                                     up-axis (Vector3.init 0.0 1.0 0.0)
                                     rot (rotation-between &up-axis &dir)]
-                                (Array.aset! (FieldDatabase.rotations db) id rot))
-                              (Array.aset! (FieldDatabase.rotations db) id (Quaternion.identity)))))))
+                                (FieldDatabase.set-rotation! db id rot))
+                              (FieldDatabase.set-rotation! db id (Quaternion.identity)))))))
                     (do
-                      (Array.aset! (FieldDatabase.rotations db) id @(RigidBody.rotation rb))
+                      (FieldDatabase.set-rotation! db id @(RigidBody.rotation rb))
                       (when (not (ECS.has-component? world &ent Explosion))
                         (do
-                          (Array.aset! (FieldDatabase.temperatures db) id 0.0)
-                          (Array.aset! (FieldDatabase.ages db) id 0.0)
-                          (Array.aset! (FieldDatabase.humidities db) id 0.0)
-                          (Array.aset! (FieldDatabase.pressures db) id 0.0)
-                          (Array.aset! (FieldDatabase.charges db) id 0.0))))))))))
+                          (FieldDatabase.set-temperature! db id 0.0)
+                          (FieldDatabase.set-age! db id 0.0)
+                          (FieldDatabase.set-humidity! db id 0.0)
+                          (FieldDatabase.set-pressure! db id 0.0)
+                          (FieldDatabase.set-charge! db id 0.0))))))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]

@@ -362,7 +362,7 @@
                                   (when (> (Array.length (SDF.csg-nodes sdf)) 0)
                                     (set! root-csg-idx (serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
                                 _ ())
-                              (Array.aset! (FieldDatabase.root-csg-indices db) id
+                              (FieldDatabase.set-root-csg-index! db id
                                 (if is-bouncy @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id) root-csg-idx))))
                           (let [base (+ (/ WGPURenderer.header-size 4) (* id 16))
                                 final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)

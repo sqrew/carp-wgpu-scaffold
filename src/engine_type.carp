@@ -20,6 +20,7 @@
     view-mode Int
   ])
 
-  (defn spawn-crater! [e pos rad]
-    ())
+  (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))
+  (defn spawn-crater! [e pos rad existing-crater]
+    (Maybe.Nothing))
 )

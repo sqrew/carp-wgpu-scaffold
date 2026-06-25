@@ -89,4 +89,31 @@
     (do
       (Array.aset! (FieldDatabase.active db) id false)
       (Array.aset! (FieldDatabase.shape-types db) id -1)))
+
+  (defn set-scale! [db id val]
+    (Array.aset! (FieldDatabase.scales db) id val))
+
+  (defn set-pressure! [db id val]
+    (Array.aset! (FieldDatabase.pressures db) id val))
+
+  (defn set-temperature! [db id val]
+    (Array.aset! (FieldDatabase.temperatures db) id val))
+
+  (defn set-position! [db id val]
+    (Array.aset! (FieldDatabase.positions db) id val))
+
+  (defn set-rotation! [db id val]
+    (Array.aset! (FieldDatabase.rotations db) id val))
+
+  (defn set-age! [db id val]
+    (Array.aset! (FieldDatabase.ages db) id val))
+
+  (defn set-humidity! [db id val]
+    (Array.aset! (FieldDatabase.humidities db) id val))
+
+  (defn set-charge! [db id val]
+    (Array.aset! (FieldDatabase.charges db) id val))
+
+  (defn set-root-csg-index! [db id val]
+    (Array.aset! (FieldDatabase.root-csg-indices db) id val))
 )

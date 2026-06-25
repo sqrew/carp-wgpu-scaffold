@@ -69,9 +69,10 @@
   force Double
   pressure Double
   temperature Double
+  crater-handle (Maybe (Handle ()))
 ])
 (defmodule Explosion
-  (defn zero [] (Explosion.init 0.0 0.0 0.0 0.0 0.0 0.0))
+  (defn zero [] (Explosion.init 0.0 0.0 0.0 0.0 0.0 0.0 (Maybe.Nothing)))
   (implements zero Explosion.zero)
 )
 
