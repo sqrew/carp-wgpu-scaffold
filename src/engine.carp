@@ -60,7 +60,7 @@
               root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
               params (Vector4.init 1.5 1.5 1.5 0.0)
-              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) 0.0 0.0 0.0 0.0 0.0)
+              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) 0.0 0.0 0.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -116,7 +116,7 @@
                                     (Vector3.init 1.0 1.0 0.0))))
                   color (Color.init @&c-val)
                   params (Vector4.init 0.5 0.5 0.5 0.0)
-                  geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0)]
+                  geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
               (do
                 (ECS.add-component! &world &ent rb)
                 (ECS.add-component! &world &ent col)
@@ -429,6 +429,7 @@
               (let [db (Engine.db e)]
                 (do
                   (FieldDatabase.set-position! db id @(RigidBody.position rb))
+                  (FieldDatabase.set-velocity! db id @(Body.velocity (RigidBody.body rb)))
                   (if (ECS.has-component? world &ent BouncyTag)
                     (let [vel (Body.velocity (RigidBody.body rb))
                           speed (Double.sqrt (Vector3.mag-sq vel))

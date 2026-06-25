@@ -71,14 +71,19 @@
           manifolds []]
       (do
         
-        ;; 1. Apply Gravity, SPH Pressure Forces, and Step Bodies
+        ;; 1. Apply Gravity, SPH Pressure, Aerodynamic Wake/Drag Forces, and Step Bodies
         (let [db (World.sdf-db world-data)
-              coeff -30.0]
+              coeff -30.0
+              drag-coeff 0.15]
           (ECS.query world [ent (rb RigidBody)]
             (let [pos (RigidBody.position rb)
+                  vel (Body.velocity (RigidBody.body rb))
                   grad (FieldDatabase.calculate-pressure-gradient db pos)
                   p-force (Vector3.mul &grad coeff)
-                  total-force (Vector3.add &gravity &p-force)]
+                  ind-vel (FieldDatabase.calculate-induced-velocity db pos)
+                  rel-vel (Vector3.sub &ind-vel vel)
+                  drag-force (Vector3.mul &rel-vel drag-coeff)
+                  total-force (Vector3.add &(Vector3.add &gravity &p-force) &drag-force)]
               (do
                 (RigidBody.apply-force! rb &total-force)
                 (RigidBody.step-custom! rb fixed-dt fixed-dt)))))
