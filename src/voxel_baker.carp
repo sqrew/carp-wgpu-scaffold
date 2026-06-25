@@ -8,6 +8,8 @@
   (use Volume)
   (use SDF)
 
+  (def sdf-padding 6.0)
+
   (defn pack-and-copy-chunk! [ctx ren slot]
     (let [v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
           v-half-b @(WGPURenderer.voxel-half-buffer ren)
@@ -50,8 +52,9 @@
           dx (- px cx)
           dy (- py cy)
           dz (- pz cz)
-          dist-sq (+ (* dx dx) (+ (* dy dy) (* dz dz)))]
-      (< dist-sq (* radius radius))))
+          dist-sq (+ (* dx dx) (+ (* dy dy) (* dz dz)))
+          r-padded (+ radius sdf-padding)]
+      (< dist-sq (* r-padded r-padded))))
 
   (defn run-voxel-action-gpu! [ctx ren chunk center radius op-type]
     (let [qx @(Chunk.coord-x chunk)
@@ -196,12 +199,12 @@
           cx @(Vector3.x center)
           cy @(Vector3.y center)
           cz @(Vector3.z center)
-          min-x (- cx radius)
-          max-x (+ cx radius)
-          min-y (- cy radius)
-          max-y (+ cy radius)
-          min-z (- cz radius)
-          max-z (+ cz radius)
+          min-x (- cx (+ radius sdf-padding))
+          max-x (+ cx (+ radius sdf-padding))
+          min-y (- cy (+ radius sdf-padding))
+          max-y (+ cy (+ radius sdf-padding))
+          min-z (- cz (+ radius sdf-padding))
+          max-z (+ cz (+ radius sdf-padding))
           
           idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
           idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))
@@ -251,12 +254,12 @@
           cx @(Vector3.x center)
           cy @(Vector3.y center)
           cz @(Vector3.z center)
-          min-x (- cx radius)
-          max-x (+ cx radius)
-          min-y (- cy radius)
-          max-y (+ cy radius)
-          min-z (- cz radius)
-          max-z (+ cz radius)
+          min-x (- cx (+ radius sdf-padding))
+          max-x (+ cx (+ radius sdf-padding))
+          min-y (- cy (+ radius sdf-padding))
+          max-y (+ cy (+ radius sdf-padding))
+          min-z (- cz (+ radius sdf-padding))
+          max-z (+ cz (+ radius sdf-padding))
           
           idx-min-x (the Int (Double.to-int (Double.floor (/ (- min-x ox) cell-size))))
           idx-max-x (the Int (Double.to-int (Double.floor (/ (- max-x ox) cell-size))))

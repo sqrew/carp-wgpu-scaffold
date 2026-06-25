@@ -143,7 +143,7 @@
            v5.x = min(v5.x, 1.5);
            v6.x = min(v6.x, 1.5);
            v7.x = min(v7.x, 1.5);
-          let sf = f;
+          let sf = f * f * (3.0 - 2.0 * f); // Hermite interpolation
           let v_01 = mix(v0, v1, sf.x);
           let v_23 = mix(v2, v3, sf.x);
           let v_45 = mix(v4, v5, sf.x);
@@ -157,7 +157,17 @@
           let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
           let dummy = dummy_sample.r * 1e-10;
           
-          return vec2<f32>(tex_val.r + dummy, tex_val.g);
+          var best_mat = v0.y;
+          var min_d_corner = v0.x;
+          if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
+          if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
+          if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
+          if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
+          if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
+          if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
+          if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
+          
+          return vec2<f32>(tex_val.r + dummy, best_mat);
       }
 
        fn sampleVoxelGridPoint(p: vec3<f32>) -> vec2<f32> {
@@ -428,13 +438,13 @@
           }
       }
 
-         fn worldSDF(p: vec3<f32>, rd: vec3<f32>, dither_threshold: f32, eval_metaballs: bool) -> vec4<f32> {
-             let voxel_pt = sampleVoxelGridPoint(p);
-             var voxel_dist = voxel_pt.x;
-             if (voxel_dist < 2.0) {
-                 let voxel_tri = sampleVoxelGrid(p);
-                 voxel_dist = voxel_tri.x;
-             }
+          fn worldSDF(p: vec3<f32>, rd: vec3<f32>, dither_threshold: f32, eval_metaballs: bool) -> vec4<f32> {
+              let voxel_pt = sampleVoxelGridPoint(p);
+              var voxel_dist = voxel_pt.x;
+              if (voxel_dist < 16.0) {
+                  let voxel_tri = sampleVoxelGrid(p);
+                  voxel_dist = voxel_tri.x;
+              }
              var d = vec2<f32>(voxel_dist, -1.0);
              let p_local = p - u.grid_origin.xyz;
             let gx = i32(floor(p_local.x / u.cell_size));
@@ -545,6 +555,9 @@
                 }
                 last_h = h;
                 dt = clamp(sdf_val.x, 0.05, 2.0);
+                if (h < 1.5) {
+                    dt = clamp(sdf_val.x * 0.5, 0.02, 2.0);
+                }
                 t += dt;
                 if (t > maxt) {
                     break;
