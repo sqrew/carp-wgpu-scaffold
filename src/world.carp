@@ -6,6 +6,7 @@
   coord-z Int
   voxel-data (Array Float)
   atlas-slot Int
+  modified Bool
 ])
 
 (deftype World [
@@ -23,6 +24,7 @@
   cache-qy Int
   cache-qz Int
   cache-idx Int
+  modified-chunks (Array Chunk)
 ])
 
 (defmodule World
@@ -38,12 +40,12 @@
             (for [x -1 2]
               (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
                     slot (+ (+ (+ x 1) (* (+ y 1) 3)) (* (+ z 1) 9))
-                    chunk (Chunk.init x y z voxel-data slot)]
+                    chunk (Chunk.init x y z voxel-data slot false)]
                 (Array.push-back! &arr chunk)))))
         arr)))
 
   (defn new [origin cell-size w h d]
-    (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999 -999 -999 -999 -1))
+    (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999 -999 -999 -999 -1 []))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -114,22 +116,32 @@
         (if (and (= qx @(World.cache-qx world))
                  (and (= qy @(World.cache-qy world))
                       (= qz @(World.cache-qz world))))
-            (set! found-idx @(World.cache-idx world))
-            (let [len (Array.length chunks)
-                  i 0]
-              (do
-                (while (and (< i len) (= found-idx -1))
-                  (let [chunk (Array.unsafe-nth chunks i)]
-                    (do
-                      (when (and (= @(Chunk.coord-x chunk) qx)
-                                 (and (= @(Chunk.coord-y chunk) qy)
-                                      (= @(Chunk.coord-z chunk) qz)))
-                        (set! found-idx i))
-                      (set! i (inc i)))))
-                (World.set-cache-qx! world qx)
-                (World.set-cache-qy! world qy)
-                (World.set-cache-qz! world qz)
-                (World.set-cache-idx! world found-idx))))
+            (let [cached-idx @(World.cache-idx world)]
+              (if (and (>= cached-idx 0) (< cached-idx (Array.length chunks)))
+                  (let [c (Array.unsafe-nth chunks cached-idx)]
+                    (if (and (= @(Chunk.coord-x c) qx)
+                             (and (= @(Chunk.coord-y c) qy)
+                                  (= @(Chunk.coord-z c) qz)))
+                        (set! found-idx cached-idx)
+                        ()))
+                  ()))
+            ())
+        (when (= found-idx -1)
+          (let [len (Array.length chunks)
+                i 0]
+            (do
+              (while (and (< i len) (= found-idx -1))
+                (let [chunk (Array.unsafe-nth chunks i)]
+                  (do
+                    (when (and (= @(Chunk.coord-x chunk) qx)
+                               (and (= @(Chunk.coord-y chunk) qy)
+                                    (= @(Chunk.coord-z chunk) qz)))
+                      (set! found-idx i))
+                    (set! i (inc i)))))
+              (World.set-cache-qx! world qx)
+              (World.set-cache-qy! world qy)
+              (World.set-cache-qz! world qz)
+              (World.set-cache-idx! world found-idx))))
         (if (= found-idx -1)
             1.5
             (let [chunk (Array.unsafe-nth chunks found-idx)
@@ -207,4 +219,26 @@
                 (set! found true))
               (set! i (inc i)))))
         found)))
+
+  (sig save-modified-chunk! (Fn [(Ref World) (Ref Chunk)] ()))
+  (defn save-modified-chunk! [world chunk]
+    (let [saved-list (World.modified-chunks world)
+          len (Array.length saved-list)
+          qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          found-idx -1]
+      (do
+        (for [i 0 len]
+          (let [c (Array.unsafe-nth saved-list i)]
+            (when (and (= @(Chunk.coord-x c) qx)
+                       (and (= @(Chunk.coord-y c) qy)
+                            (= @(Chunk.coord-z c) qz)))
+              (set! found-idx i))))
+        (if (= found-idx -1)
+            (let [saved-voxel @(Chunk.voxel-data chunk)
+                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true)]
+              (Array.push-back! saved-list saved-chunk))
+            (let [target-chunk (Array.unsafe-nth saved-list found-idx)]
+              (Chunk.set-voxel-data! target-chunk @(Chunk.voxel-data chunk)))))))
 )
