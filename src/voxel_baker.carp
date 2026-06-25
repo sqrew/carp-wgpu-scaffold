@@ -235,9 +235,8 @@
                             dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
                             crater-dist (- dist-to-crater-center radius)
                             old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                            new-dist (let [neg-crater-dist (- 0.0 crater-dist)
-                                           d (if (> old-dist neg-crater-dist) old-dist neg-crater-dist)]
-                                       (if (and (< d 0.0) (> d -0.1)) 1.0 d))]
+                            new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
+                                       (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
                         (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))))
 
   (defn build-voxel-grid-cpu! [chunk center radius]

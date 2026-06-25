@@ -861,10 +861,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if (op < 0.5) {
         // Carve
         let neg_crater_dist = -crater_dist;
-        var new_dist = max(old_dist, neg_crater_dist);
-        if (new_dist < 0.0 && new_dist > -0.1) {
-            new_dist = 1.0;
-        }
+        let new_dist = max(old_dist, neg_crater_dist);
         val.x = new_dist;
     } else {
         // Build

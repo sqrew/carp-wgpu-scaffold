@@ -447,7 +447,7 @@
                 ;; 2. Load missing chunks dynamically around player (up to 1 chunk per frame to prevent hiccups)
                 (let [loaded-any false]
                   (do
-                    (for [dy -2 2]
+                    (for [dy -2 3]
                       (for [dz -2 3]
                         (for [dx -2 3]
                           (let [qx (+ cam-qx dx)
