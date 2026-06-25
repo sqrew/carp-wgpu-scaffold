@@ -69,7 +69,7 @@
 (defmodule WGPURenderer
   (def max-spheres 512)
   (def max-ids-per-cell 64)
-  (def header-size 128)
+  (def header-size 144)
   (def sphere-data-size 64)
   (def max-csg-nodes 1024)
   (def csg-node-size 64)
@@ -245,7 +245,7 @@
   (defn submit! [ren cmd]
     (Array.push-back! (WGPURenderer.commands ren) cmd))
 
-  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k view-mode show-debug]
+  (defn process-commands! [ctx ren time width height cam grid world world-data csg-dirty grid-dirty voxel-dirty craters metaball-k view-mode shadow-quality show-debug]
     (let [db (World.sdf-db world-data)
           bg-color (Vector3.init 0.1 0.1 0.1)
           commands (WGPURenderer.commands ren)
@@ -313,6 +313,10 @@
             (Array.aset! data 29 (Double.to-float @(Vector3.y origin)))
             (Array.aset! data 30 (Double.to-float @(Vector3.z origin)))
             (Array.aset! data 31 (Double.to-float (Double.from-int view-mode)))
+            (Array.aset! data 32 (Double.to-float (Double.from-int shadow-quality)))
+            (Array.aset! data 33 (Double.to-float (Double.from-int shadow-quality)))
+            (Array.aset! data 34 0.0f)
+            (Array.aset! data 35 0.0f)
 
 
 
