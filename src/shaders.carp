@@ -36,14 +36,15 @@
       }
       struct ChunkLookup {
           origin: vec4<i32>,
-          slots: array<vec4<i32>, 432>,
+          slots: array<vec4<i32>, 8192>,
+          skip_grid: array<vec4<i32>, 128>,
       }
       @group(0) @binding(0) var<storage, read> grid: array<Cell>;
       @group(0) @binding(1) var<uniform> u: Uniforms;
       @group(0) @binding(2) var<storage, read> csg_nodes: array<CsgNode>;
       @group(0) @binding(3) var voxel_texture: texture_3d<f32>;
       @group(0) @binding(4) var voxel_sampler: sampler;
-      @group(0) @binding(5) var<uniform> chunk_lookup: ChunkLookup;
+      @group(0) @binding(5) var<storage, read> chunk_lookup: ChunkLookup;
       @group(0) @binding(6) var noise_texture: texture_3d<f32>;
       @group(0) @binding(7) var noise_sampler: sampler;
 
@@ -65,11 +66,20 @@
             let lz = i32(u32(gz) & 31u);
             
             let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-            if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(12))) {
+            if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
                 return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
             }
             
-            let idx = local_q.x + local_q.y * 12 + local_q.z * 144;
+            let mx = u32(local_q.x) >> 2u;
+            let my = u32(local_q.y) >> 2u;
+            let mz = u32(local_q.z) >> 2u;
+            let skip_idx = mx + (my << 3u) + (mz << 6u);
+            let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+            if (skip_val == 0) {
+                return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            }
+            
+            let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
             let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
             if (slot < 0) {
                 return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
@@ -106,23 +116,30 @@
               let qy = c0.y >> 5u;
               let qz = c0.z >> 5u;
               let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-              if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(12))) {
-                  let idx = local_q.x + local_q.y * 12 + local_q.z * 144;
-                  let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
-                  if (slot >= 0) {
-                      let slot_x = slot % 12;
-                      let slot_y = (slot / 12) % 12;
-                      let slot_z = slot / 144;
-                      let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
-                      
-                      v0 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz),     0);
-                      v1 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
-                      v2 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
-                      v3 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
-                      v4 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
-                      v5 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
-                      v6 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
-                      v7 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
+              if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
+                  let mx = u32(local_q.x) >> 2u;
+                  let my = u32(local_q.y) >> 2u;
+                  let mz = u32(local_q.z) >> 2u;
+                  let skip_idx = mx + (my << 3u) + (mz << 6u);
+                  let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                  if (skip_val != 0) {
+                      let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                      let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                      if (slot >= 0) {
+                          let slot_x = slot % 12;
+                          let slot_y = (slot / 12) % 12;
+                          let slot_z = slot / 144;
+                          let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
+                          
+                          v0 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz),     0);
+                          v1 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
+                          v2 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
+                          v3 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
+                          v4 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
+                          v5 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
+                          v6 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
+                          v7 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
+                      }
                   }
               }
           } else {
@@ -624,9 +641,9 @@
                   } else {
                       t += res.x;
                   }
-                  if (t > 350.0) { break; }
+                  if (t > 800.0) { break; }
               }
-             if (t <= 350.0) {
+             if (t <= 800.0) {
                  for (var j = 0; j < 2; j = j + 1) {
                      let p = ro + rd * t;
                      let res = worldSDF(p, rd, dither_threshold, true);
@@ -636,7 +653,7 @@
                  }
              }
              var color = getSkyColor(rd);
-            if (t <= 350.0) {
+            if (t <= 800.0) {
                 let p = ro + rd * t;
                 let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
@@ -857,7 +874,7 @@
               }
 
                 let fog_color = getSkyColor(rd) * cam_sky_visibility;
-                color = mix(color, fog_color, 1.0 - exp(-0.035 * t));
+                color = mix(color, fog_color, 1.0 - exp(-0.003 * t));
               let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
               color += vec3<f32>(dither_noise) * (1.0 / 255.0);
           }

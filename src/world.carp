@@ -67,13 +67,15 @@
     (the Int (Double.to-int (Double.floor (/ @(Vector3.z cam-pos) (World.chunk-size))))))
 
   (defn build-chunk-lookup-data [world origin-x origin-y origin-z]
-    (let [arr (the (Array Int) (replicate 1732 &-1))
+    (let [arr (the (Array Int) (replicate 33284 &0))
           chunks (World.chunks world)]
       (do
         (Array.aset! &arr 0 origin-x)
         (Array.aset! &arr 1 origin-y)
         (Array.aset! &arr 2 origin-z)
         (Array.aset! &arr 3 0)
+        (for [i 4 32772]
+          (Array.aset! &arr i -1))
         (for [i 0 (Array.length chunks)]
           (let [chunk (Array.unsafe-nth chunks i)
                 qx @(Chunk.coord-x chunk)
@@ -82,11 +84,18 @@
                 lx (- qx origin-x)
                 ly (- qy origin-y)
                 lz (- qz origin-z)]
-            (when (and (and (>= lx 0) (< lx 12))
-                       (and (and (>= ly 0) (< ly 12))
-                            (and (>= lz 0) (< lz 12))))
-              (let [idx (+ 4 (+ lx (+ (* ly 12) (* lz 144))))]
-                (Array.aset! &arr idx @(Chunk.atlas-slot chunk))))))
+            (when (and (and (>= lx 0) (< lx 32))
+                       (and (and (>= ly 0) (< ly 32))
+                            (and (>= lz 0) (< lz 32))))
+              (let [idx (+ 4 (+ lx (+ (* ly 32) (* lz 1024))))
+                    mx (/ lx 4)
+                    my (/ ly 4)
+                    mz (/ lz 4)
+                    skip-idx (+ 32772 (+ mx (+ (* my 8) (* mz 64))))]
+                (do
+                  (Array.aset! &arr idx @(Chunk.atlas-slot chunk))
+                  (when (>= @(Chunk.atlas-slot chunk) 0)
+                    (Array.aset! &arr skip-idx 1)))))))
         arr)))
 
   (defn find-chunk [world qx qy qz]

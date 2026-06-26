@@ -53,7 +53,7 @@
   voxel-gpu-buffer WGPUBuffer
   voxel-half-buffer WGPUBuffer
   carve-params-buffer WGPUBuffer
-  chunk-lookup-buffer (Ptr WGPUUniformBufferWrapper)
+  chunk-lookup-buffer WGPUBuffer
   noise-texture (Ptr WGPURenderTexture)
   noise-sampler WGPUSampler
 ])
@@ -76,6 +76,14 @@
   (def sphere-data-size 64)
   (def max-csg-nodes 1024)
   (def csg-node-size 64)
+
+  (sig get-surface-qy (Fn [Int Int] Int))
+  (defn get-surface-qy [qx qz]
+    (let [px (* (Double.from-int qx) 32.0)
+          pz (* (Double.from-int qz) 32.0)
+          terrain-h (* (fbm2d (* px 0.015) (* pz 0.015)) 25.0)
+          final-h (- terrain-h 15.0)]
+      (the Int (Double.to-int (Double.floor (/ final-h 32.0))))))
 
   (sig float-from-int (Fn [Int] Float))
   (defn float-from-int [x]
@@ -214,44 +222,44 @@
                       (match (WGPU.create-buffer ctx csg-size)
                         (Result.Error e) (do (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "CSG buffer failed: " e)))
                         (Result.Success csg-b)
-                          (match (WGPURender.create-uniform-buffer ctx 6928)
+                            (match (WGPU.create-buffer ctx 133136)
                             (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Chunk lookup buffer failed: " e)))
                             (Result.Success chunk-lookup-b)
-                               (let [raw-lookup-buf (uniform-buffer-get-buffer chunk-lookup-b)]
+                               (let [raw-lookup-buf chunk-lookup-b]
                                 (match (WGPURender.create-3d-texture ctx 32 32 32 "rgba16float")
-                                  (Result.Error e) (do (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise 3D Texture failed: " e)))
+                                  (Result.Error e) (do (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise 3D Texture failed: " e)))
                                   (Result.Success noise-tex)
                                     (match (WGPURender.create-sampler-repeat ctx)
-                                      (Result.Error e) (do (WGPURender.free-render-texture noise-tex) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise Repeat Sampler failed: " e)))
+                                      (Result.Error e) (do (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise Repeat Sampler failed: " e)))
                                       (Result.Success noise-samp)
                                         (do
                                           (WGPURenderer.initialize-noise-texture! ctx noise-tex)
                                           (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
-                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
+                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
                                             (Result.Success pipe)
                                               (match (WGPURender.create-voxel-render-bind-group-chunked ctx pipe sb csg-b ub voxel-tex voxel-samp raw-lookup-buf noise-tex noise-samp)
-                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
+                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
                                                 (Result.Success bg)
                                                   (match (WGPURender.create-depth-texture ctx width height)
-                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
+                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
                                                     (Result.Success dt)
                                                       (match (LinePass.create ctx format 10000)
-                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
+                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
                                                         (Result.Success lp)
                                                           (match (WGPU.create-buffer ctx 524288)
-                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel GPU Buffer failed: " e)))
+                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel GPU Buffer failed: " e)))
                                                             (Result.Success v-gpu-b)
                                                               (match (WGPU.create-buffer ctx 262144)
-                                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
+                                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
                                                                 (Result.Success v-half-b)
                                                                   (match (WGPU.create-buffer ctx 12)
-                                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
+                                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
                                                                     (Result.Success c-params-b)
                                                                       (match (WGPU.create-pipeline ctx Shaders.carve-shader "main")
-                                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve pipeline failed: " e)))
+                                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve pipeline failed: " e)))
                                                                         (Result.Success c-pipe)
                                                                           (match (WGPU.create-pipeline ctx Shaders.pack-shader "main")
-                                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
+                                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
                                                                             (Result.Success p-pipe)
                                                                                (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true c-pipe p-pipe v-gpu-b v-half-b c-params-b chunk-lookup-b noise-tex noise-samp)))))))))))))))))))))))
 
@@ -427,7 +435,7 @@
                     (World.set-last-cam-y! world-data cam-qy)
                     (World.set-last-cam-z! world-data cam-qz)
                     
-                    ;; 1. Unload far chunks (keep only chunks within dx <= 4, dy <= 3, dz <= 4)
+                    ;; 1. Unload far chunks (keep only chunks within dx <= 16, dy <= 8, dz <= 16)
                     (let [chunks (World.chunks world-data)
                           keep (the (Array Chunk) [])]
                       (do
@@ -439,7 +447,7 @@
                                 dist-x (Int.abs (- cqx cam-qx))
                                 dist-y (Int.abs (- cqy cam-qy))
                                 dist-z (Int.abs (- cqz cam-qz))]
-                             (if (and (<= dist-x 6) (and (<= dist-y 6) (<= dist-z 6)))
+                             (if (and (<= dist-x 16) (and (<= dist-y 24) (<= dist-z 16)))
                                   (Array.push-back! &keep @chunk)
                                   (when @(Chunk.modified chunk)
                                     (World.save-modified-chunk! world-data chunk)))))
@@ -448,69 +456,71 @@
                 ;; 2. Load missing chunks dynamically around player (up to 1 chunk per frame to prevent hiccups)
                 (let [loaded-any false]
                   (do
-                    (for [r 0 6]
-                      (for [dy (- 0 r) (inc r)]
-                        (for [dz (- 0 r) (inc r)]
-                          (for [dx (- 0 r) (inc r)]
-                            (let [qx (+ cam-qx dx)
-                                  yq (+ cam-qy dy)
-                                  qz (+ cam-qz dz)]
-                              (when (and (not loaded-any)
-                                         (and (or (= (Int.abs dx) r)
-                                                  (or (= (Int.abs dy) r)
-                                                      (= (Int.abs dz) r)))
-                                              (not (World.has-chunk? world-data qx yq qz))))
-                                (let [slot (World.find-unused-atlas-slot world-data)]
-                                  (when (>= slot 0)
-                                    (let [saved-list (World.modified-chunks world-data)
-                                          len (Array.length saved-list)
-                                          found-idx -1]
-                                      (do
-                                        (for [i 0 len]
-                                          (let [c (Array.unsafe-nth saved-list i)]
-                                            (when (and (= @(Chunk.coord-x c) qx)
-                                                       (and (= @(Chunk.coord-y c) yq)
-                                                            (= @(Chunk.coord-z c) qz)))
-                                              (set! found-idx i))))
-                                        (if (= found-idx -1)
-                                            (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
-                                                  chunk (Chunk.init qx yq qz voxel-data slot false)
-                                                  static-sdfs []
-                                                  static-mat-ids []]
+                    (for [r 0 15]
+                      (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))]
+                        (for [dy (- 0 limit-r) (inc limit-r)]
+                          (for [dz (- 0 r) (inc r)]
+                            (for [dx (- 0 r) (inc r)]
+                              (let [qx (+ cam-qx dx)
+                                    qz (+ cam-qz dz)
+                                    surface-qy (WGPURenderer.get-surface-qy qx qz)
+                                    yq (if (> r 3) (+ surface-qy dy) (+ cam-qy dy))]
+                                (when (and (not loaded-any)
+                                           (and (or (= (Int.abs dx) r)
+                                                    (or (= (Int.abs dy) r)
+                                                        (= (Int.abs dz) r)))
+                                                (not (World.has-chunk? world-data qx yq qz))))
+                                  (let [slot (World.find-unused-atlas-slot world-data)]
+                                    (when (>= slot 0)
+                                      (let [saved-list (World.modified-chunks world-data)
+                                            len (Array.length saved-list)
+                                            found-idx -1]
+                                        (do
+                                          (for [i 0 len]
+                                            (let [c (Array.unsafe-nth saved-list i)]
+                                              (when (and (= @(Chunk.coord-x c) qx)
+                                                         (and (= @(Chunk.coord-y c) yq)
+                                                              (= @(Chunk.coord-z c) qz)))
+                                                (set! found-idx i))))
+                                          (if (= found-idx -1)
+                                              (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+                                                    chunk (Chunk.init qx yq qz voxel-data slot false)
+                                                    static-sdfs []
+                                                    static-mat-ids []]
+                                                  (do
+                                                    (ECS.query world [ent (rb RigidBody) (col Collidable)]
+                                                      (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
+                                                        (match-ref (Collidable.volume col)
+                                                          (Volume.Sdf sdf)
+                                                            (do
+                                                              (SDF.set-position! sdf @(RigidBody.position rb))
+                                                              (SDF.set-rotation! sdf @(RigidBody.rotation rb))
+                                                              (let [saved-nodes @(SDF.csg-nodes sdf)]
+                                                                (do
+                                                                  (SDF.set-csg-nodes! sdf [])
+                                                                  (Array.push-back! &static-sdfs @sdf)
+                                                                  (SDF.set-csg-nodes! sdf saved-nodes)))
+                                                              (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
+                                                          _ ())))
+                                                    (bake-chunk! ctx ren &chunk &static-sdfs &static-mat-ids)
+                                                    (Array.push-back! (World.chunks world-data) chunk)))
+                                              (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
+                                                    voxel-data @(Chunk.voxel-data saved-chunk)]
                                                 (do
-                                                  (ECS.query world [ent (rb RigidBody) (col Collidable)]
-                                                    (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-                                                      (match-ref (Collidable.volume col)
-                                                        (Volume.Sdf sdf)
-                                                          (do
-                                                            (SDF.set-position! sdf @(RigidBody.position rb))
-                                                            (SDF.set-rotation! sdf @(RigidBody.rotation rb))
-                                                            (let [saved-nodes @(SDF.csg-nodes sdf)]
-                                                              (do
-                                                                (SDF.set-csg-nodes! sdf [])
-                                                                (Array.push-back! &static-sdfs @sdf)
-                                                                (SDF.set-csg-nodes! sdf saved-nodes)))
-                                                            (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
-                                                        _ ())))
-                                                  (bake-chunk! ctx ren &chunk &static-sdfs &static-mat-ids)
-                                                  (Array.push-back! (World.chunks world-data) chunk)))
-                                            (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
-                                                  voxel-data @(Chunk.voxel-data saved-chunk)]
-                                              (do
-                                                (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
-                                                (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
-                                                (let [chunk (Chunk.init qx yq qz voxel-data slot true)]
-                                                  (Array.push-back! (World.chunks world-data) chunk)))))
-                                        (set! loaded-any true)))))))))))))))
+                                                  (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
+                                                  (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
+                                                  (let [chunk (Chunk.init qx yq qz voxel-data slot true)]
+                                                    (Array.push-back! (World.chunks world-data) chunk)))))
+                                          (set! loaded-any true))))))))))))))))
 
             (let [cam-qx (World.camera-chunk-qx cam-pos)
                   cam-qy (World.camera-chunk-qy cam-pos)
                   cam-qz (World.camera-chunk-qz cam-pos)
-                  origin-x (- cam-qx 6)
-                  origin-y (- cam-qy 6)
-                  origin-z (- cam-qz 6)
+                  origin-x (- cam-qx 16)
+                  origin-y (- cam-qy 16)
+                  origin-z (- cam-qz 16)
                   lookup-data (World.build-chunk-lookup-data world-data origin-x origin-y origin-z)]
-              (WGPURenderer.write-ints ctx (uniform-buffer-get-buffer @(WGPURenderer.chunk-lookup-buffer ren)) &lookup-data))
+              (WGPURenderer.write-ints ctx @(WGPURenderer.chunk-lookup-buffer ren) &lookup-data))
 
             (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
               (do
