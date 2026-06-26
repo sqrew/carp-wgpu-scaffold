@@ -342,9 +342,12 @@
         (FieldDatabase.release-instance! db @(GeometryRef.id g-ref)))
       (GameWorld.destroy-entity! world ent)))
 
-  (defn process-input! [e]
-    (let [mgr (Engine.input e)
-          dt (Clock.unscaled-dt (Engine.clock e))]
+  (defn tick-events! [e]
+    (let [_ (Coordinator.tick! (Engine.coordinator e))]
+      ()))
+
+  (defn tick-input! [e dt]
+    (let [mgr (Engine.input e)]
       (do
         (InputManager.update! mgr)
         (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
@@ -428,24 +431,21 @@
               (Engine.set-shadow-quality! e next)
               (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next)))))))))
 
-  (defn tick! [e]
-    (let [cam (Engine.camera e)
-          grid (Engine.grid e)
-          world (Engine.world e)
-          dt (Clock.unscaled-dt (Engine.clock e))]
+  (defn tick-simulation! [e dt]
+    (let [world (Engine.world e)
+          grid (Engine.grid e)]
       (do
-        (Clock.tick! (Engine.clock e))
-        (let [_ (Coordinator.tick! (Engine.coordinator e))] ()) ;; Process pending events
-        
         (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.033)))
-        (Engine.set-bg-color! e (Vector3.init 0.1 0.1 0.1))
-
         (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
           (do
             (ignore (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e)))
             (ExplosionSystem.step-explosions! e world (Engine.db e) PhysicsSystem.fixed-dt)
-            (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt))))
+            (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt)))))))
 
+  (defn tick-lifecycle! [e dt]
+    (let [cam (Engine.camera e)
+          world (Engine.world e)]
+      (do
         ;; Update Camera using live RotationState to decouple from physics roll & run bounds check
         (PlayerSystem.update-camera-and-bounds! world cam dt)
 
@@ -514,71 +514,75 @@
               q (Quaternion.new @(Vector3.x &axis) @(Vector3.y &axis) @(Vector3.z &axis) w)]
           (Quaternion.normalize &q)))))
 
-  (defn submit-render-commands! [e ren]
-    (let [world (Engine.world e)]
+  (defn tick-field-db-sync! [e]
+    (let [world (Engine.world e)
+          db (Engine.db e)]
       (do
         (ECS.query world [ent (rb RigidBody) (g-ref GeometryRef)]
           (let [id @(GeometryRef.id g-ref)]
             (when (>= id 0)
-              (let [db (Engine.db e)]
-                (do
-                  (FieldDatabase.set-position! db id @(RigidBody.position rb))
-                  (FieldDatabase.set-velocity! db id @(Body.velocity (RigidBody.body rb)))
-                  (if (ECS.has-component? world &ent BouncyTag)
-                    (let [vel (Body.velocity (RigidBody.body rb))
-                          speed (Double.sqrt (Vector3.mag-sq vel))
-                          stretch-factor 0.05
-                          s-val (+ 0.6 (* speed stretch-factor))
-                          s-clamped (if (< s-val 0.6) 0.6 (if (> s-val 2.5) 2.5 s-val))
-                          stretch-amt (Double.to-int (* s-clamped 100.0))
-                          csg-idx (- -99 stretch-amt)
-                          lt-time 0.0
-                          max-lt 12.0]
-                      (do
-                        (ECS.with-components world @&ent [e (lt Lifetime)] (set! lt-time @(Lifetime.time lt)))
-                        (let [age (- max-lt lt-time)
-                              base-temp (* 100.0 (/ lt-time max-lt))
-                              temp (let [t (+ base-temp (* speed 10.0))]
-                                     (if (< t 0.0) 0.0 (if (> t 150.0) 150.0 t)))
-                              pos (RigidBody.position rb)
-                              y-val @(Vector3.y pos)
-                              humidity (let [h (* 100.0 (/ y-val -300.0))]
-                                         (if (< h 0.0) 0.0 (if (> h 100.0) 100.0 h)))
-                              pressure (let [p (+ 1.0 (/ y-val -10.0))]
-                                         (if (< p 1.0) 1.0 p))]
-                          (do
-                            (FieldDatabase.set-temperature! db id temp)
-                            (FieldDatabase.set-age! db id age)
-                            (FieldDatabase.set-humidity! db id humidity)
-                            (FieldDatabase.set-pressure! db id pressure)
-                            (FieldDatabase.set-charge! db id 0.0)
-                            (FieldDatabase.set-gravity! db id -999.0)
-                            (FieldDatabase.set-root-csg-index! db id csg-idx)
-                            (if (> speed 0.1)
-                              (let [dir (Vector3.mul vel (/ 1.0 speed))
-                                    up-axis (Vector3.init 0.0 1.0 0.0)
-                                    rot (rotation-between &up-axis &dir)]
-                                (FieldDatabase.set-rotation! db id rot))
-                              (FieldDatabase.set-rotation! db id (Quaternion.identity)))))))
+              (do
+                (FieldDatabase.set-position! db id @(RigidBody.position rb))
+                (FieldDatabase.set-velocity! db id @(Body.velocity (RigidBody.body rb)))
+                (if (ECS.has-component? world &ent BouncyTag)
+                  (let [vel (Body.velocity (RigidBody.body rb))
+                        speed (Double.sqrt (Vector3.mag-sq vel))
+                        stretch-factor 0.05
+                        s-val (+ 0.6 (* speed stretch-factor))
+                        s-clamped (if (< s-val 0.6) 0.6 (if (> s-val 2.5) 2.5 s-val))
+                        stretch-amt (Double.to-int (* s-clamped 100.0))
+                        csg-idx (- -99 stretch-amt)
+                        lt-time 0.0
+                        max-lt 12.0]
                     (do
-                      (FieldDatabase.set-rotation! db id @(RigidBody.rotation rb))
-                      (if (ECS.has-component? world &ent GravitySource)
-                        (ECS.with-components world @&ent [e (gs GravitySource)]
-                          (do
-                            (FieldDatabase.set-temperature! db id 0.0)
-                            (FieldDatabase.set-age! db id 0.0)
-                            (FieldDatabase.set-humidity! db id 0.0)
-                            (FieldDatabase.set-pressure! db id 0.0)
-                            (FieldDatabase.set-charge! db id 0.0)
-                            (FieldDatabase.set-gravity! db id @(GravitySource.strength gs))))
-                        (when (not (ECS.has-component? world &ent Explosion))
-                          (do
-                            (FieldDatabase.set-temperature! db id 0.0)
-                            (FieldDatabase.set-age! db id 0.0)
-                            (FieldDatabase.set-humidity! db id 0.0)
-                            (FieldDatabase.set-pressure! db id 0.0)
-                            (FieldDatabase.set-charge! db id 0.0)
-                            (FieldDatabase.set-gravity! db id -999.0)))))))))))
+                      (ECS.with-components world @&ent [e (lt Lifetime)] (set! lt-time @(Lifetime.time lt)))
+                      (let [age (- max-lt lt-time)
+                            base-temp (* 100.0 (/ lt-time max-lt))
+                            temp (let [t (+ base-temp (* speed 10.0))]
+                                   (if (< t 0.0) 0.0 (if (> t 150.0) 150.0 t)))
+                            pos (RigidBody.position rb)
+                            y-val @(Vector3.y pos)
+                            humidity (let [h (* 100.0 (/ y-val -300.0))]
+                                       (if (< h 0.0) 0.0 (if (> h 100.0) 100.0 h)))
+                            pressure (let [p (+ 1.0 (/ y-val -10.0))]
+                                       (if (< p 1.0) 1.0 p))]
+                        (do
+                          (FieldDatabase.set-temperature! db id temp)
+                          (FieldDatabase.set-age! db id age)
+                          (FieldDatabase.set-humidity! db id humidity)
+                          (FieldDatabase.set-pressure! db id pressure)
+                          (FieldDatabase.set-charge! db id 0.0)
+                          (FieldDatabase.set-gravity! db id -999.0)
+                          (FieldDatabase.set-root-csg-index! db id csg-idx)
+                          (if (> speed 0.1)
+                            (let [dir (Vector3.mul vel (/ 1.0 speed))
+                                  up-axis (Vector3.init 0.0 1.0 0.0)
+                                  rot (rotation-between &up-axis &dir)]
+                              (FieldDatabase.set-rotation! db id rot))
+                            (FieldDatabase.set-rotation! db id (Quaternion.identity)))))))
+                  (do
+                    (FieldDatabase.set-rotation! db id @(RigidBody.rotation rb))
+                    (if (ECS.has-component? world &ent GravitySource)
+                      (ECS.with-components world @&ent [e (gs GravitySource)]
+                        (do
+                          (FieldDatabase.set-temperature! db id 0.0)
+                          (FieldDatabase.set-age! db id 0.0)
+                          (FieldDatabase.set-humidity! db id 0.0)
+                          (FieldDatabase.set-pressure! db id 0.0)
+                          (FieldDatabase.set-charge! db id 0.0)
+                          (FieldDatabase.set-gravity! db id @(GravitySource.strength gs))))
+                      (when (not (ECS.has-component? world &ent Explosion))
+                        (do
+                          (FieldDatabase.set-temperature! db id 0.0)
+                          (FieldDatabase.set-age! db id 0.0)
+                          (FieldDatabase.set-humidity! db id 0.0)
+                          (FieldDatabase.set-pressure! db id 0.0)
+                          (FieldDatabase.set-charge! db id 0.0)
+                          (FieldDatabase.set-gravity! db id -999.0)))))))))))))
+
+  (defn submit-render-commands! [e ren]
+    (let [world (Engine.world e)]
+      (do
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
@@ -587,4 +591,16 @@
                   vol (Collidable.volume col)
                   col-vec (Color.v color)]
               (DebugDraw.volume! ren pos rot vol col-vec)))))))
+
+  (defn tick! [e ren]
+    (let [dt (Clock.unscaled-dt (Engine.clock e))]
+      (do
+        (Clock.tick! (Engine.clock e))
+        (Engine.set-bg-color! e (Vector3.init 0.1 0.1 0.1))
+        (Engine.tick-events! e)
+        (Engine.tick-input! e dt)
+        (Engine.tick-simulation! e dt)
+        (Engine.tick-lifecycle! e dt)
+        (Engine.tick-field-db-sync! e)
+        (Engine.submit-render-commands! e ren))))
 )
