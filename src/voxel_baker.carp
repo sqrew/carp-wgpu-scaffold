@@ -95,7 +95,7 @@
   (defn build-voxel-grid-gpu! [ctx ren chunk center radius]
     (run-voxel-action-gpu! ctx ren chunk center radius 1.0))
 
-  (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
+  (defn bake-chunk-slices! [ctx ren chunk static-sdfs static-mat-ids start-z end-z]
     (let [voxel-data (Chunk.voxel-data chunk)
           qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
@@ -106,10 +106,9 @@
           cell-size 1.0
           w-dim 32
           h-dim 32
-          d-dim 32
           num-shapes (Array.length static-sdfs)]
       (do
-        (for [z 0 d-dim]
+        (for [z start-z end-z]
           (for [y 0 h-dim]
             (for [x 0 w-dim]
               (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
@@ -152,10 +151,13 @@
                       (Array.aset! voxel-data idx (Double.to-float min-d))
                       (Array.aset! voxel-data (+ idx 1) mat-id)
                       (Array.aset! voxel-data (+ idx 2) 0.0f)
-                      (Array.aset! voxel-data (+ idx 3) 0.0f))))))))
-        (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) voxel-data)
-        (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
-        )))
+                      (Array.aset! voxel-data (+ idx 3) 0.0f)))))))))))
+
+  (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
+    (do
+      (bake-chunk-slices! ctx ren chunk static-sdfs static-mat-ids 0 32)
+      (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
+      (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
     (let [static-sdfs []
