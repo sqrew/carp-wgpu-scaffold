@@ -1,0 +1,46 @@
+;; src/render_database.carp
+;; A passive data cache struct aligned with GPU layouts.
+
+(load "commands.carp")
+
+(deftemplate copy-ints! (Fn [(Ref (Array Int)) (Ref (Array Int))] ())
+  "void $NAME(Array* dest, Array* src)"
+  "$DECL { if (dest->data && src->data && dest->len == src->len) { memcpy(dest->data, src->data, dest->len * sizeof(int)); } }")
+
+(deftemplate copy-floats! (Fn [(Ref (Array Float)) (Ref (Array Float))] ())
+  "void $NAME(Array* dest, Array* src)"
+  "$DECL { if (dest->data && src->data && dest->len == src->len) { memcpy(dest->data, src->data, dest->len * sizeof(float)); } }")
+
+(deftype RenderDatabase [
+  u-data (Array Float)
+  s-data (Array Float)
+  csg-data (Array Float)
+  lookup-data (Array Int)
+  line-commands (Array RenderCommand)
+  voxel-dirty Bool
+  csg-dirty Bool
+  grid-dirty Bool
+])
+
+(defmodule RenderDatabase
+  (use Array)
+
+  (defn create [grid-ref]
+    (let [max-spheres 512
+          header-size 144
+          sphere-data-size 64
+          max-csg-nodes 1024
+          csg-node-size 64
+          u-size (+ header-size (* max-spheres sphere-data-size))
+          cols @(SpatialGrid.cols grid-ref)
+          rows @(SpatialGrid.rows grid-ref)
+          layers @(SpatialGrid.layers grid-ref)
+          s-size (* (* cols (* rows layers)) 68) ;; 64 + 4 stride
+          csg-size (* max-csg-nodes csg-node-size)
+          u-arr (the (Array Float) (replicate (/ u-size 4) &0.0f))
+          s-arr (the (Array Float) (replicate s-size &0.0f))
+          csg-arr (the (Array Float) (replicate (/ csg-size 4) &0.0f))
+          lookup-arr (the (Array Int) (replicate 33284 &0))
+          line-cmds (the (Array RenderCommand) [])]
+      (RenderDatabase.init u-arr s-arr csg-arr lookup-arr line-cmds true true true)))
+)

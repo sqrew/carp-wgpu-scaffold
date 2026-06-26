@@ -9,6 +9,7 @@
   (use Volume)
   (use Color)
   (use Lifetime)
+  (use Engine)
 
   (defn spawn! [world db pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
@@ -23,6 +24,7 @@
         (ECS.add-component! world &exp-ent (Explosion.init 0.1 20.0 max-radius force pres-val temp-val (Maybe.Nothing)))
         ())))
 
+  (sig step-explosions! (Fn [(Ref Engine.Engine) (Ref GameWorld) (Ref FieldDatabase) Double] ()))
   (defn step-explosions! [e world db dt]
     (do
       (ECS.query world [ent (exp Explosion) (g-ref GeometryRef) (rb RigidBody)]

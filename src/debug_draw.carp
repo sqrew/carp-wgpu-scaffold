@@ -8,8 +8,8 @@
   (use Geometry)
   (use WGPURenderer)
 
-  (defn submit-line! [ren start end color]
-    (WGPURenderer.submit! ren (RenderCommand.DrawLine @start @end @color)))
+  (defn submit-line! [r-db start end color]
+    (Array.push-back! (RenderDatabase.line-commands r-db) (RenderCommand.DrawLine @start @end @color)))
 
   (defn circle! [ren center radius rot axis1 axis2 color]
     (let [segments 16
