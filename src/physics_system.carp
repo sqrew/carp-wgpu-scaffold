@@ -32,7 +32,7 @@
         h)))
 
   (defn sample-static-world [world-data p]
-    (World.sample-voxel-grid-trilinear world-data p))
+    (Svo.sample-sdf-at (World.svo world-data) p))
 
   (defn estimate-sdf-normal [world-data p]
     (let [eps 0.001

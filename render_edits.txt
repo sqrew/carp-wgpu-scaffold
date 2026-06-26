@@ -1,0 +1,239 @@
+Step 2167 has 4 chunks:
+--- Chunk 1 (lines 23 - 30) ---
+TARGET:
+(deftemplate ints-array->ptr (Fn [(Ref (Array Int))] (Ptr Int))
+  "int* $NAME(Array__int* arr)"
+  "$DECL { return (int*)arr->data; }")
+
+(deftemplate uniform-buffer-get-buffer (Fn [(Ptr WGPUUniformBufferWrapper)] WGPUBuffer)
+  "WGPUBuffer $NAME(WGPUUniformBufferWrapper* ub)"
+  "$DECL { return ub->buffer; }")
+REPLACEMENT:
+(deftemplate ints-array->ptr (Fn [(Ref (Array Int))] (Ptr Int))
+  "int* $NAME(Array__int* arr)"
+  "$DECL { return (int*)arr->data; }")
+
+(deftemplate uniform-buffer-get-buffer (Fn [(Ptr WGPUUniformBufferWrapper)] WGPUBuffer)
+  "WGPUBuffer $NAME(WGPUUniformBufferWrapper* ub)"
+  "$DECL { return ub->buffer; }")
+
+(deftemplate create-svo-bind-group
+  (Fn [(Ptr WGPUContext) (Ptr WGPURenderPipelineWrapper)
+       WGPUBuffer WGPUBuffer (Ptr WGPUUniformBufferWrapper)
+       WGPUBuffer WGPUBuffer
+       (Ptr WGPURenderTexture) WGPUSampler] WGPUBindGroup)
+  "WGPUBindGroup $NAME(WGPUContext* ctx, WGPURenderPipelineWrapper* pipe, WGPUBuffer grid, WGPUBuffer csg, WGPUUniformBufferWrapper* ub, WGPUBuffer svo_nodes, WGPUBuffer svo_leaves, WGPURenderTexture* noise_tex, WGPUSampler noise_samp)"
+  "$DECL {
+      WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipe->pipeline, 0);
+      if (!layout) return NULL;
+      WGPUBindGroupEntry entries[7] = {
+          { .binding = 0, .buffer = grid, .offset = 0, .size = WGPU_WHOLE_SIZE },
+          { .binding = 1, .buffer = ub->buffer, .offset = 0, .size = ub->size },
+          { .binding = 2, .buffer = csg, .offset = 0, .size = WGPU_WHOLE_SIZE },
+          { .binding = 3, .buffer = svo_nodes, .offset = 0, .size = WGPU_WHOLE_SIZE },
+          { .binding = 4, .buffer = svo_leaves, .offset = 0, .size = WGPU_WHOLE_SIZE },
+          { .binding = 6, .textureView = noise_tex->view },
+          { .binding = 7, .sampler = noise_samp }
+      };
+      WGPUBindGroupDescriptor desc = {
+          .layout = layout,
+          .entryCount = 7,
+          .entries = entries
+      };
+      WGPUBindGroup bg = wgpuDeviceCreateBindGroup(ctx->device, &desc);
+      wgpuBindGroupLayoutRelease(layout);
+      return bg;
+  }")
+
+(deftemplate write-svo-nodes-to-buffer
+  (Fn [(Ptr WGPUContext) WGPUBuffer (Ref (Array SvoNode))] ())
+  "void $NAME(WGPUContext* ctx, WGPUBuffer buf, Array* arr)"
+  "$DECL {
+      wgpu_write_buffer(ctx, buf, arr->data, arr->len * 16);
+  }")
+
+(deftemplate write-svo-leaves-to-buffer
+  (Fn [(Ptr WGPUContext) WGPUBuffer (Ref (Array LeafVoxel))] ())
+  "void $NAME(WGPUContext* ctx, WGPUBuffer buf, Array* arr)"
+  "$DECL {
+      wgpu_write_buffer(ctx, buf, arr->data, arr->len * 20);
+  }")
+========================================
+--- Chunk 2 (lines 35 - 60) ---
+TARGET:
+(deftype WGPURenderer [
+  pipeline (Ptr WGPURenderPipelineWrapper)
+  u-buffer (Ptr WGPUUniformBufferWrapper)
+  s-buffer WGPUBuffer
+  csg-buffer WGPUBuffer
+  bind-group WGPUBindGroup
+  depth-texture (Ptr WGPUDepthTexture)
+  line-pass LinePassRenderer
+  commands (Array RenderCommand)
+  u-data (Array Float)
+  s-data (Array Float)
+  csg-data (Array Float)
+  voxel-texture (Ptr WGPURenderTexture)
+  voxel-sampler WGPUSampler
+  voxel-data (Array Float)
+  voxel-dirty Bool
+  carve-pipeline WGPUComputePipeline
+  pack-pipeline WGPUComputePipeline
+  voxel-gpu-buffer WGPUBuffer
+  voxel-half-buffer WGPUBuffer
+  carve-params-buffer WGPUBuffer
+  chunk-lookup-buffer (Ptr WGPUUniformBufferWrapper)
+  noise-texture (Ptr WGPURenderTexture)
+  noise-sampler WGPUSampler
+])
+REPLACEMENT:
+(deftype WGPURenderer [
+  pipeline (Ptr WGPURenderPipelineWrapper)
+  u-buffer (Ptr WGPUUniformBufferWrapper)
+  s-buffer WGPUBuffer
+  csg-buffer WGPUBuffer
+  bind-group WGPUBindGroup
+  depth-texture (Ptr WGPUDepthTexture)
+  line-pass LinePassRenderer
+  commands (Array RenderCommand)
+  u-data (Array Float)
+  s-data (Array Float)
+  csg-data (Array Float)
+  voxel-texture (Ptr WGPURenderTexture)
+  voxel-sampler WGPUSampler
+  voxel-data (Array Float)
+  voxel-dirty Bool
+  carve-pipeline WGPUComputePipeline
+  pack-pipeline WGPUComputePipeline
+  voxel-gpu-buffer WGPUBuffer
+  voxel-half-buffer WGPUBuffer
+  carve-params-buffer WGPUBuffer
+  chunk-lookup-buffer (Ptr WGPUUniformBufferWrapper)
+  noise-texture (Ptr WGPURenderTexture)
+  noise-sampler WGPUSampler
+  svo-nodes-buffer WGPUBuffer
+  svo-leaves-buffer WGPUBuffer
+])
+========================================
+--- Chunk 3 (lines 217 - 256) ---
+TARGET:
+                          (match (WGPURender.create-uniform-buffer ctx 6928)
+                            (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Chunk lookup buffer failed: " e)))
+                            (Result.Success chunk-lookup-b)
+                               (let [raw-lookup-buf (uniform-buffer-get-buffer chunk-lookup-b)]
+                                (match (WGPURender.create-3d-texture ctx 32 32 32 "rgba16float")
+                                  (Result.Error e) (do (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise 3D Texture failed: " e)))
+                                  (Result.Success noise-tex)
+                                    (match (WGPURender.create-sampler-repeat ctx)
+                                      (Result.Error e) (do (WGPURender.free-render-texture noise-tex) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise Repeat Sampler failed: " e)))
+                                      (Result.Success noise-samp)
+                                        (do
+                                          (WGPURenderer.initialize-noise-texture! ctx noise-tex)
+                                          (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
+                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
+                                            (Result.Success pipe)
+                                              (match (WGPURender.create-voxel-render-bind-group-chunked ctx pipe sb csg-b ub voxel-tex voxel-samp raw-lookup-buf noise-tex noise-samp)
+                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
+                                                (Result.Success bg)
+                                                  (match (WGPURender.create-depth-texture ctx width height)
+                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
+                                                    (Result.Success dt)
+                                                      (match (LinePass.create ctx format 10000)
+                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
+                                                        (Result.Success lp)
+                                                          (match (WGPU.create-buffer ctx 524288)
+                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel GPU Buffer failed: " e)))
+                                                            (Result.Success v-gpu-b)
+                                                              (match (WGPU.create-buffer ctx 262144)
+                                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
+                                                                (Result.Success v-half-b)
+                                                                  (match (WGPU.create-buffer ctx 12)
+                                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
+                                                                    (Result.Success c-params-b)
+                                                                      (match (WGPU.create-pipeline ctx Shaders.carve-shader "main")
+                                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve pipeline failed: " e)))
+                                                                        (Result.Success c-pipe)
+                                                                          (match (WGPU.create-pipeline ctx Shaders.pack-shader "main")
+                                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
+                                                                            (Result.Success p-pipe)
+                                                                               (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true c-pipe p-pipe v-gpu-b v-half-b c-params-b chunk-lookup-b noise-tex noise-samp)))))))))))))))))))))))
+REPLACEMENT:
+                          (match (WGPURender.create-uniform-buffer ctx 6928)
+                            (Result.Error e) (do (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Chunk lookup buffer failed: " e)))
+                            (Result.Success chunk-lookup-b)
+                              (match (WGPU.create-buffer ctx (* 262144 16))
+                                (Result.Error e) (do (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "SVO nodes failed: " e)))
+                                (Result.Success svo-nodes-b)
+                                  (match (WGPU.create-buffer ctx (* 262144 20))
+                                    (Result.Error e) (do (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "SVO leaves failed: " e)))
+                                    (Result.Success svo-leaves-b)
+                                       (let [raw-lookup-buf (uniform-buffer-get-buffer chunk-lookup-b)]
+                                        (match (WGPURender.create-3d-texture ctx 32 32 32 "rgba16float")
+                                          (Result.Error e) (do (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise 3D Texture failed: " e)))
+                                          (Result.Success noise-tex)
+                                            (match (WGPURender.create-sampler-repeat ctx)
+                                              (Result.Error e) (do (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Noise Repeat Sampler failed: " e)))
+                                              (Result.Success noise-samp)
+                                                (do
+                                                  (WGPURenderer.initialize-noise-texture! ctx noise-tex)
+                                                  (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &format)
+                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
+                                                    (Result.Success pipe)
+                                                      (match (create-svo-bind-group ctx pipe sb csg-b ub svo-nodes-b svo-leaves-b noise-tex noise-samp)
+                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
+                                                        (Result.Success bg)
+                                                          (match (WGPURender.create-depth-texture ctx width height)
+                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
+                                                            (Result.Success dt)
+                                                              (match (LinePass.create ctx format 10000)
+                                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
+                                                                (Result.Success lp)
+                                                                  (match (WGPU.create-buffer ctx 524288)
+                                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel GPU Buffer failed: " e)))
+                                                                    (Result.Success v-gpu-b)
+                                                                      (match (WGPU.create-buffer ctx 262144)
+                                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
+                                                                        (Result.Success v-half-b)
+                                                                          (match (WGPU.create-buffer ctx 12)
+                                                                            (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
+                                                                            (Result.Success c-params-b)
+                                                                              (match (WGPU.create-pipeline ctx Shaders.carve-shader "main")
+                                                                                (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve pipeline failed: " e)))
+                                                                                (Result.Success c-pipe)
+                                                                                  (match (WGPU.create-pipeline ctx Shaders.pack-shader "main")
+                                                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer svo-leaves-b) (WGPU.free-buffer svo-nodes-b) (WGPURender.free-uniform-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
+                                                                                    (Result.Success p-pipe)
+                                                                                       (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true c-pipe p-pipe v-gpu-b v-half-b c-params-b chunk-lookup-b noise-tex noise-samp svo-nodes-b svo-leaves-b)))))))))))))))))))))))))))
+========================================
+--- Chunk 4 (lines 515 - 537) ---
+TARGET:
+            (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
+              (do
+                (if (Array.empty? craters)
+                  (VoxelBaker.bake-voxel-grid! ctx ren grid world world-data)
+                  (do
+                    (for [i 0 (Array.length craters)]
+                      (let [crater (Array.unsafe-nth craters i)
+                            pos (CraterSpawnData.pos crater)
+                            rad @(CraterSpawnData.radius crater)
+                            op @(CraterSpawnData.op-type crater)
+                            chunks (World.chunks world-data)]
+                        (for [j 0 (Array.length chunks)]
+                          (let [chunk (Array.unsafe-nth chunks j)]
+                            (when (VoxelBaker.chunk-overlaps-sphere? chunk pos rad)
+                              (do
+                                (if (< op 0.5)
+                                    (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad)
+                                    (VoxelBaker.build-voxel-grid-cpu! chunk pos rad))
+                                (Chunk.set-modified! chunk true)
+                                (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
+                                (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))))))))))
+                (WGPURenderer.set-voxel-dirty! ren false)))
+REPLACEMENT:
+            (when (or @(WGPURenderer.voxel-dirty ren) voxel-dirty)
+              (do
+                (World.rebuild-svo! world-data world)
+                (write-svo-nodes-to-buffer ctx @(WGPURenderer.svo-nodes-buffer ren) (Svo.nodes (World.svo world-data)))
+                (write-svo-leaves-to-buffer ctx @(WGPURenderer.svo-leaves-buffer ren) (Svo.leaves (World.svo world-data)))
+                (WGPURenderer.set-voxel-dirty! ren false)))
+========================================

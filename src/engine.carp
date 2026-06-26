@@ -195,6 +195,7 @@
                 (ECS.add-component! &world &ent color)
                 (ECS.add-component! &world &ent (GeometryRef.init geom-id))))))
 
+          (World.rebuild-svo! &world-data &world)
           (Engine.init 
             (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
             (Clock.new)

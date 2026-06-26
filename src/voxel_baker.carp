@@ -118,7 +118,7 @@
                     p (Vector3.init px py pz)
                     
                     ;; Compute procedural terrain height using 2D fBm
-                    terrain-h (* (fbm2d (* px 0.015) (* pz 0.015)) 25.0)
+                    terrain-h (* (ProceduralNoise.fbm2d (* px 0.015) (* pz 0.015)) 25.0)
                     ;; Center heightfield so hills go up and down
                     final-h (- terrain-h 15.0)
                     
@@ -126,12 +126,12 @@
                     terrain-d (- py final-h)
                     
                     ;; Carve out caves if below terrain height using 3D noise
-                    cave-val (if (< terrain-d 0.0)
-                                 (noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
+                    cave-val (if (and (< terrain-d 0.0) (> py -40.0))
+                                 (ProceduralNoise.noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
                                  0.0)
                     
                     ;; Compute smooth cave SDF (using optimal 1/0.08 = 12.5 scale factor for correct gradient of 1.0)
-                    cave-sdf (if (< terrain-d 0.0)
+                    cave-sdf (if (and (< terrain-d 0.0) (> py -40.0))
                                  (* (- cave-val 0.65) 12.5)
                                  -1000.0)
                     
