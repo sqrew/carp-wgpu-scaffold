@@ -81,8 +81,7 @@
   (defn get-surface-qy [qx qz]
     (let [px (* (Double.from-int qx) 32.0)
           pz (* (Double.from-int qz) 32.0)
-          terrain-h (* (fbm2d (* px 0.015) (* pz 0.015)) 25.0)
-          final-h (- terrain-h 15.0)]
+          final-h (get-terrain-height px pz)]
       (the Int (Double.to-int (Double.floor (/ final-h 32.0))))))
 
   (sig float-from-int (Fn [Int] Float))

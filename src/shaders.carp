@@ -89,6 +89,42 @@
           return n1 + n2 + n3;
       }
 
+      fn rigid_fbm2d(x: f32, z: f32) -> f32 {
+          let n1 = 1.0 - abs(noise2d(x, z) * 2.0 - 1.0);
+          let n2 = 0.5 * (1.0 - abs(noise2d(x * 2.0, z * 2.0) * 2.0 - 1.0));
+          let n3 = 0.25 * (1.0 - abs(noise2d(x * 4.0, z * 4.0) * 2.0 - 1.0));
+          return n1 + n2 + n3;
+      }
+
+      fn fade(t: f32) -> f32 {
+          return t * t * (3.0 - 2.0 * t);
+      }
+
+      fn get_terrain_height(x: f32, z: f32) -> f32 {
+          let b_val = noise2d(x * 0.003, z * 0.003);
+          let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
+          let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
+          let w3 = clamp(1.0 - abs(b_val - 0.8) / 0.35, 0.0, 1.0);
+          let sum = w1 + w2 + w3;
+          let sum_safe = select(sum, 0.0001, sum < 0.0001);
+          let W1 = w1 / sum_safe;
+          let W2 = w2 / sum_safe;
+          let W3 = w3 / sum_safe;
+          
+          let h_plains = fbm2d(x * 0.015, z * 0.015) * 12.0 - 18.0;
+          
+          let base_canyon = fbm2d(x * 0.012, z * 0.012);
+          let bc5 = base_canyon * 5.0;
+          let fbc = floor(bc5);
+          let tbc = bc5 - fbc;
+          let stepped_canyon = fbc + 0.1 * fade(tbc);
+          let h_canyons = (stepped_canyon / 5.0) * 45.0 - 25.0;
+          
+          let h_mountains = rigid_fbm2d(x * 0.01, z * 0.01) * 60.0 - 30.0;
+          
+          return W1 * h_plains + W2 * h_canyons + W3 * h_mountains;
+      }
+
       fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
           let qx = gx >> 5u;
           let qy = gy >> 5u;
@@ -128,8 +164,7 @@
               let px = f32(gx) + 0.5;
               let py = f32(gy) + 0.5;
               let pz = f32(gz) + 0.5;
-              let terrain_h = fbm2d(px * 0.015, pz * 0.015) * 25.0;
-              let final_h = terrain_h - 15.0;
+              let final_h = get_terrain_height(px, pz);
               
               let dist_xz = length(vec2<f32>(px, pz) - u.cam_pos.xz);
               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
@@ -172,8 +207,7 @@
           }
           
           if (!chunk_is_loaded) {
-              let terrain_h = fbm2d(p.x * 0.015, p.z * 0.015) * 25.0;
-              let final_h = terrain_h - 15.0;
+              let final_h = get_terrain_height(p.x, p.z);
               
               let dist_xz = length(p.xz - u.cam_pos.xz);
               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
@@ -835,13 +869,70 @@
                     specular = pow(max(dot(normal, half_dir), 0.0), 16.0) * 0.08 * shadow;
                 }
 
-               // Determine the base terrain color at p
-               let mat_id = i32(round(voxel_val.y));
-               var terr_col = vec3<f32>(0.4, 0.4, 0.5);
-                if (mat_id == 1) {
-                    terr_col = vec3<f32>(0.25, 0.25, 0.25);
-                } else if (mat_id == 2) {
-                    terr_col = vec3<f32>(0.2, 0.8, 0.2);
+                // Determine the base terrain color at p using dynamic biome blending
+                let mat_id = i32(round(voxel_val.y));
+                var terr_col = vec3<f32>(0.4, 0.4, 0.5);
+                if (mat_id == 1 || mat_id == 2 || hitId == -1.0) {
+                    let b_val = noise2d(p.x * 0.003, p.z * 0.003);
+                    let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
+                    let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
+                    let w3 = clamp(1.0 - abs(b_val - 0.8) / 0.35, 0.0, 1.0);
+                    let sum = w1 + w2 + w3;
+                    let sum_safe = select(sum, 0.0001, sum < 0.0001);
+                    let W1 = w1 / sum_safe;
+                    let W2 = w2 / sum_safe;
+                    let W3 = w3 / sum_safe;
+                    
+                    // 1. Lush Plains Biome: Blend greens and add dark soil on steep banks/slopes
+                    let grass_noise = fbm2d(p.x * 0.15, p.z * 0.15);
+                    let grass_base = vec3<f32>(0.16, 0.36, 0.12);
+                    let grass_high = vec3<f32>(0.32, 0.48, 0.18);
+                    let grass_moss = vec3<f32>(0.22, 0.38, 0.14);
+                    var plains_green = mix(grass_base, grass_high, grass_noise);
+                    plains_green = mix(plains_green, grass_moss, noise2d(p.x * 0.04, p.z * 0.04));
+                    
+                    let dirt_col = vec3<f32>(0.30, 0.22, 0.14);
+                    let plains_slope = smoothstep(0.70, 0.85, normal.y);
+                    let col_plains = mix(dirt_col, plains_green, plains_slope);
+                    
+                    // 2. Terraced Canyons Biome: Layered sedimentary clay (terracotta, ochre orange, purple silt, sandstone beige)
+                    let wave_distortion = fbm2d(p.x * 0.05, p.z * 0.05) * 2.5;
+                    let layer_y = p.y + wave_distortion;
+                    let layer_freq = 0.18;
+                    let band_sin = sin(layer_y * layer_freq);
+                    let band_cos = cos(layer_y * 0.09 - 1.2);
+                    
+                    let clay_red    = vec3<f32>(0.58, 0.22, 0.12);
+                    let clay_ochre  = vec3<f32>(0.68, 0.38, 0.18);
+                    let clay_purple = vec3<f32>(0.38, 0.28, 0.32);
+                    let clay_beige  = vec3<f32>(0.72, 0.62, 0.48);
+                    
+                    var canyon_rock = mix(clay_red, clay_ochre, band_sin * 0.5 + 0.5);
+                    canyon_rock = mix(canyon_rock, clay_purple, clamp(band_cos * 1.5, -1.0, 1.0) * 0.5 + 0.5);
+                    canyon_rock = mix(canyon_rock, clay_beige, noise2d(p.x * 0.08, p.z * 0.08) * 0.3);
+                    
+                    let canyon_dust = vec3<f32>(0.76, 0.58, 0.40);
+                    let canyon_slope = smoothstep(0.85, 0.94, normal.y);
+                    let col_canyons = mix(canyon_rock, canyon_dust, canyon_slope);
+                    
+                    // 3. Sharp Ridge Mountains Biome: Granite rock with alpine snow caps
+                    let rock_dark  = vec3<f32>(0.18, 0.20, 0.24);
+                    let rock_light = vec3<f32>(0.34, 0.36, 0.40);
+                    let rock_noise = fbm2d(p.x * 0.08, p.z * 0.08);
+                    let mountain_rock = mix(rock_dark, rock_light, rock_noise);
+                    
+                    let mountain_snow = vec3<f32>(0.92, 0.94, 0.98);
+                    let snow_noise = noise2d(p.x * 0.2, p.z * 0.2) * 2.0;
+                    let snow_threshold_y = 12.0 + snow_noise;
+                    
+                    let altitude_factor = clamp((p.y - snow_threshold_y) / 8.0, 0.0, 1.0);
+                    let slope_factor = smoothstep(0.40, 0.65, normal.y);
+                    let extreme_altitude = clamp((p.y - 22.0) / 10.0, 0.0, 1.0);
+                    let snow_accum = clamp(altitude_factor * slope_factor + extreme_altitude * smoothstep(0.20, 0.45, normal.y), 0.0, 1.0);
+                    
+                    let col_mountains = mix(mountain_rock, mountain_snow, snow_accum);
+                    
+                    terr_col = W1 * col_plains + W2 * col_canyons + W3 * col_mountains;
                 }
 
                 var base_col = terr_col;

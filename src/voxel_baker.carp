@@ -117,10 +117,8 @@
                     pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
                     p (Vector3.init px py pz)
                     
-                    ;; Compute procedural terrain height using 2D fBm
-                    terrain-h (* (fbm2d (* px 0.015) (* pz 0.015)) 25.0)
-                    ;; Center heightfield so hills go up and down
-                    final-h (- terrain-h 15.0)
+                    ;; Compute procedural terrain height using 2D multi-biome engine
+                    final-h (WGPURenderer.get-terrain-height px pz)
                     
                     ;; Base SDF is the distance to the terrain height
                     terrain-d (- py final-h)

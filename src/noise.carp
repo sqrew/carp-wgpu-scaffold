@@ -35,6 +35,35 @@
           n3 (* 0.25 (noise2d (* x 4.0) (* z 4.0)))]
       (+ n1 (+ n2 n3))))
 
+  (defn clamp-double [low high val]
+    (if (< val low) low (if (> val high) high val)))
+
+  (defn rigid-fbm2d [x z]
+    (let [n1 (- 1.0 (Double.abs (- (* (noise2d x z) 2.0) 1.0)))
+          n2 (* 0.5 (- 1.0 (Double.abs (- (* (noise2d (* x 2.0) (* z 2.0)) 2.0) 1.0))))
+          n3 (* 0.25 (- 1.0 (Double.abs (- (* (noise2d (* x 4.0) (* z 4.0)) 2.0) 1.0))))]
+      (+ n1 (+ n2 n3))))
+
+  (defn get-terrain-height [x z]
+    (let [b-val (noise2d (* x 0.003) (* z 0.003))
+          w1 (clamp-double 0.0 1.0 (- 1.0 (/ (Double.abs (- b-val 0.2)) 0.35)))
+          w2 (clamp-double 0.0 1.0 (- 1.0 (/ (Double.abs (- b-val 0.5)) 0.35)))
+          w3 (clamp-double 0.0 1.0 (- 1.0 (/ (Double.abs (- b-val 0.8)) 0.35)))
+          sum (+ w1 (+ w2 w3))
+          sum-safe (if (< sum 0.0001) 0.0001 sum)
+          W1 (/ w1 sum-safe)
+          W2 (/ w2 sum-safe)
+          W3 (/ w3 sum-safe)
+          h-plains (- (* (fbm2d (* x 0.015) (* z 0.015)) 12.0) 18.0)
+          base-canyon (fbm2d (* x 0.012) (* z 0.012))
+          bc5 (* base-canyon 5.0)
+          fbc (Double.floor bc5)
+          tbc (- bc5 fbc)
+          stepped-canyon (+ fbc (* 0.1 (fade tbc)))
+          h-canyons (- (* (/ stepped-canyon 5.0) 45.0) 25.0)
+          h-mountains (- (* (rigid-fbm2d (* x 0.01) (* z 0.01)) 60.0) 30.0)]
+      (+ (* W1 h-plains) (+ (* W2 h-canyons) (* W3 h-mountains)))))
+
   (defn hash3d [x y z]
     (let [s (Double.sin (+ (+ (* x 12.9898) (* y 78.233)) (* z 144.7272)))
           mult (* s 43758.5453123)]
