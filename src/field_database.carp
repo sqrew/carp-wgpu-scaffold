@@ -22,12 +22,17 @@
   charges (Array Double)
   gravities (Array Double)
   velocities (Array (Vector3 Double))
+  handle-to-index (Array Int)
 ])
 
 (defmodule FieldDatabase
   (use Array)
   (use Vector3)
   (use Quaternion)
+
+  (defn ensure-capacity! [arr size default-val]
+    (while (< (Array.length arr) size)
+      (Array.push-back! arr default-val)))
 
   (defn new []
     (let [n 128
@@ -46,8 +51,9 @@
           pres (the (Array Double) (replicate n &0.0))
           ch (the (Array Double) (replicate n &0.0))
           grav (the (Array Double) (replicate n &-999.0))
-          vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel)))
+          vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
+          h-to-idx (the (Array Int) (replicate 1024 &-1))]
+      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel h-to-idx)))
   (sig new (Fn [] FieldDatabase))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
   (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double)] Int))
@@ -65,16 +71,10 @@
   (sig set-root-csg-index! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int] ()))
 
   (defn get-index-by-handle [db handle]
-    (let [found-idx -1
-          active-arr (FieldDatabase.active db)
-          handles-arr (FieldDatabase.handles db)
-          len (Array.length active-arr)]
-      (do
-        (for [i 0 len]
-          (when @(Array.unsafe-nth active-arr i)
-            (when (Handle.equal? (Array.unsafe-nth handles-arr i) handle)
-              (set! found-idx i))))
-        found-idx)))
+    (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
+      (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
+          @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
+          -1)))
 
   (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val]
     (let [found-idx -1
@@ -86,51 +86,60 @@
           (when (not @(Array.unsafe-nth active-arr i))
             (when (= found-idx -1)
               (set! found-idx i))))
-        (if (= found-idx -1)
-          (let [new-id len]
-            (do
-              (Array.push-back! active-arr true)
-              (Array.push-back! handles-arr @handle)
-              (Array.push-back! (FieldDatabase.shape-types db) shape-type-val)
-              (Array.push-back! (FieldDatabase.params db) params-val)
-              (Array.push-back! (FieldDatabase.positions db) pos-val)
-              (Array.push-back! (FieldDatabase.rotations db) rot-val)
-              (Array.push-back! (FieldDatabase.scales db) scale-val)
-              (Array.push-back! (FieldDatabase.root-csg-indices db) csg-idx-val)
-              (Array.push-back! (FieldDatabase.colors db) color-val)
-              (Array.push-back! (FieldDatabase.temperatures db) temp-val)
-              (Array.push-back! (FieldDatabase.ages db) age-val)
-              (Array.push-back! (FieldDatabase.humidities db) hum-val)
-              (Array.push-back! (FieldDatabase.pressures db) pres-val)
-              (Array.push-back! (FieldDatabase.charges db) charge-val)
-              (Array.push-back! (FieldDatabase.gravities db) gravity-val)
-              (Array.push-back! (FieldDatabase.velocities db) vel-val)
-              new-id))
+        (let [idx (if (= found-idx -1)
+                      (let [new-id len]
+                        (do
+                          (Array.push-back! active-arr true)
+                          (Array.push-back! handles-arr @handle)
+                          (Array.push-back! (FieldDatabase.shape-types db) shape-type-val)
+                          (Array.push-back! (FieldDatabase.params db) params-val)
+                          (Array.push-back! (FieldDatabase.positions db) pos-val)
+                          (Array.push-back! (FieldDatabase.rotations db) rot-val)
+                          (Array.push-back! (FieldDatabase.scales db) scale-val)
+                          (Array.push-back! (FieldDatabase.root-csg-indices db) csg-idx-val)
+                          (Array.push-back! (FieldDatabase.colors db) color-val)
+                          (Array.push-back! (FieldDatabase.temperatures db) temp-val)
+                          (Array.push-back! (FieldDatabase.ages db) age-val)
+                          (Array.push-back! (FieldDatabase.humidities db) hum-val)
+                          (Array.push-back! (FieldDatabase.pressures db) pres-val)
+                          (Array.push-back! (FieldDatabase.charges db) charge-val)
+                          (Array.push-back! (FieldDatabase.gravities db) gravity-val)
+                          (Array.push-back! (FieldDatabase.velocities db) vel-val)
+                          new-id))
+                      (do
+                        (Array.aset! active-arr found-idx true)
+                        (Array.aset! handles-arr found-idx @handle)
+                        (Array.aset! (FieldDatabase.shape-types db) found-idx shape-type-val)
+                        (Array.aset! (FieldDatabase.params db) found-idx params-val)
+                        (Array.aset! (FieldDatabase.positions db) found-idx pos-val)
+                        (Array.aset! (FieldDatabase.rotations db) found-idx rot-val)
+                        (Array.aset! (FieldDatabase.scales db) found-idx scale-val)
+                        (Array.aset! (FieldDatabase.root-csg-indices db) found-idx csg-idx-val)
+                        (Array.aset! (FieldDatabase.colors db) found-idx color-val)
+                        (Array.aset! (FieldDatabase.temperatures db) found-idx temp-val)
+                        (Array.aset! (FieldDatabase.ages db) found-idx age-val)
+                        (Array.aset! (FieldDatabase.humidities db) found-idx hum-val)
+                        (Array.aset! (FieldDatabase.pressures db) found-idx pres-val)
+                        (Array.aset! (FieldDatabase.charges db) found-idx charge-val)
+                        (Array.aset! (FieldDatabase.gravities db) found-idx gravity-val)
+                        (Array.aset! (FieldDatabase.velocities db) found-idx vel-val)
+                        found-idx))
+              h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
           (do
-            (Array.aset! active-arr found-idx true)
-            (Array.aset! handles-arr found-idx @handle)
-            (Array.aset! (FieldDatabase.shape-types db) found-idx shape-type-val)
-            (Array.aset! (FieldDatabase.params db) found-idx params-val)
-            (Array.aset! (FieldDatabase.positions db) found-idx pos-val)
-            (Array.aset! (FieldDatabase.rotations db) found-idx rot-val)
-            (Array.aset! (FieldDatabase.scales db) found-idx scale-val)
-            (Array.aset! (FieldDatabase.root-csg-indices db) found-idx csg-idx-val)
-            (Array.aset! (FieldDatabase.colors db) found-idx color-val)
-            (Array.aset! (FieldDatabase.temperatures db) found-idx temp-val)
-            (Array.aset! (FieldDatabase.ages db) found-idx age-val)
-            (Array.aset! (FieldDatabase.humidities db) found-idx hum-val)
-            (Array.aset! (FieldDatabase.pressures db) found-idx pres-val)
-            (Array.aset! (FieldDatabase.charges db) found-idx charge-val)
-            (Array.aset! (FieldDatabase.gravities db) found-idx gravity-val)
-            (Array.aset! (FieldDatabase.velocities db) found-idx vel-val)
-            found-idx)))))
+            (ensure-capacity! (FieldDatabase.handle-to-index db) (inc h-idx) -1)
+            (Array.aset! (FieldDatabase.handle-to-index db) h-idx idx)
+            idx)))))
 
   (defn release-instance! [db handle]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (Array.aset! (FieldDatabase.active db) id false)
-          (Array.aset! (FieldDatabase.shape-types db) id -1)))))
+    (let [id (get-index-by-handle db handle)
+          h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
+      (do
+        (when (>= id 0)
+          (do
+            (Array.aset! (FieldDatabase.active db) id false)
+            (Array.aset! (FieldDatabase.shape-types db) id -1)))
+        (when (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
+          (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)))))
 
   (defn set-scale! [db handle val]
     (let [id (get-index-by-handle db handle)]
