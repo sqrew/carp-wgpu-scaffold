@@ -13,9 +13,10 @@
 
   (defn spawn! [world db pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
-          params (Vector4.init max-radius 0.0 0.0 0.0)]
+          params (Vector4.init max-radius 0.0 0.0 0.0)
+          fi (FieldInstance.init 1 params 0.1 -1 temp-val 0.0 0.0 pres-val 0.0 -999.0)]
       (do
-        (ignore (FieldDatabase.register-instance! db (ECS.Entity.handle &exp-ent) 1 params @pos (Quaternion.identity) 0.1 -1 (Vector3.init 1.0 0.2 0.0) temp-val 0.0 0.0 pres-val 0.0 -999.0 (Vector3.init 0.0 0.0 0.0)))
+        (ECS.add-component! world &exp-ent fi)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.1)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
         (ECS.add-component! world &exp-ent (Color.init (Vector3.init 1.0 0.3 0.0)))
@@ -26,19 +27,18 @@
   (sig step-explosions! (Fn [(Ref Engine.Engine) (Ref GameWorld) (Ref FieldDatabase) Double] ()))
   (defn step-explosions! [e world db dt]
     (do
-      (ECS.query world [ent (exp Explosion) (rb RigidBody)]
+      (ECS.query world [ent (exp Explosion) (rb RigidBody) (fi FieldInstance)]
         (let [current-r (Explosion.radius exp)
               max-r @(Explosion.max-radius exp)
               speed @(Explosion.radius-speed exp)
               pos (RigidBody.position rb)
-              new-r (+ @current-r (* speed dt))
-              h (ECS.Entity.handle &ent)]
+              new-r (+ @current-r (* speed dt))]
           (if (< new-r max-r)
               (do
                 (Explosion.set-radius! exp new-r)
                 (Engine.set-grid-dirty! e true)
-                ;; Update scale in the FieldDatabase
-                (FieldDatabase.set-scale! db h new-r)
+                ;; Update scale in the FieldInstance component
+                (FieldInstance.set-scale! fi new-r)
                 ;; Decay values dynamically
                 (let [raw-decay (- 1.0 (/ new-r max-r))
                       decay-factor (if (< raw-decay 0.0) 0.0 raw-decay)
@@ -46,8 +46,8 @@
                       raw-temp (* @(Explosion.temperature exp) decay-factor)
                       new-temp (if (< raw-temp 0.001) 0.001 raw-temp)]
                   (do
-                    (FieldDatabase.set-pressure! db h new-pres)
-                    (FieldDatabase.set-temperature! db h new-temp)))
+                    (FieldInstance.set-pressure! fi new-pres)
+                    (FieldInstance.set-temperature! fi new-temp)))
                 ;; 1. Carve terrain dynamically as shockwave expands
                 (let [new-handle (Engine.spawn-crater! e @pos new-r @(Explosion.crater-handle exp))]
                   (Explosion.set-crater-handle! exp new-handle)))

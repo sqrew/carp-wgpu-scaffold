@@ -49,13 +49,14 @@
                   (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0)))
           params (Vector4.init p-x p-y p-z p-w)
           root-csg-idx (if bouncy -99 -1)
-          geom-id (FieldDatabase.register-instance! db (ECS.Entity.handle &bullet-ent) (+ shape-type 1) params @pos (Quaternion.identity) scale root-csg-idx @c-val 0.0 0.0 0.0 0.0 0.0 -999.0 @vel)]
+          fi (FieldInstance.init (+ shape-type 1) params scale root-csg-idx 0.0 0.0 0.0 0.0 0.0 -999.0)]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)
         (Body.set-angular-velocity! (RigidBody.body &rb) @ang-vel)
         (ECS.add-component! world &bullet-ent rb)
         (ECS.add-component! world &bullet-ent col)
         (ECS.add-component! world &bullet-ent color)
+        (ECS.add-component! world &bullet-ent fi)
         (ECS.add-component! world &bullet-ent (Lifetime.init (if bouncy 12.0 5.0)))
         (when bouncy
           (ECS.add-component! world &bullet-ent (BouncyTag.init))))))

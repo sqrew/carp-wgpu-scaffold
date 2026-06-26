@@ -82,5 +82,22 @@
   (implements zero GravitySource.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource)
+(deftype FieldInstance [
+  shape-type Int
+  params Vector4
+  scale Double
+  csg-index Int
+  temperature Double
+  age Double
+  humidity Double
+  pressure Double
+  charge Double
+  gravity Double
+])
+(defmodule FieldInstance
+  (defn zero [] (FieldInstance.init 0 (Vector4.init-zero) 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0))
+  (implements zero FieldInstance.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource FieldInstance)
 
