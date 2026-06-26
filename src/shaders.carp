@@ -56,42 +56,90 @@
           return r;
       }
 
-       fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
-            let qx = gx >> 5u;
-            let qy = gy >> 5u;
-            let qz = gz >> 5u;
-            
-            let lx = i32(u32(gx) & 31u);
-            let ly = i32(u32(gy) & 31u);
-            let lz = i32(u32(gz) & 31u);
-            
-            let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-            if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-            }
-            
-            let mx = u32(local_q.x) >> 2u;
-            let my = u32(local_q.y) >> 2u;
-            let mz = u32(local_q.z) >> 2u;
-            let skip_idx = mx + (my << 3u) + (mz << 6u);
-            let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-            if (skip_val == 0) {
-                return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-            }
-            
-            let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-            let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
-            if (slot < 0) {
-                return vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-            }
-            
-            let slot_x = slot % 12;
-            let slot_y = (slot / 12) % 12;
-            let slot_z = slot / 144;
-            
-            let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
-            return textureLoad(voxel_texture, atlas_coord, 0);
-       }
+      fn hash2d(x: f32, z: f32) -> f32 {
+          let s = sin(x * 12.9898 + z * 78.233);
+          let mult = s * 43758.5453123;
+          return mult - floor(mult);
+      }
+
+      fn noise2d(x: f32, z: f32) -> f32 {
+          let fx = floor(x);
+          let fz = floor(z);
+          let tx = x - fx;
+          let tz = z - fz;
+          
+          let v00 = hash2d(fx, fz);
+          let v10 = hash2d(fx + 1.0, fz);
+          let v01 = hash2d(fx, fz + 1.0);
+          let v11 = hash2d(fx + 1.0, fz + 1.0);
+          
+          let u = tx * tx * (3.0 - 2.0 * tx);
+          let v = tz * tz * (3.0 - 2.0 * tz);
+          
+          let x0 = mix(v00, v10, u);
+          let x1 = mix(v01, v11, u);
+          
+          return mix(x0, x1, v);
+      }
+
+      fn fbm2d(x: f32, z: f32) -> f32 {
+          let n1 = noise2d(x, z);
+          let n2 = 0.5 * noise2d(x * 2.0, z * 2.0);
+          let n3 = 0.25 * noise2d(x * 4.0, z * 4.0);
+          return n1 + n2 + n3;
+      }
+
+      fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> 5u;
+          let qy = gy >> 5u;
+          let qz = gz >> 5u;
+          
+          let lx = i32(u32(gx) & 31u);
+          let ly = i32(u32(gy) & 31u);
+          let lz = i32(u32(gz) & 31u);
+          
+          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+          var is_loaded = false;
+          var slot = -1;
+          
+          if (!(any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32)))) {
+              let mx = u32(local_q.x) >> 2u;
+              let my = u32(local_q.y) >> 2u;
+              let mz = u32(local_q.z) >> 2u;
+              let skip_idx = mx + (my << 3u) + (mz << 6u);
+              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+              if (skip_val != 0) {
+                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                  if (slot >= 0) {
+                      is_loaded = true;
+                  }
+              }
+          }
+          
+          if (is_loaded) {
+              let slot_x = slot % 12;
+              let slot_y = (slot / 12) % 12;
+              let slot_z = slot / 144;
+              
+              let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
+              return textureLoad(voxel_texture, atlas_coord, 0);
+          } else {
+              let px = f32(gx) + 0.5;
+              let py = f32(gy) + 0.5;
+              let pz = f32(gz) + 0.5;
+              let terrain_h = fbm2d(px * 0.015, pz * 0.015) * 25.0;
+              let final_h = terrain_h - 15.0;
+              
+              let dist_xz = length(vec2<f32>(px, pz) - u.cam_pos.xz);
+              let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
+              let detail_h = fbm2d(px * 0.07, pz * 0.07) * 4.5 * detail_fade;
+              
+              let terrain_d = py - (final_h + detail_h);
+              let mat_id = 1.0;
+              return vec4<f32>(terrain_d, mat_id, 0.0, 0.0);
+          }
+      }
 
       fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
           let tx = p / 1.0 - vec3<f32>(0.5);
@@ -102,6 +150,40 @@
           let ly = i32(u32(c0.y) & 31u);
           let lz = i32(u32(c0.z) & 31u);
           
+          let qx = c0.x >> 5u;
+          let qy = c0.y >> 5u;
+          let qz = c0.z >> 5u;
+          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+          var chunk_is_loaded = false;
+          var slot = -1;
+          if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
+              let mx = u32(local_q.x) >> 2u;
+              let my = u32(local_q.y) >> 2u;
+              let mz = u32(local_q.z) >> 2u;
+              let skip_idx = mx + (my << 3u) + (mz << 6u);
+              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+              if (skip_val != 0) {
+                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                  if (slot >= 0) {
+                      chunk_is_loaded = true;
+                  }
+              }
+          }
+          
+          if (!chunk_is_loaded) {
+              let terrain_h = fbm2d(p.x * 0.015, p.z * 0.015) * 25.0;
+              let final_h = terrain_h - 15.0;
+              
+              let dist_xz = length(p.xz - u.cam_pos.xz);
+              let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
+              let detail_h = fbm2d(p.x * 0.07, p.z * 0.07) * 4.5 * detail_fade;
+              
+              let terrain_d = p.y - (final_h + detail_h);
+              let mat_id = 1.0;
+              return vec2<f32>(terrain_d, mat_id);
+          }
+          
           var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           var v2 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
@@ -110,38 +192,21 @@
           var v5 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           var v6 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-
+          
           if (lx < 31 && ly < 31 && lz < 31) {
-              let qx = c0.x >> 5u;
-              let qy = c0.y >> 5u;
-              let qz = c0.z >> 5u;
-              let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-              if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
-                  let mx = u32(local_q.x) >> 2u;
-                  let my = u32(local_q.y) >> 2u;
-                  let mz = u32(local_q.z) >> 2u;
-                  let skip_idx = mx + (my << 3u) + (mz << 6u);
-                  let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-                  if (skip_val != 0) {
-                      let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                      let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
-                      if (slot >= 0) {
-                          let slot_x = slot % 12;
-                          let slot_y = (slot / 12) % 12;
-                          let slot_z = slot / 144;
-                          let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
-                          
-                          v0 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz),     0);
-                          v1 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
-                          v2 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
-                          v3 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
-                          v4 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
-                          v5 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
-                          v6 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
-                          v7 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
-                      }
-                  }
-              }
+              let slot_x = slot % 12;
+              let slot_y = (slot / 12) % 12;
+              let slot_z = slot / 144;
+              let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
+              
+              v0 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz),     0);
+              v1 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
+              v2 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
+              v3 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
+              v4 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
+              v5 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
+              v6 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
+              v7 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
           } else {
               v0 = getVoxelAt(c0.x,     c0.y,     c0.z);
               v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z);
@@ -152,15 +217,27 @@
               v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1);
               v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1);
           }
-           v0.x = min(v0.x, 1.5);
-           v1.x = min(v1.x, 1.5);
-           v2.x = min(v2.x, 1.5);
-           v3.x = min(v3.x, 1.5);
-           v4.x = min(v4.x, 1.5);
-           v5.x = min(v5.x, 1.5);
-           v6.x = min(v6.x, 1.5);
-           v7.x = min(v7.x, 1.5);
-          let sf = f * f * (3.0 - 2.0 * f); // Hermite interpolation
+          
+          v0.x = min(v0.x, 1.5);
+          v1.x = min(v1.x, 1.5);
+          v2.x = min(v2.x, 1.5);
+          v3.x = min(v3.x, 1.5);
+          v4.x = min(v4.x, 1.5);
+          v5.x = min(v5.x, 1.5);
+          v6.x = min(v6.x, 1.5);
+          v7.x = min(v7.x, 1.5);
+          
+          var best_mat = v0.y;
+          var min_d_corner = v0.x;
+          if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
+          if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
+          if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
+          if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
+          if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
+          if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
+          if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
+          
+          let sf = f * f * (3.0 - 2.0 * f);
           let v_01 = mix(v0, v1, sf.x);
           let v_23 = mix(v2, v3, sf.x);
           let v_45 = mix(v4, v5, sf.x);
@@ -173,16 +250,6 @@
           
           let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
           let dummy = dummy_sample.r * 1e-10;
-          
-          var best_mat = v0.y;
-          var min_d_corner = v0.x;
-          if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
-          if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
-          if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
-          if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
-          if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
-          if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
-          if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
           
           return vec2<f32>(tex_val.r + dummy, best_mat);
       }
@@ -695,7 +762,7 @@
                         normal = vec3<f32>(0.0, 1.0, 0.0);
                     }
                 } else {
-                    let eps = 0.06;
+                    let eps = 0.05 + 0.0005 * t;
                     let d1 = worldSDF(p + vec3<f32>( eps, -eps, -eps), rd, dither_threshold, false).y;
                     let d2 = worldSDF(p + vec3<f32>(-eps, -eps,  eps), rd, dither_threshold, false).y;
                     let d3 = worldSDF(p + vec3<f32>(-eps,  eps, -eps), rd, dither_threshold, false).y;
@@ -734,7 +801,8 @@
                 var shadow = 1.0;
                 if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
                     let max_steps = select(40, 24, u.shadow_ao_quality.x == 1.0);
-                    shadow = getShadow(p + normal * 0.02, light_dir, 0.02, 120.0, 16.0, dither_threshold, max_steps);
+                    let shadow_dist = select(120.0, 250.0, t > 200.0);
+                    shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
                 }
 
                 // Hemispherical ambient skylight (cool blueish sky, warm dark grey ground bounce)
@@ -742,7 +810,8 @@
                 let ground_color = vec3<f32>(0.06, 0.05, 0.05);
                 var sky_visibility = 1.0;
                 if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                    sky_visibility = getShadow(p + normal * 0.05, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, 32);
+                    let shadow_dist = select(120.0, 250.0, t > 200.0);
+                    sky_visibility = getShadow(p + normal * 0.05, vec3<f32>(0.0, 1.0, 0.0), 0.05, shadow_dist, 4.0, dither_threshold, 32);
                 }
                 let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5) * sky_visibility;
 
