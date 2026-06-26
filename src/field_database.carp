@@ -7,6 +7,7 @@
 
 (deftype FieldDatabase [
   active (Array Bool)
+  handles (Array (Handle ()))
   shape-types (Array Int)
   params (Array Vector4)
   positions (Array (Vector3 Double))
@@ -31,6 +32,7 @@
   (defn new []
     (let [n 128
           act (the (Array Bool) (replicate n &false))
+          hnd (the (Array (Handle ())) (replicate n &(Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l))))
           st (the (Array Int) (replicate n &-1))
           pm (the (Array Vector4) (replicate n &(Vector4.init-zero)))
           pos (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
@@ -45,11 +47,39 @@
           ch (the (Array Double) (replicate n &0.0))
           grav (the (Array Double) (replicate n &-999.0))
           vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
-      (FieldDatabase.init act st pm pos rot sc csg col temp age hum pres ch grav vel)))
+      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel)))
+  (sig new (Fn [] FieldDatabase))
+  (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
+  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double)] Int))
+  (sig release-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ()))] ()))
+  (sig set-scale! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-velocity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
+  (sig set-pressure! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-gravity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-temperature! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-position! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
+  (sig set-rotation! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Quaternion] ()))
+  (sig set-age! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-humidity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-charge! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-root-csg-index! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int] ()))
 
-  (defn register-instance! [db shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val]
+  (defn get-index-by-handle [db handle]
     (let [found-idx -1
           active-arr (FieldDatabase.active db)
+          handles-arr (FieldDatabase.handles db)
+          len (Array.length active-arr)]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active-arr i)
+            (when (Handle.equal? (Array.unsafe-nth handles-arr i) handle)
+              (set! found-idx i))))
+        found-idx)))
+
+  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val]
+    (let [found-idx -1
+          active-arr (FieldDatabase.active db)
+          handles-arr (FieldDatabase.handles db)
           len (Array.length active-arr)]
       (do
         (for [i 0 len]
@@ -60,6 +90,7 @@
           (let [new-id len]
             (do
               (Array.push-back! active-arr true)
+              (Array.push-back! handles-arr @handle)
               (Array.push-back! (FieldDatabase.shape-types db) shape-type-val)
               (Array.push-back! (FieldDatabase.params db) params-val)
               (Array.push-back! (FieldDatabase.positions db) pos-val)
@@ -77,6 +108,7 @@
               new-id))
           (do
             (Array.aset! active-arr found-idx true)
+            (Array.aset! handles-arr found-idx @handle)
             (Array.aset! (FieldDatabase.shape-types db) found-idx shape-type-val)
             (Array.aset! (FieldDatabase.params db) found-idx params-val)
             (Array.aset! (FieldDatabase.positions db) found-idx pos-val)
@@ -93,44 +125,67 @@
             (Array.aset! (FieldDatabase.velocities db) found-idx vel-val)
             found-idx)))))
 
-  (defn release-instance! [db id]
-    (do
-      (Array.aset! (FieldDatabase.active db) id false)
-      (Array.aset! (FieldDatabase.shape-types db) id -1)))
+  (defn release-instance! [db handle]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (do
+          (Array.aset! (FieldDatabase.active db) id false)
+          (Array.aset! (FieldDatabase.shape-types db) id -1)))))
 
-  (defn set-scale! [db id val]
-    (Array.aset! (FieldDatabase.scales db) id val))
+  (defn set-scale! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.scales db) id val))))
 
-  (defn set-velocity! [db id val]
-    (Array.aset! (FieldDatabase.velocities db) id val))
+  (defn set-velocity! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.velocities db) id val))))
 
-  (defn set-pressure! [db id val]
-    (Array.aset! (FieldDatabase.pressures db) id val))
+  (defn set-pressure! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.pressures db) id val))))
 
-  (defn set-gravity! [db id val]
-    (Array.aset! (FieldDatabase.gravities db) id val))
+  (defn set-gravity! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.gravities db) id val))))
 
+  (defn set-temperature! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.temperatures db) id val))))
 
-  (defn set-temperature! [db id val]
-    (Array.aset! (FieldDatabase.temperatures db) id val))
+  (defn set-position! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.positions db) id val))))
 
-  (defn set-position! [db id val]
-    (Array.aset! (FieldDatabase.positions db) id val))
+  (defn set-rotation! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.rotations db) id val))))
 
-  (defn set-rotation! [db id val]
-    (Array.aset! (FieldDatabase.rotations db) id val))
+  (defn set-age! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.ages db) id val))))
 
-  (defn set-age! [db id val]
-    (Array.aset! (FieldDatabase.ages db) id val))
+  (defn set-humidity! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.humidities db) id val))))
 
-  (defn set-humidity! [db id val]
-    (Array.aset! (FieldDatabase.humidities db) id val))
+  (defn set-charge! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.charges db) id val))))
 
-  (defn set-charge! [db id val]
-    (Array.aset! (FieldDatabase.charges db) id val))
-
-  (defn set-root-csg-index! [db id val]
-    (Array.aset! (FieldDatabase.root-csg-indices db) id val))
+  (defn set-root-csg-index! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (FieldDatabase.root-csg-indices db) id val))))
 
   (sig calculate-pressure-gradient (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector3 Double)))
   (defn calculate-pressure-gradient [db pos]

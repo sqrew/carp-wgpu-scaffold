@@ -56,12 +56,6 @@
   (implements zero BouncyTag.zero)
 )
 
-(deftype GeometryRef [id Int])
-(defmodule GeometryRef
-  (defn zero [] (GeometryRef.init -1))
-  (implements zero GeometryRef.zero)
-)
-
 (deftype Explosion [
   radius Double
   radius-speed Double
@@ -88,5 +82,5 @@
   (implements zero GravitySource.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef Explosion StaticWorldTag GravitySource)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource)
 
