@@ -32,7 +32,8 @@
           temp-field (Field.init (FieldKernelStorage.init db-ptr 0) FieldKernelStorage.sample FieldKernelStorage.update)
           age-field (Field.init (FieldKernelStorage.init db-ptr 1) FieldKernelStorage.sample FieldKernelStorage.update)
           hum-field (Field.init (FieldKernelStorage.init db-ptr 2) FieldKernelStorage.sample FieldKernelStorage.update)
-          ch-field (Field.init (FieldKernelStorage.init db-ptr 4) FieldKernelStorage.sample FieldKernelStorage.update)]
+          ch-field (Field.init (FieldKernelStorage.init db-ptr 4) FieldKernelStorage.sample FieldKernelStorage.update)
+          grav-field (Field.init (FieldKernelStorage.init db-ptr 5) FieldKernelStorage.sample FieldKernelStorage.update)]
       (do
         (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
         (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
@@ -67,7 +68,7 @@
               root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
               params (Vector4.init 1.5 1.5 1.5 0.0)
-              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) 0.0 0.0 0.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
+              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params root-pos (Quaternion.identity) 1.0 -1 (Vector3.init 0.2 0.8 0.2) 0.0 0.0 0.0 0.0 0.0 -999.0 (Vector3.init 0.0 0.0 0.0))
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -103,6 +104,70 @@
             (ECS.add-component! &world &p-ent p-rot)
             (ECS.add-component! &world &p-ent (PlayerTag.init))))
 
+        ;; Create Zero-Gravity Field (Purple Sphere, 0.0 Gravity)
+        (let [zero-g-ent (GameWorld.create-entity! &world)
+              zero-g-pos (Vector3.init 15.0 5.0 -2.0)
+              zero-g-rb (RigidBody.static @&zero-g-pos (Quaternion.identity) 0.5 0.5)
+              zero-g-color-v (Vector3.init 0.6 0.1 0.8)
+              zero-g-color (Color.init @&zero-g-color-v)
+              params (Vector4.init 1.0 0.0 0.0 0.0)
+              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 1 params zero-g-pos (Quaternion.identity) 4.0 -1 zero-g-color-v 0.0 0.0 0.0 0.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
+              gs (GravitySource.init 0.0)]
+          (do
+            (ECS.add-component! &world &zero-g-ent zero-g-rb)
+            (ECS.add-component! &world &zero-g-ent zero-g-color)
+            (ECS.add-component! &world &zero-g-ent (GeometryRef.init geom-id))
+            (ECS.add-component! &world &zero-g-ent gs)))
+
+        ;; Spawn test boxes inside Zero-Gravity Field
+        (for [y 0 3]
+          (let [box-ent (GameWorld.create-entity! &world)
+                pos (Vector3.init 15.0 (+ 3.0 (* (Double.from-int y) 1.5)) -2.0)
+                rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
+                vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
+                col (Collidable.init @(ECS.Entity.handle &box-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+                c-val (Vector3.init 0.6 0.1 0.8)
+                color (Color.init @&c-val)
+                params (Vector4.init 0.5 0.5 0.5 0.0)
+                geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0 -999.0 (Vector3.init 0.0 0.0 0.0))]
+            (do
+              (ECS.add-component! &world &box-ent rb)
+              (ECS.add-component! &world &box-ent col)
+              (ECS.add-component! &world &box-ent color)
+              (ECS.add-component! &world &box-ent (GeometryRef.init geom-id)))))
+
+        ;; Create Inverted Gravity Field (Red Sphere, -1.0 Gravity)
+        (let [inv-g-ent (GameWorld.create-entity! &world)
+              inv-g-pos (Vector3.init -5.0 5.0 -2.0)
+              inv-g-rb (RigidBody.static @&inv-g-pos (Quaternion.identity) 0.5 0.5)
+              inv-g-color-v (Vector3.init 0.9 0.2 0.1)
+              inv-g-color (Color.init @&inv-g-color-v)
+              params (Vector4.init 1.0 0.0 0.0 0.0)
+              geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 1 params inv-g-pos (Quaternion.identity) 4.0 -1 inv-g-color-v 0.0 0.0 0.0 0.0 0.0 -1.0 (Vector3.init 0.0 0.0 0.0))
+              gs (GravitySource.init -1.0)]
+          (do
+            (ECS.add-component! &world &inv-g-ent inv-g-rb)
+            (ECS.add-component! &world &inv-g-ent inv-g-color)
+            (ECS.add-component! &world &inv-g-ent (GeometryRef.init geom-id))
+            (ECS.add-component! &world &inv-g-ent gs)))
+
+        ;; Spawn test boxes inside Inverted Gravity Field
+        (for [y 0 3]
+          (let [box-ent (GameWorld.create-entity! &world)
+                pos (Vector3.init -5.0 (+ 3.0 (* (Double.from-int y) 1.5)) -2.0)
+                rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
+                vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
+                col (Collidable.init @(ECS.Entity.handle &box-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+                c-val (Vector3.init 0.9 0.2 0.1)
+                color (Color.init @&c-val)
+                params (Vector4.init 0.5 0.5 0.5 0.0)
+                geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0 -999.0 (Vector3.init 0.0 0.0 0.0))]
+            (do
+              (ECS.add-component! &world &box-ent rb)
+              (ECS.add-component! &world &box-ent col)
+              (ECS.add-component! &world &box-ent color)
+              (ECS.add-component! &world &box-ent (GeometryRef.init geom-id)))))
+
         (for [y 0 5]
           (for [x 0 2]
             (let [ent (GameWorld.create-entity! &world)
@@ -123,7 +188,7 @@
                                     (Vector3.init 1.0 1.0 0.0))))
                   color (Color.init @&c-val)
                   params (Vector4.init 0.5 0.5 0.5 0.0)
-                  geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
+                  geom-id (FieldDatabase.register-instance! (World.sdf-db &world-data) 2 params pos (Quaternion.identity) 1.0 -1 c-val 0.0 0.0 0.0 0.0 0.0 -999.0 (Vector3.init 0.0 0.0 0.0))]
               (do
                 (ECS.add-component! &world &ent rb)
                 (ECS.add-component! &world &ent col)
@@ -153,7 +218,8 @@
             temp-field
             age-field
             hum-field
-            ch-field))))
+            ch-field
+            grav-field))))
 
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
@@ -228,14 +294,16 @@
           temp-field (Engine.temperature-field e)
           age-field (Engine.age-field e)
           hum-field (Engine.humidity-field e)
-          ch-field (Engine.charge-field e)]
+          ch-field (Engine.charge-field e)
+          grav-field (Engine.gravity-field e)]
       (do
         (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
         (FieldKernelStorageVector.set-db-ptr! (Field.storage vel-field) db-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage temp-field) db-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage age-field) db-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage ch-field) db-ptr))))
+        (FieldKernelStorage.set-db-ptr! (Field.storage ch-field) db-ptr)
+        (FieldKernelStorage.set-db-ptr! (Field.storage grav-field) db-ptr))))
 
   (defn register-internal-handlers! [e]
     (Coordinator.subscribe! (Engine.coordinator e)
@@ -484,6 +552,7 @@
                             (FieldDatabase.set-humidity! db id humidity)
                             (FieldDatabase.set-pressure! db id pressure)
                             (FieldDatabase.set-charge! db id 0.0)
+                            (FieldDatabase.set-gravity! db id -999.0)
                             (FieldDatabase.set-root-csg-index! db id csg-idx)
                             (if (> speed 0.1)
                               (let [dir (Vector3.mul vel (/ 1.0 speed))
@@ -493,13 +562,23 @@
                               (FieldDatabase.set-rotation! db id (Quaternion.identity)))))))
                     (do
                       (FieldDatabase.set-rotation! db id @(RigidBody.rotation rb))
-                      (when (not (ECS.has-component? world &ent Explosion))
-                        (do
-                          (FieldDatabase.set-temperature! db id 0.0)
-                          (FieldDatabase.set-age! db id 0.0)
-                          (FieldDatabase.set-humidity! db id 0.0)
-                          (FieldDatabase.set-pressure! db id 0.0)
-                          (FieldDatabase.set-charge! db id 0.0))))))))))
+                      (if (ECS.has-component? world &ent GravitySource)
+                        (ECS.with-components world @&ent [e (gs GravitySource)]
+                          (do
+                            (FieldDatabase.set-temperature! db id 0.0)
+                            (FieldDatabase.set-age! db id 0.0)
+                            (FieldDatabase.set-humidity! db id 0.0)
+                            (FieldDatabase.set-pressure! db id 0.0)
+                            (FieldDatabase.set-charge! db id 0.0)
+                            (FieldDatabase.set-gravity! db id @(GravitySource.strength gs))))
+                        (when (not (ECS.has-component? world &ent Explosion))
+                          (do
+                            (FieldDatabase.set-temperature! db id 0.0)
+                            (FieldDatabase.set-age! db id 0.0)
+                            (FieldDatabase.set-humidity! db id 0.0)
+                            (FieldDatabase.set-pressure! db id 0.0)
+                            (FieldDatabase.set-charge! db id 0.0)
+                            (FieldDatabase.set-gravity! db id -999.0)))))))))))
         (WGPURenderer.submit! ren (RenderCommand.SetBg @(Engine.bg-color e)))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]

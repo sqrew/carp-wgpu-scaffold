@@ -86,7 +86,9 @@
                   ind-vel (Field.sample vel-field pos)
                   rel-vel (Vector3.sub &ind-vel vel)
                   drag-force (Vector3.mul &rel-vel drag-coeff)
-                  total-force (Vector3.add &(Vector3.add &gravity &p-force) &drag-force)]
+                  g-scale (Field.sample (Engine.gravity-field e) pos)
+                  local-gravity (Vector3.mul &gravity g-scale)
+                  total-force (Vector3.add &(Vector3.add &local-gravity &p-force) &drag-force)]
               (do
                 (RigidBody.apply-force! rb &total-force)
                 (RigidBody.step-custom! rb fixed-dt fixed-dt)))))

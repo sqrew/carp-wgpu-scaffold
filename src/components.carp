@@ -82,4 +82,11 @@
   (implements zero StaticWorldTag.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef Explosion StaticWorldTag)
+(deftype GravitySource [strength Double])
+(defmodule GravitySource
+  (defn zero [] (GravitySource.init 1.0))
+  (implements zero GravitySource.zero)
+)
+
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag GeometryRef Explosion StaticWorldTag GravitySource)
+

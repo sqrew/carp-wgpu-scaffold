@@ -13,7 +13,7 @@
   (defn spawn! [world db pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
           params (Vector4.init max-radius 0.0 0.0 0.0)
-          geom-id (FieldDatabase.register-instance! db 1 params @pos (Quaternion.identity) 0.1 -1 (Vector3.init 1.0 0.2 0.0) temp-val 0.0 0.0 pres-val 0.0 (Vector3.init 0.0 0.0 0.0))]
+          geom-id (FieldDatabase.register-instance! db 1 params @pos (Quaternion.identity) 0.1 -1 (Vector3.init 1.0 0.2 0.0) temp-val 0.0 0.0 pres-val 0.0 -999.0 (Vector3.init 0.0 0.0 0.0))]
       (do
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.1)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))

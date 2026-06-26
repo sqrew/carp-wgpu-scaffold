@@ -195,7 +195,7 @@
 ;; 4. Field Instance Kernel Scalar Field Storage
 (deftype FieldKernelStorage [
   db-ptr (Ptr FieldDatabase)
-  array-idx Int ;; 0=temp, 1=age, 2=hum, 3=pres, 4=charge
+  array-idx Int ;; 0=temp, 1=age, 2=hum, 3=pres, 4=charge, 5=gravity
 ])
 
 (defmodule FieldKernelStorage
@@ -210,7 +210,8 @@
                  (if (= idx 1) (FieldDatabase.ages db)
                  (if (= idx 2) (FieldDatabase.humidities db)
                  (if (= idx 3) (FieldDatabase.pressures db)
-                 (FieldDatabase.charges db)))))
+                 (if (= idx 4) (FieldDatabase.charges db)
+                 (FieldDatabase.gravities db))))))
           
           sum-val 0.0
           sum-W 0.0
@@ -223,16 +224,19 @@
                   scale @(Array.unsafe-nth scales i)
                   val @(Array.unsafe-nth values i)
                   to-pos (Vector3.sub pos inst-pos)
-                  dist (Vector3.mag &to-pos)
-                  d (- dist scale)
-                  w-denom (+ (* d d) epsilon)
-                  w (/ 1.0 w-denom)]
-              (do
-                (set! sum-val (+ sum-val (* val w)))
-                (set! sum-W (+ sum-W w))))))
+                  dist (Vector3.mag &to-pos)]
+              (when (or (not (= idx 5))
+                        (and (not (= val -999.0))
+                             (< dist (* scale 2.0))))
+                (let [d (- dist scale)
+                      w-denom (+ (* d d) epsilon)
+                      w (/ 1.0 w-denom)]
+                  (do
+                    (set! sum-val (+ sum-val (* val w)))
+                    (set! sum-W (+ sum-W w))))))))
         (if (> sum-W 0.00001)
           (/ sum-val sum-W)
-          0.0))))
+          (if (= idx 5) 1.0 0.0)))))
 
   (defn update [storage dt]
     ())

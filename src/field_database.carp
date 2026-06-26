@@ -19,6 +19,7 @@
   humidities (Array Double)
   pressures (Array Double)
   charges (Array Double)
+  gravities (Array Double)
   velocities (Array (Vector3 Double))
 ])
 
@@ -42,10 +43,11 @@
           hum (the (Array Double) (replicate n &0.0))
           pres (the (Array Double) (replicate n &0.0))
           ch (the (Array Double) (replicate n &0.0))
+          grav (the (Array Double) (replicate n &-999.0))
           vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
-      (FieldDatabase.init act st pm pos rot sc csg col temp age hum pres ch vel)))
+      (FieldDatabase.init act st pm pos rot sc csg col temp age hum pres ch grav vel)))
 
-  (defn register-instance! [db shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val vel-val]
+  (defn register-instance! [db shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val]
     (let [found-idx -1
           active-arr (FieldDatabase.active db)
           len (Array.length active-arr)]
@@ -70,6 +72,7 @@
               (Array.push-back! (FieldDatabase.humidities db) hum-val)
               (Array.push-back! (FieldDatabase.pressures db) pres-val)
               (Array.push-back! (FieldDatabase.charges db) charge-val)
+              (Array.push-back! (FieldDatabase.gravities db) gravity-val)
               (Array.push-back! (FieldDatabase.velocities db) vel-val)
               new-id))
           (do
@@ -86,6 +89,7 @@
             (Array.aset! (FieldDatabase.humidities db) found-idx hum-val)
             (Array.aset! (FieldDatabase.pressures db) found-idx pres-val)
             (Array.aset! (FieldDatabase.charges db) found-idx charge-val)
+            (Array.aset! (FieldDatabase.gravities db) found-idx gravity-val)
             (Array.aset! (FieldDatabase.velocities db) found-idx vel-val)
             found-idx)))))
 
@@ -102,6 +106,10 @@
 
   (defn set-pressure! [db id val]
     (Array.aset! (FieldDatabase.pressures db) id val))
+
+  (defn set-gravity! [db id val]
+    (Array.aset! (FieldDatabase.gravities db) id val))
+
 
   (defn set-temperature! [db id val]
     (Array.aset! (FieldDatabase.temperatures db) id val))

@@ -25,6 +25,7 @@
     age-field (Field FieldKernelStorage Double)
     humidity-field (Field FieldKernelStorage Double)
     charge-field (Field FieldKernelStorage Double)
+    gravity-field (Field FieldKernelStorage Double)
   ])
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))
