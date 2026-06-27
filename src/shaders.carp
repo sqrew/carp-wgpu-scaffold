@@ -439,6 +439,7 @@
                       let s_data = u.instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
+                        if (s_data.sph_fields.x > 0.0) { continue; } // Ignore explosion colors in default fog/fluid
                         let csg_root_idx = i32(round(s_data.color_csg.w));
                         var s = 1.0;
                         if (csg_root_idx <= -99) {
@@ -785,6 +786,7 @@
                       let s_data = u.instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
+                        if (s_data.sph_fields.x > 0.0) { continue; } // Make explosion solid spheres invisible
                         var local_dist = 10000.0;
                         let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                         let csg_root_idx = i32(round(s_data.color_csg.w));
