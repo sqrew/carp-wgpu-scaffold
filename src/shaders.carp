@@ -125,6 +125,44 @@
           return W1 * h_plains + W2 * h_canyons + W3 * h_mountains;
       }
 
+      fn hash3d(x: f32, y: f32, z: f32) -> f32 {
+          let s = sin(x * 12.9898 + y * 78.233 + z * 144.7272);
+          let mult = s * 43758.5453123;
+          return mult - floor(mult);
+      }
+
+      fn noise3d(x: f32, y: f32, z: f32) -> f32 {
+          let fx = floor(x);
+          let fy = floor(y);
+          let fz = floor(z);
+          let tx = x - fx;
+          let ty = y - fy;
+          let tz = z - fz;
+          
+          let v000 = hash3d(fx, fy, fz);
+          let v100 = hash3d(fx + 1.0, fy, fz);
+          let v010 = hash3d(fx, fy + 1.0, fz);
+          let v110 = hash3d(fx + 1.0, fy + 1.0, fz);
+          let v001 = hash3d(fx, fy, fz + 1.0);
+          let v101 = hash3d(fx + 1.0, fy, fz + 1.0);
+          let v011 = hash3d(fx, fy + 1.0, fz + 1.0);
+          let v111 = hash3d(fx + 1.0, fy + 1.0, fz + 1.0);
+          
+          let u = tx * tx * (3.0 - 2.0 * tx);
+          let v = ty * ty * (3.0 - 2.0 * ty);
+          let w = tz * tz * (3.0 - 2.0 * tz);
+          
+          let x00 = mix(v000, v100, u);
+          let x10 = mix(v010, v110, u);
+          let x01 = mix(v001, v101, u);
+          let x11 = mix(v011, v111, u);
+          
+          let y0 = mix(x00, x10, v);
+          let y1 = mix(x01, x11, v);
+          
+          return mix(y0, y1, w);
+      }
+
       fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
           let qx = gx >> 5u;
           let qy = gy >> 5u;
@@ -170,9 +208,29 @@
               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
               let detail_h = fbm2d(px * 0.07, pz * 0.07) * 4.5 * detail_fade;
               
-              let terrain_d = py - (final_h + detail_h);
+              let base_terrain_d = py - final_h;
+              let terrain_d = base_terrain_d - detail_h;
+              
+              var cave_val = 0.0;
+              var cave_sdf = -1000.0;
+              if (base_terrain_d < 0.0) {
+                  cave_val = noise3d(px * 0.08, py * 0.08, pz * 0.08);
+                  cave_sdf = (cave_val - 0.65) * 12.5;
+              }
+              
+              let voxel_d = max(cave_sdf, terrain_d);
               let mat_id = 1.0;
-              return vec4<f32>(terrain_d, mat_id, 0.0, 0.0);
+              
+              let h_dx = get_terrain_height(px + 1.0, pz) - final_h;
+              let h_dz = get_terrain_height(px, pz + 1.0) - final_h;
+              let terrain_normal = normalize(vec3<f32>(-h_dx, 1.0, -h_dz));
+              
+              let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+              let shadow_factor = dot(terrain_normal, light_dir);
+              let fallback_shadow = clamp(0.2 + 0.8 * smoothstep(-0.2, 0.2, shadow_factor), 0.2, 1.0);
+              let fallback_ao = clamp(0.3 + 0.7 * terrain_normal.y, 0.1, 1.0);
+              
+              return vec4<f32>(voxel_d, mat_id, fallback_shadow, fallback_ao);
           }
       }
 
