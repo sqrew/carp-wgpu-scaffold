@@ -868,6 +868,7 @@
                         (Chunk.set-bake-progress! chunk-ref next-prog)
                         (when (= next-prog 32)
                           (do
+                            (VoxelBaker.compute-chunk-lighting! chunk-ref)
                             (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk-ref))
                             (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk-ref))))
                         (set! loaded-any true)))
@@ -949,6 +950,7 @@
                                 (if (< op 0.5)
                                     (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad)
                                     (VoxelBaker.build-voxel-grid-cpu! chunk pos rad))
+                                (VoxelBaker.compute-chunk-lighting! chunk)
                                 (Chunk.set-modified! chunk true)
                                 (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
                                 (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))))))))))

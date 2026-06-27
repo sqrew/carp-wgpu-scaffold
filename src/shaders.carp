@@ -176,7 +176,7 @@
           }
       }
 
-      fn sampleVoxelGrid(p: vec3<f32>) -> vec2<f32> {
+      fn sampleVoxelGrid(p: vec3<f32>) -> vec4<f32> {
           let tx = p / 1.0 - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
@@ -215,7 +215,7 @@
               
               let terrain_d = p.y - (final_h + detail_h);
               let mat_id = 1.0;
-              return vec2<f32>(terrain_d, mat_id);
+              return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
           }
           
           var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
@@ -285,7 +285,7 @@
           let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
           let dummy = dummy_sample.r * 1e-10;
           
-          return vec2<f32>(tex_val.r + dummy, best_mat);
+          return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
       }
 
        fn sampleVoxelGridPoint(p: vec3<f32>) -> vec2<f32> {
@@ -833,29 +833,40 @@
                 let diffuse = max(dot(normal, light_dir), 0.0);
 
                 var shadow = 1.0;
-                if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                    let max_steps = select(40, 24, u.shadow_ao_quality.x == 1.0);
-                    let shadow_dist = select(120.0, 250.0, t > 200.0);
-                    shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
+                var sky_visibility = 1.0;
+                var ao = 1.0;
+
+                let p_chunk = vec3<i32>(floor(p / 32.0));
+                let cam_chunk = vec3<i32>(floor(u.cam_pos.xyz / 32.0));
+                let chunk_diff = abs(p_chunk - cam_chunk);
+                let is_near = (chunk_diff.x <= 1 && chunk_diff.y <= 1 && chunk_diff.z <= 1);
+
+                if (is_near) {
+                    if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                        let max_steps = select(40, 24, u.shadow_ao_quality.x == 1.0);
+                        let shadow_dist = select(120.0, 250.0, t > 200.0);
+                        shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
+                    }
+                    if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                        let shadow_dist = select(120.0, 250.0, t > 200.0);
+                        sky_visibility = getShadow(p + normal * 0.05, vec3<f32>(0.0, 1.0, 0.0), 0.05, shadow_dist, 4.0, dither_threshold, 32);
+                    }
+                    if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
+                        ao = getAO(p, normal, dither_threshold);
+                    }
+                } else {
+                    shadow = voxel_val.z;
+                    sky_visibility = voxel_val.z;
+                    ao = voxel_val.w;
                 }
 
                 // Hemispherical ambient skylight (cool blueish sky, warm dark grey ground bounce)
                 let sky_color = vec3<f32>(0.15, 0.18, 0.25);
                 let ground_color = vec3<f32>(0.06, 0.05, 0.05);
-                var sky_visibility = 1.0;
-                if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                    let shadow_dist = select(120.0, 250.0, t > 200.0);
-                    sky_visibility = getShadow(p + normal * 0.05, vec3<f32>(0.0, 1.0, 0.0), 0.05, shadow_dist, 4.0, dither_threshold, 32);
-                }
                 let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5) * sky_visibility;
 
                 // Combine direct diffuse lighting and hemispherical ambient
                 var lighting = shadow * diffuse * vec3<f32>(1.0) + ambient;
-
-                var ao = 1.0;
-                if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
-                    ao = getAO(p, normal, dither_threshold);
-                }
 
                 var specular = 0.0;
                 let view_dir = normalize(u.cam_pos.xyz - p);
