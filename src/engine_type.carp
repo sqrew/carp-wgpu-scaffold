@@ -28,6 +28,7 @@
     charge-field (Field FieldKernelStorage Double)
     gravity-field (Field FieldKernelStorage Double)
     render-db RenderDatabase
+    volumetric-sdf Bool
   ])
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))

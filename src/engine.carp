@@ -57,6 +57,7 @@
         (InputManager.add-binding! &mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
         (InputManager.add-binding! &mgr "CycleViewMode" (InputSource.Key GLFW.Keycode.M) 1.0)
         (InputManager.add-binding! &mgr "CycleShadowQuality" (InputSource.Key GLFW.Keycode.O) 1.0)
+        (InputManager.add-binding! &mgr "ToggleVolumetricSdf" (InputSource.Key GLFW.Keycode.V) 1.0)
 
         ()
 
@@ -222,7 +223,8 @@
               hum-field
               ch-field
               grav-field
-              r-db)))))
+              r-db
+              false)))))
 
   (defn db [e]
     (World.sdf-db (Engine.world-data e)))
@@ -432,7 +434,14 @@
                 next (Int.mod (+ curr 1) 3)]
             (do
               (Engine.set-shadow-quality! e next)
-              (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next)))))))))
+              (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next))))))
+        (when (InputManager.action-pressed? mgr "ToggleVolumetricSdf")
+          (let [curr @(Engine.volumetric-sdf e)
+                next (not curr)]
+            (do
+              (Engine.set-volumetric-sdf! e next)
+              (Engine.set-grid-dirty! e true)
+              (IO.println &(str* "Volumetric SDF Fog Mode: " (if next "ON" "OFF")))))))))
 
   (defn tick-simulation! [e dt]
     (let [world (Engine.world e)
@@ -712,7 +721,7 @@
         (Array.aset! u-data 31 (Double.to-float (Double.from-int view-mode)))
         (Array.aset! u-data 32 (Double.to-float (Double.from-int shadow-quality)))
         (Array.aset! u-data 33 (Double.to-float (Double.from-int shadow-quality)))
-        (Array.aset! u-data 34 0.0f)
+        (Array.aset! u-data 34 (if @(Engine.volumetric-sdf e) 1.0f 0.0f))
         (Array.aset! u-data 35 0.0f)
 
         ;; 2. Populate Spheres (index >= 36)

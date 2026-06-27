@@ -505,6 +505,21 @@
            return vec3<f32>(0.0);
        }
 
+       fn getVoxelColor(p: vec3<f32>, mat_id: i32) -> vec3<f32> {
+           if (mat_id == 1) {
+               return vec3<f32>(0.22, 0.44, 0.16); // Lush green
+           } else if (mat_id == 2) {
+               return vec3<f32>(0.72, 0.38, 0.22); // Terracotta orange
+           } else if (mat_id == 3) {
+               return vec3<f32>(0.42, 0.42, 0.45); // Stone grey
+           } else if (mat_id == 4) {
+               return vec3<f32>(0.15, 0.35, 0.75); // Water blue
+           } else if (mat_id == 5) {
+               return vec3<f32>(0.76, 0.68, 0.48); // Sand beige
+           }
+           return vec3<f32>(0.4, 0.4, 0.5);
+       }
+
       fn getMetaballDist(p: vec3<f32>) -> f32 {
           let p_local = p - u.grid_origin.xyz;
           let gx = i32(floor(p_local.x / u.cell_size));
@@ -824,7 +839,10 @@
                     }
                     d = vec2<f32>(blended_d, idx);
                 }
-                let h_step = min(d.x, max(t_exit + 0.01, 0.05));
+                var h_step = min(d.x, max(t_exit + 0.01, 0.05));
+                if (u.shadow_ao_quality.z > 0.5) {
+                    h_step = d.x;
+                }
                 return vec4<f32>(h_step, d.x, d.y, metaball_d);
             } else {
                 return vec4<f32>(d.x, d.x, d.y, 10000.0);
@@ -902,71 +920,97 @@
             let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
             let ro = u.cam_pos.xyz;
             let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
-            
             let dither_threshold = getDitherThreshold(frag_in.position.xy);
             let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, 16);
            
            var t = 0.0;
-           var hitId = -1.0;
-           var final_metaball_d = 10000.0;
-           var fog_optical_depth = 0.0;
-           var fog_color_accum = vec3<f32>(0.0);
-              for(var i = 0; i < 80; i = i + 1) {
-                  let p = ro + rd * t;
-                  let res = worldSDF(p, rd, dither_threshold, true);
-                  hitId = res.z;
-                  final_metaball_d = res.w;
-                  if (res.y < 0.001) { break; }
-                  
-                  var dt = res.x;
-                  if (res.y < 1.5) {
-                      dt = res.y * 0.5;
+            var hitId = -1.0;
+            var final_metaball_d = 10000.0;
+            var fog_optical_depth = 0.0;
+            var fog_color_accum = vec3<f32>(0.0);
+            let is_volumetric = u.shadow_ao_quality.z > 0.5;
+               for(var i = 0; i < 80; i = i + 1) {
+                   let p = ro + rd * t;
+                   let res = worldSDF(p, rd, dither_threshold, true);
+                   hitId = res.z;
+                   final_metaball_d = res.w;
+                   if (res.y < 0.001 && !is_volumetric) { break; }
+                   
+                   var dt = res.x;
+                   if (is_volumetric) {
+                       if (res.y < 1.0) {
+                           dt = 0.4;
+                       } else {
+                           dt = min(res.x, res.y * 0.5);
+                       }
+                   } else {
+                       if (res.y < 1.5) {
+                           dt = res.y * 0.5;
+                       }
+                   }
+                   
+                   var sdf_density = 0.0;
+                   if (is_volumetric) {
+                        if (res.y < 0.0) {
+                            sdf_density = clamp(-res.y * 0.5, 0.0, 1.0) * 0.4;
+                        } else {
+                            sdf_density = clamp(1.0 - res.y / 8.0, 0.0, 1.0) * 0.08;
+                        }
+                   }
+                   
+                   let fields = getInterpolatedFields(p);
+                   let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02 + sdf_density;
+                   
+                   let base_sky = getSkyColor(rd);
+                   var local_fog_col = base_sky;
+                    if (is_volumetric && sdf_density > 0.0) {
+                        let height_factor = clamp((p.y - 5.0) / 15.0, 0.0, 1.0);
+                        let terr_col = mix(vec3<f32>(0.18, 0.38, 0.12), vec3<f32>(0.42, 0.42, 0.45), height_factor);
+                        let glow_factor = clamp(-res.y / 4.0, 0.0, 1.0);
+                        let sdf_col = mix(terr_col * 0.6, vec3<f32>(0.1, 0.3, 0.6), glow_factor);
+                        local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
+                   }
+                   
+                   let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
+                   if (color_weight > 0.0) {
+                       let inst_col = getInterpolatedColor(p);
+                       local_fog_col = mix(local_fog_col, inst_col, color_weight);
+                   }
+                   
+                   fog_color_accum += local_fog_col * density * dt;
+                   fog_optical_depth += density * dt;
+                   
+                   t += dt;
+                   if (t > 800.0) { break; }
+                   if (is_volumetric && fog_optical_depth > 5.3) { break; }
+               }
+              if (t <= 800.0 && !is_volumetric) {
+                  for (var j = 0; j < 2; j = j + 1) {
+                      let p = ro + rd * t;
+                      let res = worldSDF(p, rd, dither_threshold, true);
+                      hitId = res.z;
+                      final_metaball_d = res.w;
+                      let dt = res.y * 0.5;
+                      
+                      let fields = getInterpolatedFields(p);
+                      let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
+                      
+                      let base_sky = getSkyColor(rd);
+                      var local_fog_col = base_sky;
+                      let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
+                      if (color_weight > 0.0) {
+                          let inst_col = getInterpolatedColor(p);
+                          local_fog_col = mix(base_sky, inst_col, color_weight);
+                      }
+                      
+                      fog_color_accum += local_fog_col * density * dt;
+                      fog_optical_depth += density * dt;
+                      
+                      t += dt;
                   }
-                  
-                  let fields = getInterpolatedFields(p);
-                  let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
-                  
-                  let base_sky = getSkyColor(rd);
-                  var local_fog_col = base_sky;
-                  let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
-                  if (color_weight > 0.0) {
-                      let inst_col = getInterpolatedColor(p);
-                      local_fog_col = mix(base_sky, inst_col, color_weight);
-                  }
-                  
-                  fog_color_accum += local_fog_col * density * dt;
-                  fog_optical_depth += density * dt;
-                  
-                  t += dt;
-                  if (t > 800.0) { break; }
               }
-             if (t <= 800.0) {
-                 for (var j = 0; j < 2; j = j + 1) {
-                     let p = ro + rd * t;
-                     let res = worldSDF(p, rd, dither_threshold, true);
-                     hitId = res.z;
-                     final_metaball_d = res.w;
-                     let dt = res.y * 0.5;
-                     
-                     let fields = getInterpolatedFields(p);
-                     let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
-                     
-                     let base_sky = getSkyColor(rd);
-                     var local_fog_col = base_sky;
-                     let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
-                     if (color_weight > 0.0) {
-                         let inst_col = getInterpolatedColor(p);
-                         local_fog_col = mix(base_sky, inst_col, color_weight);
-                     }
-                     
-                     fog_color_accum += local_fog_col * density * dt;
-                     fog_optical_depth += density * dt;
-                     
-                     t += dt;
-                 }
-             }
-             var color = getSkyColor(rd);
-            if (t <= 800.0) {
+              var color = getSkyColor(rd);
+             if (t <= 800.0 && !is_volumetric) {
                 let p = ro + rd * t;
                 let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
@@ -1255,16 +1299,17 @@
                    color = mix(color, base_col + glow * 2.0, exp_temp_factor * (0.3 + 0.7 * exp_n_col));
                }
 
-               if (edge > 0.0) {
-                  let glow_col = base_col * 2.5 + vec3<f32>(0.25);
-                  color = mix(color, glow_col, edge);
-              }
+                if (edge > 0.0) {
+                   let glow_col = base_col * 2.5 + vec3<f32>(0.25);
+                   color = mix(color, glow_col, edge);
+               }
+           }
 
-              let transmittance = exp(-fog_optical_depth);
-              color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
-              let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
-              color += vec3<f32>(dither_noise) * (1.0 / 255.0);
-          }
+           let transmittance = exp(-fog_optical_depth);
+           color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
+           let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
+           color += vec3<f32>(dither_noise) * (1.0 / 255.0);
+
           if (u.bg_color.w > 0.5) {
               let dx = abs(frag_in.uv.x) * u.width * 0.5;
               let dy = abs(frag_in.uv.y) * u.height * 0.5;
