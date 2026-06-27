@@ -999,13 +999,13 @@
                     let extreme_altitude = clamp((p.y - 22.0) / 10.0, 0.0, 1.0);
                     let snow_accum = clamp(altitude_factor * slope_factor + extreme_altitude * smoothstep(0.20, 0.45, normal.y), 0.0, 1.0);
                     
-                    let col_mountains = mix(mountain_rock, mountain_snow, snow_accum);
+                     let col_mountains = mix(mountain_rock, mountain_snow, snow_accum);
                     
                     terr_col = W1 * col_plains + W2 * col_canyons + W3 * col_mountains;
                 }
 
-                var base_col = terr_col;
-                var edge = 0.0;
+                 var base_col = terr_col;
+                 var edge = 0.0;
 
                 if (hitId != -1.0 && !is_metaball) {
                     let s_idx = i32(hitId);
