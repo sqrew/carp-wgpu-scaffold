@@ -160,56 +160,53 @@
           d-dim 32]
       (do
         (for [z 0 d-dim]
-          (for [y 0 h-dim]
-            (for [x 0 w-dim]
-              (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)
-                    d @(Array.unsafe-nth voxel-data idx)]
-                (if (< d 0.0f)
-                    (do
-                      (Array.aset! voxel-data (+ idx 2) 0.0f)
-                      (Array.aset! voxel-data (+ idx 3) 0.0f))
-                    (let [check-l-x (dec x)
-                          check-r-x (inc x)
-                          check-d-y (dec y)
-                          check-u-y (inc y)
-                          check-b-z (dec z)
-                          check-f-z (inc z)
-                          
-                          solid-l (if (>= check-l-x 0) (< @(Array.unsafe-nth voxel-data (* (+ check-l-x (+ (* y 32) (* z 1024))) 4)) 0.0f) false)
-                          solid-r (if (< check-r-x 32) (< @(Array.unsafe-nth voxel-data (* (+ check-r-x (+ (* y 32) (* z 1024))) 4)) 0.0f) false)
-                          solid-d (if (>= check-d-y 0) (< @(Array.unsafe-nth voxel-data (* (+ x (+ (* check-d-y 32) (* z 1024))) 4)) 0.0f) false)
-                          solid-u (if (< check-u-y 32) (< @(Array.unsafe-nth voxel-data (* (+ x (+ (* check-u-y 32) (* z 1024))) 4)) 0.0f) false)
-                          solid-b (if (>= check-b-z 0) (< @(Array.unsafe-nth voxel-data (* (+ x (+ (* y 32) (* check-b-z 1024))) 4)) 0.0f) false)
-                          solid-f (if (< check-f-z 32) (< @(Array.unsafe-nth voxel-data (* (+ x (+ (* y 32) (* check-f-z 1024))) 4)) 0.0f) false)
-                          
-                          num-solid 0
-                          _1 (when solid-l (set! num-solid (inc num-solid)))
-                          _2 (when solid-r (set! num-solid (inc num-solid)))
-                          _3 (when solid-d (set! num-solid (inc num-solid)))
-                          _4 (when solid-u (set! num-solid (inc num-solid)))
-                          _5 (when solid-b (set! num-solid (inc num-solid)))
-                          _6 (when solid-f (set! num-solid (inc num-solid)))
-                          
-                          ao-val (- 1.0f (* (Float.from-int num-solid) 0.15f))
-                          ao-clamped (if (< ao-val 0.1f) 0.1f (if (> ao-val 1.0f) 1.0f ao-val))
-                          
-                          shadow-val 1.0f
-                          step 1]
-                      (do
-                        (while (< (+ y step) 32)
-                          (let [tx (+ x (/ step 2))
-                                tz (+ z (/ (* step 3) 10))]
-                            (do
-                              (when (and (and (>= tx 0) (< tx 32))
-                                         (and (>= tz 0) (< tz 32)))
-                                (let [n-idx (* (+ tx (+ (* (+ y step) 32) (* tz 1024))) 4)]
-                                  (when (< @(Array.unsafe-nth voxel-data n-idx) 0.0f)
-                                    (do
-                                      (set! shadow-val 0.2f)
-                                      (set! step 999)))))
-                              (set! step (inc step)))))
-                        (Array.aset! voxel-data (+ idx 2) shadow-val)
-                        (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))
+          (let [z-offset (* z 1024)]
+            (for [y 0 h-dim]
+              (let [y-offset (* y 32)
+                    zy-offset (+ z-offset y-offset)]
+                (for [x 0 w-dim]
+                  (let [idx (* (+ x zy-offset) 4)
+                        d @(Array.unsafe-nth voxel-data idx)]
+                    (if (< d 0.0f)
+                        (do
+                          (Array.aset! voxel-data (+ idx 2) 0.0f)
+                          (Array.aset! voxel-data (+ idx 3) 0.0f))
+                        (let [solid-l (if (>= (dec x) 0) (< @(Array.unsafe-nth voxel-data (* (+ (dec x) zy-offset) 4)) 0.0f) false)
+                              solid-r (if (< (inc x) 32) (< @(Array.unsafe-nth voxel-data (* (+ (inc x) zy-offset) 4)) 0.0f) false)
+                              solid-d (if (>= (dec y) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) 32) 4)) 0.0f) false)
+                              solid-u (if (< (inc y) 32) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) 32) 4)) 0.0f) false)
+                              solid-b (if (>= (dec z) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) 1024) 4)) 0.0f) false)
+                              solid-f (if (< (inc z) 32) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) 1024) 4)) 0.0f) false)
+                              
+                              num-solid 0
+                              _1 (when solid-l (set! num-solid (inc num-solid)))
+                              _2 (when solid-r (set! num-solid (inc num-solid)))
+                              _3 (when solid-d (set! num-solid (inc num-solid)))
+                              _4 (when solid-u (set! num-solid (inc num-solid)))
+                              _5 (when solid-b (set! num-solid (inc num-solid)))
+                              _6 (when solid-f (set! num-solid (inc num-solid)))
+                              
+                              ao-val (- 1.0f (* (Float.from-int num-solid) 0.15f))
+                              ao-clamped (if (< ao-val 0.1f) 0.1f (if (> ao-val 1.0f) 1.0f ao-val))
+                              
+                              shadow-val 1.0f
+                              step 1]
+                          (do
+                            (while (< (+ y step) 32)
+                              (let [tx (+ x (/ step 2))
+                                    tz (+ z (/ (* step 3) 10))]
+                                (do
+                                  (if (and (and (>= tx 0) (< tx 32))
+                                           (and (>= tz 0) (< tz 32)))
+                                      (let [n-idx (* (+ tx (+ (+ y-offset (* step 32)) (* tz 1024))) 4)]
+                                        (when (< @(Array.unsafe-nth voxel-data n-idx) 0.0f)
+                                          (do
+                                            (set! shadow-val 0.2f)
+                                            (set! step 999))))
+                                      (set! step 999))
+                                  (set! step (inc step)))))
+                            (Array.aset! voxel-data (+ idx 2) shadow-val)
+                            (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))))
 
   (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
     (do

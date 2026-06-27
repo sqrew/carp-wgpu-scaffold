@@ -209,6 +209,7 @@
               true
               true
               true
+              true
               []
               1.2
               true
@@ -799,6 +800,7 @@
                 (World.set-last-cam-x! world-data cam-qx)
                 (World.set-last-cam-y! world-data cam-qy)
                 (World.set-last-cam-z! world-data cam-qz)
+                (Engine.set-need-chunk-scan! e true)
                 
                 (let [chunks (World.chunks world-data)
                       keep (the (Array Chunk) [])]
@@ -870,56 +872,72 @@
                           (do
                             (VoxelBaker.compute-chunk-lighting! chunk-ref)
                             (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk-ref))
-                            (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk-ref))))
+                            (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk-ref))
+                            (Engine.set-need-chunk-scan! e true)))
                         (set! loaded-any true)))
                     
                     ;; If no chunk is baking, check if we need to load a new missing chunk
-                    (do
-                      (for [r 0 15]
-                        (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))
-                              offsets (if (= limit-r 0)
-                                          [0]
-                                          (if (= limit-r 1)
-                                              [0, 1, -1]
-                                              [0, 1, 2, 3, -1, -2, -3]))]
-                          (for [i-dy 0 (Array.length &offsets)]
-                            (let [dy @(Array.unsafe-nth &offsets i-dy)]
-                              (for [dz (- 0 r) (inc r)]
-                                (for [dx (- 0 r) (inc r)]
-                                  (let [qx (+ cam-qx dx)
-                                        qz (+ cam-qz dz)
-                                        surface-qy (WGPURenderer.get-surface-qy qx qz)
-                                        yq (if (> r 3) (+ surface-qy dy) (+ cam-qy dy))]
-                                    (when (and (not loaded-any)
-                                               (and (or (= (Int.abs dx) r)
-                                                        (or (= (Int.abs dy) r)
-                                                            (= (Int.abs dz) r)))
-                                                     (not (World.has-chunk? world-data qx yq qz))))
-                                      (let [slot (World.find-unused-atlas-slot world-data)]
-                                        (when (>= slot 0)
-                                          (let [saved-list (World.modified-chunks world-data)
-                                                len (Array.length saved-list)
-                                                found-idx -1]
-                                            (do
-                                              (for [i 0 len]
-                                                (let [c (Array.unsafe-nth saved-list i)]
-                                                  (when (and (= @(Chunk.coord-x c) qx)
-                                                             (and (= @(Chunk.coord-y c) yq)
-                                                                  (= @(Chunk.coord-z c) qz)))
-                                                    (set! found-idx i))))
-                                              (if (= found-idx -1)
-                                                  (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
-                                                        chunk (Chunk.init qx yq qz voxel-data slot false 0)]
-                                                    (do
-                                                      (Array.push-back! (World.chunks world-data) chunk)))
-                                                  (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
-                                                        voxel-data @(Chunk.voxel-data saved-chunk)]
-                                                    (do
-                                                      (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
-                                                      (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
-                                                      (let [chunk (Chunk.init qx yq qz voxel-data slot true 32)]
-                                                        (Array.push-back! (World.chunks world-data) chunk)))))
-                                              (set! loaded-any true)))))))))))))))))))
+                    (when @(Engine.need-chunk-scan e)
+                      (let [r 0]
+                        (do
+                          (while (and (< r 15) (not loaded-any))
+                            (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))
+                                  offsets (if (= limit-r 0)
+                                              [0]
+                                              (if (= limit-r 1)
+                                                  [0, 1, -1]
+                                                  [0, 1, 2, 3, -1, -2, -3]))
+                                  i-dy 0
+                                  len-offsets (Array.length &offsets)]
+                              (do
+                                (while (and (< i-dy len-offsets) (not loaded-any))
+                                  (let [dy @(Array.unsafe-nth &offsets i-dy)
+                                        dz (- 0 r)]
+                                    (do
+                                      (while (and (<= dz r) (not loaded-any))
+                                        (let [dx (- 0 r)]
+                                          (do
+                                            (while (and (<= dx r) (not loaded-any))
+                                              (let [qx (+ cam-qx dx)
+                                                    qz (+ cam-qz dz)
+                                                    surface-qy (WGPURenderer.get-surface-qy qx qz)
+                                                    yq (if (> r 3) (+ surface-qy dy) (+ cam-qy dy))]
+                                                (do
+                                                  (when (and (or (= (Int.abs dx) r)
+                                                                 (or (= (Int.abs dy) r)
+                                                                     (= (Int.abs dz) r)))
+                                                             (not (World.has-chunk? world-data qx yq qz)))
+                                                    (let [slot (World.find-unused-atlas-slot world-data)]
+                                                      (when (>= slot 0)
+                                                        (let [saved-list (World.modified-chunks world-data)
+                                                              len (Array.length saved-list)
+                                                              found-idx -1]
+                                                          (do
+                                                            (for [i 0 len]
+                                                              (let [c (Array.unsafe-nth saved-list i)]
+                                                                (when (and (= @(Chunk.coord-x c) qx)
+                                                                           (and (= @(Chunk.coord-y c) yq)
+                                                                                (= @(Chunk.coord-z c) qz)))
+                                                                  (set! found-idx i))))
+                                                            (if (= found-idx -1)
+                                                                (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+                                                                      chunk (Chunk.init qx yq qz voxel-data slot false 0)]
+                                                                  (do
+                                                                    (Array.push-back! (World.chunks world-data) chunk)))
+                                                                (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
+                                                                      voxel-data @(Chunk.voxel-data saved-chunk)]
+                                                                  (do
+                                                                    (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
+                                                                    (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
+                                                                    (let [chunk (Chunk.init qx yq qz voxel-data slot true 32)]
+                                                                      (Array.push-back! (World.chunks world-data) chunk)))))
+                                                            (set! loaded-any true))))))
+                                                  (set! dx (inc dx)))))
+                                            (set! dz (inc dz)))))
+                                      (set! i-dy (inc i-dy)))))
+                                (set! r (inc r)))))
+                          (when (not loaded-any)
+                            (Engine.set-need-chunk-scan! e false))))))))))
 
             ;; 4. Build Chunk Lookup Data
             (let [cam-qx (World.camera-chunk-qx cam-pos)
