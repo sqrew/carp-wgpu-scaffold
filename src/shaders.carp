@@ -973,8 +973,22 @@
                    
                    let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
                    if (color_weight > 0.0) {
-                       let inst_col = getInterpolatedColor(p);
-                       local_fog_col = mix(local_fog_col, inst_col, color_weight);
+                        let view_mode = u.grid_origin.w;
+                        var inst_col = getInterpolatedColor(p);
+                        if (view_mode == 1.0) {
+                            let norm_t = clamp(fields.x / 120.0, 0.0, 1.0);
+                            inst_col = mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
+                        } else if (view_mode == 2.0) {
+                            let norm_age = clamp(fields.y / 12.0, 0.0, 1.0);
+                            inst_col = mix(vec3<f32>(0.1, 0.9, 0.1), vec3<f32>(0.9, 0.1, 0.9), norm_age);
+                        } else if (view_mode == 3.0) {
+                            let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
+                            inst_col = mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
+                        } else if (view_mode == 4.0) {
+                            let norm_pres = clamp((fields.w - 1.0) / 30.0, 0.0, 1.0);
+                            inst_col = mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.2, 0.8, 1.0), norm_pres);
+                        }
+                        local_fog_col = mix(local_fog_col, inst_col, color_weight);
                    }
                    
                    fog_color_accum += local_fog_col * density * dt;
