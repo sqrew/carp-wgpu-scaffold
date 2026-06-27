@@ -14,12 +14,15 @@
   (defn spawn! [world db pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
           params (Vector4.init max-radius 0.0 0.0 0.0)
-          fi (FieldInstance.init 1 params 0.1 -1 temp-val 0.0 0.0 pres-val 0.0 -999.0)]
+          fi (FieldInstance.init 1 params 0.1 -1 temp-val 0.0 0.0 pres-val 0.0 -999.0)
+          r (Double.random-between 0.2 1.0)
+          g (Double.random-between 0.2 1.0)
+          b (Double.random-between 0.2 1.0)]
       (do
         (ECS.add-component! world &exp-ent fi)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.1)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
-        (ECS.add-component! world &exp-ent (Color.init (Vector3.init 1.0 0.3 0.0)))
+        (ECS.add-component! world &exp-ent (Color.init (Vector3.init r g b)))
         (ECS.add-component! world &exp-ent (Lifetime.init 0.5))
         (ECS.add-component! world &exp-ent (Explosion.init 0.1 20.0 max-radius force pres-val temp-val (Maybe.Nothing)))
         ())))
@@ -27,7 +30,7 @@
   (sig step-explosions! (Fn [(Ref Engine.Engine) (Ref GameWorld) (Ref FieldDatabase) Double] ()))
   (defn step-explosions! [e world db dt]
     (do
-      (ECS.query world [ent (exp Explosion) (rb RigidBody) (fi FieldInstance)]
+      (ECS.query world [ent (exp Explosion) (rb RigidBody) (fi FieldInstance) (col Collidable)]
         (let [current-r (Explosion.radius exp)
               max-r @(Explosion.max-radius exp)
               speed @(Explosion.radius-speed exp)
@@ -39,6 +42,10 @@
                 (Engine.set-grid-dirty! e true)
                 ;; Update scale in the FieldInstance component
                 (FieldInstance.set-scale! fi new-r)
+                ;; Update Collidable volume sphere radius to expand the spatial grid footprint
+                (match-ref (Collidable.volume col)
+                  (Volume.Ball s) (Sphere.set-radius! s new-r)
+                  _ ())
                 ;; Decay values dynamically
                 (let [raw-decay (- 1.0 (/ new-r max-r))
                       decay-factor (if (< raw-decay 0.0) 0.0 raw-decay)

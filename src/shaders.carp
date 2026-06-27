@@ -464,6 +464,47 @@
             return ripple_offset;
         }
 
+       fn getInterpolatedColor(p: vec3<f32>) -> vec3<f32> {
+           let p_local = p - u.grid_origin.xyz;
+           let gx = i32(floor(p_local.x / u.cell_size));
+           let gy = i32(floor(p_local.y / u.cell_size));
+           let gz = i32(floor(p_local.z / u.cell_size));
+           var sum_color = vec3<f32>(0.0);
+           var sum_w = 0.0;
+           
+           if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
+               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
+               let cell = grid[idx];
+               let count = min(i32(round(cell.header.x)), 16);
+               for(var i = 0; i < count; i = i + 1) {
+                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                   if (s_idx >= 0 && s_idx < 1024) {
+                     let s_data = u.instances[s_idx];
+                     let raw_w = s_data.pos_scale.w;
+                     if (raw_w != 0.0) {
+                       let csg_root_idx = i32(round(s_data.color_csg.w));
+                       var s = 1.0;
+                       if (csg_root_idx <= -99) {
+                           s = f32(-99 - csg_root_idx) / 100.0;
+                           if (s < 0.05) { s = 0.6; }
+                       }
+                       let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                       let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
+                       let d = (length(squashed_p) - raw_w) * min(1.0, s);
+                       let w = 1.0 / (d * d + 0.01);
+                       
+                       sum_color = sum_color + s_data.color_csg.rgb * w;
+                       sum_w = sum_w + w;
+                     }
+                   }
+               }
+           }
+           if (sum_w > 0.0) {
+               return sum_color / sum_w;
+           }
+           return vec3<f32>(0.0);
+       }
+
       fn getMetaballDist(p: vec3<f32>) -> f32 {
           let p_local = p - u.grid_origin.xyz;
           let gx = i32(floor(p_local.x / u.cell_size));
@@ -664,18 +705,48 @@
       }
 
           fn worldSDF(p: vec3<f32>, rd: vec3<f32>, dither_threshold: f32, eval_metaballs: bool) -> vec4<f32> {
+              let p_local = p - u.grid_origin.xyz;
+              let gx = i32(floor(p_local.x / u.cell_size));
+              let gy = i32(floor(p_local.y / u.cell_size));
+              let gz = i32(floor(p_local.z / u.cell_size));
+
               let voxel_pt = sampleVoxelGridPoint(p);
               var voxel_dist = voxel_pt.x;
               if (voxel_dist < 16.0) {
                   let voxel_tri = sampleVoxelGrid(p);
                   voxel_dist = voxel_tri.x;
               }
+
+              // Apply dynamic seismic wave deformation to terrain from shockwaves
+              var wave_deformation = 0.0;
+              if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
+                  let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
+                  let cell = grid[idx];
+                  let count = min(i32(round(cell.header.x)), 16);
+                  for(var i = 0; i < count; i = i + 1) {
+                      let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                      if (s_idx >= 0 && s_idx < 1024) {
+                        let s_data = u.instances[s_idx];
+                        let raw_w = s_data.pos_scale.w;
+                        if (raw_w != 0.0) {
+                          if (s_data.sph_fields.w > 0.0) {
+                            let dist_to_center = length(p - s_data.pos_scale.xyz);
+                            let d_front = dist_to_center - raw_w;
+                            if (dist_to_center < 16.0 && abs(d_front) < 4.0) {
+                              let wave_phase = d_front * 3.0;
+                              let envelope = exp(-pow(d_front / 2.0, 2.0));
+                              let amp = sin(wave_phase) * envelope * 0.35 * (s_data.sph_fields.w / 30.0);
+                              wave_deformation += amp;
+                            }
+                          }
+                        }
+                      }
+                  }
+              }
+              voxel_dist += wave_deformation;
+
              var d = vec2<f32>(voxel_dist, -1.0);
-             let p_local = p - u.grid_origin.xyz;
-            let gx = i32(floor(p_local.x / u.cell_size));
-            let gy = i32(floor(p_local.y / u.cell_size));
-            let gz = i32(floor(p_local.z / u.cell_size));
-            var metaball_d = 10000.0;
+             var metaball_d = 10000.0;
 
             if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                 let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
@@ -839,6 +910,7 @@
            var hitId = -1.0;
            var final_metaball_d = 10000.0;
            var fog_optical_depth = 0.0;
+           var fog_color_accum = vec3<f32>(0.0);
               for(var i = 0; i < 80; i = i + 1) {
                   let p = ro + rd * t;
                   let res = worldSDF(p, rd, dither_threshold, true);
@@ -852,7 +924,17 @@
                   }
                   
                   let fields = getInterpolatedFields(p);
-                  let density = 0.001 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
+                  let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
+                  
+                  let base_sky = getSkyColor(rd);
+                  var local_fog_col = base_sky;
+                  let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
+                  if (color_weight > 0.0) {
+                      let inst_col = getInterpolatedColor(p);
+                      local_fog_col = mix(base_sky, inst_col, color_weight);
+                  }
+                  
+                  fog_color_accum += local_fog_col * density * dt;
                   fog_optical_depth += density * dt;
                   
                   t += dt;
@@ -867,7 +949,17 @@
                      let dt = res.y * 0.5;
                      
                      let fields = getInterpolatedFields(p);
-                     let density = 0.001 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
+                     let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
+                     
+                     let base_sky = getSkyColor(rd);
+                     var local_fog_col = base_sky;
+                     let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
+                     if (color_weight > 0.0) {
+                         let inst_col = getInterpolatedColor(p);
+                         local_fog_col = mix(base_sky, inst_col, color_weight);
+                     }
+                     
+                     fog_color_accum += local_fog_col * density * dt;
                      fog_optical_depth += density * dt;
                      
                      t += dt;
@@ -1081,7 +1173,9 @@
                         let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
                         let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
                         let n_col = clamp(base_noise * 0.7 + detail_noise * 0.3, 0.0, 1.0);
-                        let fire = mix(vec3<f32>(1.0, 0.15, 0.0), vec3<f32>(1.0, 0.9, 0.2), n_col);
+                        let fire_core = s_data.color_csg.rgb;
+                        let fire_glow = min(fire_core * 1.5 + vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(1.0, 1.0, 1.0));
+                        let fire = mix(fire_core, fire_glow, n_col);
                         let ash = vec3<f32>(0.05, 0.05, 0.05);
                         base_col = mix(ash, fire, temp_factor * (0.2 + 0.8 * n_col));
                         is_exp = true;
@@ -1166,8 +1260,8 @@
                   color = mix(color, glow_col, edge);
               }
 
-                 let fog_color = getSkyColor(rd) * cam_sky_visibility;
-                 color = mix(color, fog_color, 1.0 - exp(-fog_optical_depth));
+              let transmittance = exp(-fog_optical_depth);
+              color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
               let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
               color += vec3<f32>(dither_noise) * (1.0 / 255.0);
           }

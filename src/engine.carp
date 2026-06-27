@@ -255,8 +255,9 @@
             (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
               (match-ref (Collidable.volume col)
                 (Volume.Sdf parent-sdf)
-                  (let [d (SDF.distance-world parent-sdf &pos)]
-                    (when (< d (* rad 2.0))
+                  (let [d (SDF.distance-world parent-sdf &pos)
+                        check-rad (if (< rad 4.0) 4.0 rad)]
+                    (when (< d (* check-rad 2.0))
                       (let [parent-pos (SDF.position parent-sdf)
                             parent-rot (SDF.rotation parent-sdf)
                             local-pos (Quaternion.rotate &(Quaternion.inverse parent-rot) &(Vector3.sub &pos parent-pos))
