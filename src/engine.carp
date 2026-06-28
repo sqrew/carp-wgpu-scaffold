@@ -901,20 +901,20 @@
                                           (if (= limit-r 1)
                                               [0, 1, -1]
                                               [0, 1, 2, 3, -1, -2, -3]))
-                              i-dy 0
-                              len-offsets (Array.length &offsets)]
+                              len-offsets (Array.length &offsets)
+                              dz (- 0 r)]
                           (do
-                            (while (and (< i-dy len-offsets) (not loaded-any))
-                              (let [dy @(Array.unsafe-nth &offsets i-dy)
-                                    dz (- 0 r)]
+                            (while (and (<= dz r) (not loaded-any))
+                              (let [dx (- 0 r)]
                                 (do
-                                  (while (and (<= dz r) (not loaded-any))
-                                    (let [dx (- 0 r)]
+                                  (while (and (<= dx r) (not loaded-any))
+                                    (let [qx (+ cam-qx dx)
+                                          qz (+ cam-qz dz)
+                                          surface-qy (WGPURenderer.get-surface-qy qx qz)
+                                          i-dy 0]
                                       (do
-                                        (while (and (<= dx r) (not loaded-any))
-                                          (let [qx (+ cam-qx dx)
-                                                qz (+ cam-qz dz)
-                                                surface-qy (WGPURenderer.get-surface-qy qx qz)
+                                        (while (and (< i-dy len-offsets) (not loaded-any))
+                                          (let [dy @(Array.unsafe-nth &offsets i-dy)
                                                 yq (if (> r 3) (+ surface-qy dy) (+ cam-qy dy))]
                                             (do
                                               (when (and (or (= (Int.abs dx) r)
@@ -946,14 +946,14 @@
                                                                 (let [chunk (Chunk.init qx yq qz voxel-data slot true 32)]
                                                                   (Array.push-back! (World.chunks world-data) chunk)))))
                                                         (set! loaded-any true))))))
-                                              (set! dx (inc dx)))))
-                                        (set! dz (inc dz)))))
-                                  (set! i-dy (inc i-dy)))))
+                                              (set! i-dy (inc i-dy)))))
+                                        (set! dx (inc dx)))))
+                                  (set! dz (inc dz)))))
                             (set! r (inc r)))))
                       (when (not loaded-any)
                         (Engine.set-need-chunk-scan! e false)))))))))))
 
-  (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
+    (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
       (do
         (if (Array.empty? craters)
