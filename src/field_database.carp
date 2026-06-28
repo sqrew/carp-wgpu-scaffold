@@ -5,6 +5,22 @@
   (defn init-zero [] (Vector4.init 0.0 0.0 0.0 0.0))
 )
 
+(deftype FieldEvent [
+  pos (Vector3 Double)
+  velocity (Vector3 Double)
+  shape-type Int
+  params Vector4
+  scale Double
+  max-scale Double
+  growth-speed Double
+  lifetime Double
+  max-lifetime Double
+  temperature Double
+  pressure Double
+  color (Vector3 Double)
+  handle-id Int
+])
+
 (deftype FieldDatabase [
   active (Array Bool)
   handles (Array (Handle ()))
@@ -24,6 +40,8 @@
   velocities (Array (Vector3 Double))
   handle-to-index (Array Int)
   max-scale Double
+  events (Array FieldEvent)
+  next-virtual-id Int
 ])
 
 (defmodule FieldDatabase
@@ -54,7 +72,7 @@
           grav (the (Array Double) (replicate n &-999.0))
           vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
           h-to-idx (the (Array Int) (replicate 1024 &-1))]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel h-to-idx 4.0)))
+      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel h-to-idx 4.0 [] 512)))
   (sig new (Fn [] FieldDatabase))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
   (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double)] Int))
@@ -268,4 +286,46 @@
         (if (> sum-W 0.00001)
           (Vector3.mul &sum-vel (/ 1.0 sum-W))
           (Vector3.init 0.0 0.0 0.0)))))
+
+  (defn dispatch-event! [db pos vel shape-type params start-scale max-scale growth-speed max-lifetime temp pres col]
+    (let [h-id @(FieldDatabase.next-virtual-id db)
+          handle (Handle.init (Uint64.from-long (Long.from-int h-id)) (Uint32.from-long 1l))
+          event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime temp pres @col h-id)]
+      (do
+        (FieldDatabase.set-next-virtual-id! db (inc h-id))
+        (ignore (register-instance! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col temp 0.0 0.0 pres 0.0 -999.0 @vel))
+        (Array.push-back! (FieldDatabase.events db) event))))
+
+  (defn tick! [db dt]
+    (let [ev-arr (FieldDatabase.events db)
+          len (Array.length ev-arr)
+          keep-ev []]
+      (do
+        (for [i 0 len]
+          (let [ev @(Array.unsafe-nth ev-arr i)
+                h-id @(FieldEvent.handle-id &ev)
+                handle (Handle.init (Uint64.from-long (Long.from-int h-id)) (Uint32.from-long 1l))
+                life (- @(FieldEvent.lifetime &ev) dt)
+                max-life @(FieldEvent.max-lifetime &ev)
+                pos (FieldEvent.pos &ev)
+                vel (FieldEvent.velocity &ev)
+                new-pos (Vector3.add pos &(Vector3.mul vel dt))
+                grow @(FieldEvent.growth-speed &ev)
+                scale @(FieldEvent.scale &ev)
+                max-sc @(FieldEvent.max-scale &ev)
+                new-scale (let [s (+ scale (* grow dt))]
+                            (if (> s max-sc) max-sc s))]
+            (if (> life 0.0)
+                (let [decay-factor (/ life max-life)
+                      temp (* @(FieldEvent.temperature &ev) decay-factor)
+                      pres (* @(FieldEvent.pressure &ev) decay-factor)
+                      updated-ev (FieldEvent.init @&new-pos @vel @(FieldEvent.shape-type &ev) @(FieldEvent.params &ev) new-scale max-sc grow life max-life @(FieldEvent.temperature &ev) @(FieldEvent.pressure &ev) @(FieldEvent.color &ev) h-id)]
+                  (do
+                    (Array.push-back! &keep-ev updated-ev)
+                    (FieldDatabase.set-position! db &handle @&new-pos)
+                    (FieldDatabase.set-scale! db &handle new-scale)
+                    (FieldDatabase.set-temperature! db &handle temp)
+                    (FieldDatabase.set-pressure! db &handle pres)))
+                (FieldDatabase.release-instance! db &handle))))
+        (FieldDatabase.set-events! db keep-ev))))
 )

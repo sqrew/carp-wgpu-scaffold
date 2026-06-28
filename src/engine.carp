@@ -766,77 +766,52 @@
 
         ;; 2. Populate Spheres (index >= 36)
         (when (or grid-dirty csg-dirty)
-          (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
-            (let [has-parent false]
-              (do
-                (ECS.with-components world @&ent [e (p Parent)]
-                  (set! has-parent true))
-                (when (and (not has-parent)
-                           (not (ECS.has-component? world &ent PlayerTag)))
-                  (let [id (FieldDatabase.get-index-by-handle db (ECS.Entity.handle &ent))]
-                    (when (/= id -1)
-                      (do
-                        (let [pos (RigidBody.position rb)
-                            rot (RigidBody.rotation rb)
-                            c-val (Color.v color)
-                            is-static (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-                            is-bouncy (ECS.has-component? world &ent BouncyTag)
-                            is-exp false
-                            exp-rad 0.0
-                            _ (ECS.with-components world @&ent [e (exp Explosion)]
-                                (do
-                                  (set! is-exp true)
-                                  (set! exp-rad @(Explosion.radius exp))))
-                            rad (if is-exp exp-rad
-                                  (if is-static 0.0
-                                    (match-ref (Collidable.volume col)
-                                      (Volume.Ball b) (if is-bouncy (* 2.0 @(Sphere.radius b)) @(Sphere.radius b))
-                                      (Volume.Box b) (- 0.0 @(Vector3.x &(Vector3.mul &(Vector3.sub (AABB.max b) (AABB.min b)) 0.5)))
-                                      (Volume.Sdf sdf)
-                                        (let [scale @(SDF.scale sdf)]
-                                          (match-ref (SDF.base sdf)
-                                            (BaseShape.Ball r) (if is-bouncy (* 2.0 (* @r scale)) (* @r scale))
-                                            (BaseShape.Box e-box) (- 0.0 (* @(Vector3.x e-box) scale))
-                                            (BaseShape.Cylinder r h) (+ 1000.0 (* @r scale))
-                                            (BaseShape.Capsule r h) (- 0.0 (+ 1000.0 (* @r scale)))
-                                            (BaseShape.Torus rad-maj rad-min) (+ 2000.0 (* @rad-maj scale))
-                                            (BaseShape.Octahedron s) (- 0.0 (+ 2000.0 (* @s scale)))
-                                            _ 0.0))
-                                      _ 0.0)))
-                            root-csg-idx (if is-bouncy -99 -1)]
-                        (do
-                          (when csg-dirty
-                            (do
-                              (match-ref (Collidable.volume col)
-                                (Volume.Sdf sdf)
-                                  (when (> (Array.length (SDF.csg-nodes sdf)) 0)
-                                    (set! root-csg-idx (WGPURenderer.serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)))
-                                _ ())
-                              (FieldDatabase.set-root-csg-index! db (ECS.Entity.handle &ent)
-                                (if is-bouncy @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id) root-csg-idx))))
-                          (let [base (+ 36 (* id 16))
-                                final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
-                                temp @(Array.unsafe-nth (FieldDatabase.temperatures db) id)
-                                age @(Array.unsafe-nth (FieldDatabase.ages db) id)
-                                humidity @(Array.unsafe-nth (FieldDatabase.humidities db) id)
-                                pressure @(Array.unsafe-nth (FieldDatabase.pressures db) id)]
-                            (do
-                              (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
-                              (Array.aset! u-data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                              (Array.aset! u-data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                              (Array.aset! u-data (+ base 3) (Double.to-float rad))
-                              (Array.aset! u-data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                              (Array.aset! u-data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                              (Array.aset! u-data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                              (Array.aset! u-data (+ base 7) (Double.to-float @(Quaternion.w rot)))
-                              (Array.aset! u-data (+ base 8) (Double.to-float @(Vector3.x c-val)))
-                              (Array.aset! u-data (+ base 9) (Double.to-float @(Vector3.y c-val)))
-                              (Array.aset! u-data (+ base 10) (Double.to-float @(Vector3.z c-val)))
-                              (Array.aset! u-data (+ base 11) (Double.to-float (Double.from-int final-csg-idx)))
-                              (Array.aset! u-data (+ base 12) (Double.to-float temp))
-                              (Array.aset! u-data (+ base 13) (Double.to-float age))
-                              (Array.aset! u-data (+ base 14) (Double.to-float humidity))
-                              (Array.aset! u-data (+ base 15) (Double.to-float pressure))))))))))))))
+          (do
+            (when csg-dirty
+              (ECS.query world [ent (rb RigidBody) (col Collidable)]
+                (let [has-parent false]
+                  (do
+                    (ECS.with-components world @&ent [e (p Parent)]
+                      (set! has-parent true))
+                    (when (and (not has-parent)
+                               (not (ECS.has-component? world &ent PlayerTag)))
+                      (match-ref (Collidable.volume col)
+                        (Volume.Sdf sdf)
+                          (when (> (Array.length (SDF.csg-nodes sdf)) 0)
+                            (let [root-csg-idx (WGPURenderer.serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)]
+                              (FieldDatabase.set-root-csg-index! db (ECS.Entity.handle &ent) root-csg-idx)))
+                        _ ()))))))
+            (let [active-arr (FieldDatabase.active db)
+                  len (Array.length active-arr)]
+              (for [id 0 len]
+                (when @(Array.unsafe-nth active-arr id)
+                  (let [pos (Array.unsafe-nth (FieldDatabase.positions db) id)
+                        rot (Array.unsafe-nth (FieldDatabase.rotations db) id)
+                        rad-scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
+                        c-val (Array.unsafe-nth (FieldDatabase.colors db) id)
+                        temp @(Array.unsafe-nth (FieldDatabase.temperatures db) id)
+                        age @(Array.unsafe-nth (FieldDatabase.ages db) id)
+                        humidity @(Array.unsafe-nth (FieldDatabase.humidities db) id)
+                        pressure @(Array.unsafe-nth (FieldDatabase.pressures db) id)
+                        final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
+                        base (+ 36 (* id 16))]
+                    (do
+                      (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
+                      (Array.aset! u-data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                      (Array.aset! u-data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                      (Array.aset! u-data (+ base 3) (Double.to-float rad-scale))
+                      (Array.aset! u-data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                      (Array.aset! u-data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                      (Array.aset! u-data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                      (Array.aset! u-data (+ base 7) (Double.to-float @(Quaternion.w rot)))
+                      (Array.aset! u-data (+ base 8) (Double.to-float @(Vector3.x c-val)))
+                      (Array.aset! u-data (+ base 9) (Double.to-float @(Vector3.y c-val)))
+                      (Array.aset! u-data (+ base 10) (Double.to-float @(Vector3.z c-val)))
+                      (Array.aset! u-data (+ base 11) (Double.to-float (Double.from-int final-csg-idx)))
+                      (Array.aset! u-data (+ base 12) (Double.to-float temp))
+                      (Array.aset! u-data (+ base 13) (Double.to-float age))
+                      (Array.aset! u-data (+ base 14) (Double.to-float humidity))
+                      (Array.aset! u-data (+ base 15) (Double.to-float pressure)))))))))
 
         ;; 3. Dynamic Chunk Loading / Unloading
         (let [cam-qx (World.camera-chunk-qx cam-pos)
@@ -1038,6 +1013,7 @@
         (Engine.tick-simulation! e dt)
         (Engine.tick-lifecycle! e dt)
         (Engine.tick-field-db-sync! e)
+        (FieldDatabase.tick! (Engine.db e) dt)
         (Engine.submit-render-commands! e)
         (Engine.sync-render-db! e ctx ren))))
 )

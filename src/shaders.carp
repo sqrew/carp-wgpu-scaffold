@@ -745,7 +745,7 @@
                         let s_data = u.instances[s_idx];
                         let raw_w = s_data.pos_scale.w;
                         if (raw_w != 0.0) {
-                          if (s_data.sph_fields.w > 0.0) {
+                          if (s_data.sph_fields.w != 0.0) {
                             let dist_to_center = length(p - s_data.pos_scale.xyz);
                             let d_front = dist_to_center - raw_w;
                             if (dist_to_center < 16.0 && abs(d_front) < 4.0) {
