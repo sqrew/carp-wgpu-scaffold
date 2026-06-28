@@ -152,12 +152,18 @@
                 (when (not (ECS.has-component? world &ent StaticWorldTag))
                   (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
 
-        (ECS.query world [ent (fi FieldInstance) (rb RigidBody)]
-          (let [pos (RigidBody.position rb)
-                scale (* @(FieldInstance.scale fi) 2.0)
-                pad-vec (Vector3.init scale scale scale)
-                aabb (AABB.init (Vector3.sub pos &pad-vec) (Vector3.add pos &pad-vec))]
-            (SpatialGrid.insert! grid &aabb (ECS.Entity.id &ent))))
+        (let [active-arr (FieldDatabase.active (World.sdf-db (Engine.world-data e)))
+              len (Array.length active-arr)
+              db (World.sdf-db (Engine.world-data e))]
+          (for [id 0 len]
+            (when @(Array.unsafe-nth active-arr id)
+              (let [h (Array.unsafe-nth (FieldDatabase.handles db) id)
+                    pos (Array.unsafe-nth (FieldDatabase.positions db) id)
+                    scale (* @(Array.unsafe-nth (FieldDatabase.scales db) id) 2.0)
+                    pad-vec (Vector3.init scale scale scale)
+                    aabb (AABB.init (Vector3.sub pos &pad-vec) (Vector3.add pos &pad-vec))
+                    ent-id (the Uint32 (Uint32.from-long (Uint64.to-long (Handle.index h))))]
+                (SpatialGrid.insert! grid &aabb ent-id)))))
 
         ;; 3. Detect Collisions between Entities (including the static floor)
         (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]

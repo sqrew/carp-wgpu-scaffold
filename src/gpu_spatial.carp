@@ -17,7 +17,8 @@
           heads (SpatialGrid.heads grid)
           entries (SpatialGrid.entries grid)
           max-entities (Array.length (ECSRegistry.generations (GameWorld.registry world)))
-          geom-map (the (Array Int) (replicate max-entities &-1))
+          geom-map-size (if (< max-entities 1024) 1024 max-entities)
+          geom-map (the (Array Int) (replicate geom-map-size &-1))
           active (FieldDatabase.active db)
           handles (FieldDatabase.handles db)]
       (do
@@ -25,7 +26,7 @@
           (when @(Array.unsafe-nth active i)
             (let [h (Array.unsafe-nth handles i)
                   eid (the Int (Long.to-int (Uint64.to-long (Handle.index h))))]
-              (when (< eid max-entities)
+              (when (< eid geom-map-size)
                 (Array.aset! &geom-map eid i)))))
         (for [i 0 total-cells]
           (let [curr @(Array.unsafe-nth heads i)
@@ -36,7 +37,7 @@
                 (let [entry (Array.unsafe-nth entries curr)
                       ent-idx-u32 @(GridEntry.id entry)
                       eid-int (Long.to-int (Uint32.to-long ent-idx-u32))
-                      geom-id (if (and (>= eid-int 0) (< eid-int max-entities))
+                      geom-id (if (and (>= eid-int 0) (< eid-int geom-map-size))
                                   @(Array.unsafe-nth &geom-map eid-int)
                                   -1)]
                   (do

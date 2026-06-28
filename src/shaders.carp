@@ -11,7 +11,7 @@
       }
       struct Cell {
           header: vec4<f32>,
-          ids: array<vec4<f32>, " (Int.str (/ max-ids 4)) ">,
+          ids: array<f32, " (Int.str max-ids) ">,
       }
       struct Uniforms { 
           time: f32, 
@@ -395,7 +395,7 @@
                let cell = grid[idx];
                let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                for(var i = 0; i < count; i = i + 1) {
-                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                   let s_idx = i32(round(cell.ids[i]));
                    if (s_idx >= 0 && s_idx < 1024) {
                      let s_data = u.instances[s_idx];
                      let raw_w = s_data.pos_scale.w;
@@ -471,7 +471,7 @@
                 let cell = grid[idx];
                 let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                 for(var i = 0; i < count; i = i + 1) {
-                    let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                    let s_idx = i32(round(cell.ids[i]));
                     if (s_idx >= 0 && s_idx < 1024) {
                       let s_data = u.instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
@@ -500,6 +500,57 @@
                 }
             }
             return ripple_offset;
+        }
+
+        fn getFieldDensity(fields: vec4<f32>, view_mode: f32) -> f32 {
+            var d = 0.0;
+            if (view_mode == 1.0) {
+                // Temperature View
+                d = clamp(abs(fields.x) / 120.0, 0.0, 1.0) * 0.6;
+            } else if (view_mode == 2.0) {
+                // Age View
+                d = clamp(fields.y / 12.0, 0.0, 1.0) * 0.6;
+            } else if (view_mode == 3.0) {
+                // Humidity View
+                d = clamp(fields.z / 100.0, 0.0, 1.0) * 0.6;
+            } else if (view_mode == 4.0) {
+                // Pressure View
+                d = clamp(abs(fields.w) / 30.0, 0.0, 1.0) * 0.6;
+            } else {
+                // Default Normal View (Water Volume / SPH fluid)
+                d = (fields.z / 100.0) * 0.3 + (fields.w / 30.0) * 0.15;
+            }
+            return d;
+        }
+
+        fn getFieldColor(fields: vec4<f32>, view_mode: f32, default_color: vec3<f32>) -> vec3<f32> {
+            if (view_mode == 1.0) {
+                let norm_t = clamp(abs(fields.x) / 120.0, 0.0, 1.0);
+                return mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
+            } else if (view_mode == 2.0) {
+                let norm_age = clamp(fields.y / 12.0, 0.0, 1.0);
+                return mix(vec3<f32>(0.1, 0.9, 0.1), vec3<f32>(0.9, 0.1, 0.9), norm_age);
+            } else if (view_mode == 3.0) {
+                let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
+                return mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
+            } else if (view_mode == 4.0) {
+                let norm_pres = clamp((abs(fields.w) - 1.0) / 30.0, 0.0, 1.0);
+                return mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.2, 0.8, 1.0), norm_pres);
+            }
+            return default_color;
+        }
+
+        fn getFieldColorWeight(fields: vec4<f32>, view_mode: f32) -> f32 {
+            if (view_mode == 1.0) {
+                return clamp(abs(fields.x) / 5.0, 0.0, 1.0);
+            } else if (view_mode == 2.0) {
+                return clamp(fields.y / 0.5, 0.0, 1.0);
+            } else if (view_mode == 3.0) {
+                return clamp(fields.z / 5.0, 0.0, 1.0);
+            } else if (view_mode == 4.0) {
+                return clamp(abs(fields.w) / 5.0, 0.0, 1.0);
+            }
+            return clamp(abs(fields.w) / 5.0, 0.0, 1.0);
         }
 
        fn getInterpolatedColor(p: vec3<f32>) -> vec3<f32> {
@@ -532,7 +583,7 @@
               let cell = grid[idx];
               let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
               for(var i = 0; i < count; i = i + 1) {
-                  let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                  let s_idx = i32(round(cell.ids[i]));
                   if (s_idx >= 0 && s_idx < 1024) {
                     let s_data = u.instances[s_idx];
                     let raw_w = s_data.pos_scale.w;
@@ -740,7 +791,7 @@
                   let cell = grid[idx];
                   let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                   for(var i = 0; i < count; i = i + 1) {
-                      let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                      let s_idx = i32(round(cell.ids[i]));
                       if (s_idx >= 0 && s_idx < 1024) {
                         let s_data = u.instances[s_idx];
                         let raw_w = s_data.pos_scale.w;
@@ -781,13 +832,12 @@
                 var has_metaballs = false;
                 var metaball_idx = -1.0;
                 for(var i = 0; i < count; i = i + 1) {
-                    let s_idx = i32(round(cell.ids[i / 4][i % 4]));
+                    let s_idx = i32(round(cell.ids[i]));
                     if (s_idx >= 0 && s_idx < 1024) {
                       let s_data = u.instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
-                        if (s_data.sph_fields.x > 0.0) { continue; } // Make explosion solid spheres invisible
-                        var local_dist = 10000.0;
+                       var local_dist = 10000.0;
                         let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                         let csg_root_idx = i32(round(s_data.color_csg.w));
                         if (csg_root_idx <= -99) {
@@ -805,8 +855,8 @@
                             } else {
                                 if (raw_w > 0.0 && raw_w < 500.0) {
                                   local_dist = sdSphere(local_p, raw_w);
-                                  if (s_data.sph_fields.x > 0.0) {
-                                      let noise_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
+                                  if (s_data.sph_fields.x != 0.0) {
+                                      let noise_factor = clamp(abs(s_data.sph_fields.x) / 120.0, 0.0, 1.0);
                                       let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
                                       let n = evaluateFbm(local_p * 2.5 - scroll);
                                       local_dist -= n * 0.4 * raw_w * noise_factor;
@@ -962,7 +1012,8 @@
                    
                    let interp_data = getInterpolatedFieldsAndColor(p);
                    let fields = interp_data.fields;
-                   let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02 + sdf_density;
+                   let view_mode = u.grid_origin.w;
+                   let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
                    
                    let base_sky = getSkyColor(rd);
                    var local_fog_col = base_sky;
@@ -974,24 +1025,10 @@
                         local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
                    }
                    
-                   let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
-                   if (color_weight > 0.0) {
-                        let view_mode = u.grid_origin.w;
-                        var inst_col = interp_data.color;
-                        if (view_mode == 1.0) {
-                            let norm_t = clamp(fields.x / 120.0, 0.0, 1.0);
-                            inst_col = mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
-                        } else if (view_mode == 2.0) {
-                            let norm_age = clamp(fields.y / 12.0, 0.0, 1.0);
-                            inst_col = mix(vec3<f32>(0.1, 0.9, 0.1), vec3<f32>(0.9, 0.1, 0.9), norm_age);
-                        } else if (view_mode == 3.0) {
-                            let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
-                            inst_col = mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
-                        } else if (view_mode == 4.0) {
-                            let norm_pres = clamp((fields.w - 1.0) / 30.0, 0.0, 1.0);
-                            inst_col = mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.2, 0.8, 1.0), norm_pres);
-                        }
-                        local_fog_col = mix(local_fog_col, inst_col, color_weight);
+                    let color_weight = getFieldColorWeight(fields, view_mode);
+                    if (color_weight > 0.0) {
+                         let inst_col = getFieldColor(fields, view_mode, interp_data.color);
+                         local_fog_col = mix(local_fog_col, inst_col, color_weight);
                    }
                    
                    fog_color_accum += local_fog_col * density * dt;
@@ -1011,15 +1048,16 @@
                       
                       let interp_data = getInterpolatedFieldsAndColor(p);
                       let fields = interp_data.fields;
-                      let density = 0.0035 + (fields.z / 100.0) * 0.04 + (fields.w / 30.0) * 0.02;
+                      let view_mode = u.grid_origin.w;
+                      let density = 0.0035 + getFieldDensity(fields, view_mode);
                       
                       let base_sky = getSkyColor(rd);
                       var local_fog_col = base_sky;
-                      let color_weight = clamp(fields.w / 5.0, 0.0, 1.0);
-                      if (color_weight > 0.0) {
-                          let inst_col = interp_data.color;
-                          local_fog_col = mix(base_sky, inst_col, color_weight);
-                      }
+                       let color_weight = getFieldColorWeight(fields, view_mode);
+                       if (color_weight > 0.0) {
+                           let inst_col = getFieldColor(fields, view_mode, interp_data.color);
+                           local_fog_col = mix(base_sky, inst_col, color_weight);
+                       }
                       
                       fog_color_accum += local_fog_col * density * dt;
                       fog_optical_depth += density * dt;
@@ -1237,17 +1275,27 @@
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                    if (s_data.sph_fields.x > 0.0) {
-                        let temp_factor = clamp(s_data.sph_fields.x / 120.0, 0.0, 1.0);
+                    if (s_data.sph_fields.x != 0.0) {
+                        let temp_factor = clamp(abs(s_data.sph_fields.x) / 120.0, 0.0, 1.0);
                         let scroll_col = vec3<f32>(0.0, u.time * 4.0, 0.0);
                         let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
                         let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
                         let n_col = clamp(base_noise * 0.7 + detail_noise * 0.3, 0.0, 1.0);
-                        let fire_core = s_data.color_csg.rgb;
-                        let fire_glow = min(fire_core * 1.5 + vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(1.0, 1.0, 1.0));
-                        let fire = mix(fire_core, fire_glow, n_col);
-                        let ash = vec3<f32>(0.05, 0.05, 0.05);
-                        base_col = mix(ash, fire, temp_factor * (0.2 + 0.8 * n_col));
+                        
+                        var fire_core = s_data.color_csg.rgb;
+                        if (s_data.sph_fields.x < 0.0) {
+                            // Cold cyan-blue implosion core
+                            let implosion_glow = min(fire_core * 1.8 + vec3<f32>(0.0, 0.3, 0.5), vec3<f32>(1.0, 1.0, 1.0));
+                            let energy = mix(fire_core, implosion_glow, n_col);
+                            let void_ash = vec3<f32>(0.01, 0.02, 0.04);
+                            base_col = mix(void_ash, energy, temp_factor * (0.3 + 0.7 * n_col));
+                        } else {
+                            // Hot thermal fire core
+                            let fire_glow = min(fire_core * 1.5 + vec3<f32>(0.2, 0.2, 0.2), vec3<f32>(1.0, 1.0, 1.0));
+                            let fire = mix(fire_core, fire_glow, n_col);
+                            let ash = vec3<f32>(0.05, 0.05, 0.05);
+                            base_col = mix(ash, fire, temp_factor * (0.2 + 0.8 * n_col));
+                        }
                         is_exp = true;
                         exp_temp_factor = temp_factor;
                         exp_n_col = n_col;

@@ -19,6 +19,7 @@
   pressure Double
   color (Vector3 Double)
   handle-id Int
+  update-fn (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Ref FieldEvent) Double] ())
 ])
 
 (deftype FieldDatabase [
@@ -287,10 +288,25 @@
           (Vector3.mul &sum-vel (/ 1.0 sum-W))
           (Vector3.init 0.0 0.0 0.0)))))
 
-  (defn dispatch-event! [db pos vel shape-type params start-scale max-scale growth-speed max-lifetime temp pres col]
-    (let [h-id @(FieldDatabase.next-virtual-id db)
+  (defn default-event-update [db handle ev dt]
+    (let [life @(FieldEvent.lifetime ev)
+          max-life @(FieldEvent.max-lifetime ev)
+          decay-factor (/ life max-life)
+          pos (FieldEvent.pos ev)
+          scale @(FieldEvent.scale ev)
+          temp (* @(FieldEvent.temperature ev) decay-factor)
+          pres (* @(FieldEvent.pressure ev) decay-factor)]
+      (do
+        (FieldDatabase.set-position! db handle @pos)
+        (FieldDatabase.set-scale! db handle scale)
+        (FieldDatabase.set-temperature! db handle temp)
+        (FieldDatabase.set-pressure! db handle pres))))
+
+  (defn dispatch-event! [db pos vel shape-type params start-scale max-scale growth-speed max-lifetime temp pres col update-fn]
+    (let [curr-id @(FieldDatabase.next-virtual-id db)
+          h-id (if (>= curr-id 1020) 512 curr-id)
           handle (Handle.init (Uint64.from-long (Long.from-int h-id)) (Uint32.from-long 1l))
-          event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime temp pres @col h-id)]
+          event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime temp pres @col h-id update-fn)]
       (do
         (FieldDatabase.set-next-virtual-id! db (inc h-id))
         (ignore (register-instance! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col temp 0.0 0.0 pres 0.0 -999.0 @vel))
@@ -316,16 +332,11 @@
                 new-scale (let [s (+ scale (* grow dt))]
                             (if (> s max-sc) max-sc s))]
             (if (> life 0.0)
-                (let [decay-factor (/ life max-life)
-                      temp (* @(FieldEvent.temperature &ev) decay-factor)
-                      pres (* @(FieldEvent.pressure &ev) decay-factor)
-                      updated-ev (FieldEvent.init @&new-pos @vel @(FieldEvent.shape-type &ev) @(FieldEvent.params &ev) new-scale max-sc grow life max-life @(FieldEvent.temperature &ev) @(FieldEvent.pressure &ev) @(FieldEvent.color &ev) h-id)]
+                (let [updated-ev (FieldEvent.init @&new-pos @vel @(FieldEvent.shape-type &ev) @(FieldEvent.params &ev) new-scale max-sc grow life max-life @(FieldEvent.temperature &ev) @(FieldEvent.pressure &ev) @(FieldEvent.color &ev) h-id @(FieldEvent.update-fn &ev))]
                   (do
-                    (Array.push-back! &keep-ev updated-ev)
-                    (FieldDatabase.set-position! db &handle @&new-pos)
-                    (FieldDatabase.set-scale! db &handle new-scale)
-                    (FieldDatabase.set-temperature! db &handle temp)
-                    (FieldDatabase.set-pressure! db &handle pres)))
+                    ;; Execute the custom callback function
+                    (@(FieldEvent.update-fn &ev) db &handle &updated-ev dt)
+                    (Array.push-back! &keep-ev updated-ev)))
                 (FieldDatabase.release-instance! db &handle))))
         (FieldDatabase.set-events! db keep-ev))))
 )

@@ -251,5 +251,18 @@
                   saved-chunk (Chunk.init qx qy qz saved-voxel -1 true 32)]
               (Array.push-back! saved-list saved-chunk))
             (let [target-chunk (Array.unsafe-nth saved-list found-idx)]
-              (Chunk.set-voxel-data! target-chunk @(Chunk.voxel-data chunk)))))))
+               (Chunk.set-voxel-data! target-chunk @(Chunk.voxel-data chunk)))))))
+
+  (defn clear-cache! [world]
+    (let [cqx (World.cache-qx world)
+          cqy (World.cache-qy world)
+          cqz (World.cache-qz world)
+          cidx (World.cache-idx world)]
+      (do
+        (for [i 0 64]
+          (do
+            (Array.aset! cqx i -999)
+            (Array.aset! cqy i -999)
+            (Array.aset! cqz i -999)
+            (Array.aset! cidx i -1))))))
 )

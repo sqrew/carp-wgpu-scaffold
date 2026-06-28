@@ -20,7 +20,7 @@
           col (Vector3.init r g b)
           growth-speed (* max-radius 6.0)]
       (do
-        (FieldDatabase.dispatch-event! db pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 temp-val pres-val &col)
+        (FieldDatabase.dispatch-event! db pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 temp-val pres-val &col FieldDatabase.default-event-update)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.3)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
         (ECS.add-component! world &exp-ent (Color.init col))
@@ -34,7 +34,7 @@
           col (Vector3.init 0.1 0.5 1.0)
           growth-speed (* max-radius 6.0)]
       (do
-        (FieldDatabase.dispatch-event! db pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 temp-val pres-val &col)
+        (FieldDatabase.dispatch-event! db pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 temp-val pres-val &col FieldDatabase.default-event-update)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.3)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
         (ECS.add-component! world &exp-ent (Color.init col))

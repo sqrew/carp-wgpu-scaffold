@@ -842,7 +842,8 @@
                             (Array.push-back! &keep @chunk)
                             (when @(Chunk.modified chunk)
                               (World.save-modified-chunk! world-data chunk)))))
-                    (World.set-chunks! world-data keep)))))
+                    (World.set-chunks! world-data keep)
+                    (World.clear-cache! world-data)))))
 
             ;; Load missing chunks dynamically around player
             (let [loaded-any false
@@ -1014,6 +1015,8 @@
         (Engine.tick-lifecycle! e dt)
         (Engine.tick-field-db-sync! e)
         (FieldDatabase.tick! (Engine.db e) dt)
+        (when (> (Array.length (FieldDatabase.events (Engine.db e))) 0)
+          (Engine.set-grid-dirty! e true))
         (Engine.submit-render-commands! e)
         (Engine.sync-render-db! e ctx ren))))
 )
