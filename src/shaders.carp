@@ -446,7 +446,9 @@
                             
                             sum_color += s_data.color_csg.rgb * w_color;
                             sum_color_w += w_color;
-                            sum_emissive += s_data.color_csg.rgb * w_color * 0.3;
+                            if (csg_root_idx > -99) {
+                                sum_emissive += s_data.color_csg.rgb * w_color * 0.3;
+                            }
                         }
                       }
                     }
@@ -563,7 +565,7 @@
             } else if (view_mode == 4.0) {
                 return clamp(abs(fields.w) / 5.0, 0.0, 1.0);
             }
-            return clamp((abs(fields.w) + abs(fields.x)) / 5.0, 0.0, 1.0);
+            return clamp(abs(fields.x) / 5.0, 0.0, 1.0);
         }
 
        fn getInterpolatedColor(p: vec3<f32>) -> vec3<f32> {
@@ -1021,9 +1023,9 @@
                          }
                     }
                    
-                   let interp_data = getInterpolatedFieldsAndColor(p);
-                   let fields = interp_data.fields;
-                   let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
+                    let interp_data = getInterpolatedFieldsAndColor(p);
+                    let fields = interp_data.fields;
+                    let density = 0.0035 + select(0.0, getFieldDensity(fields, view_mode), is_volumetric) + sdf_density;
                    
                    let base_sky = getSkyColor(rd);
                    var local_fog_col = base_sky;
@@ -1060,7 +1062,7 @@
                       let interp_data = getInterpolatedFieldsAndColor(p);
                       let fields = interp_data.fields;
                       let view_mode = u.grid_origin.w;
-                      let density = 0.0035 + getFieldDensity(fields, view_mode);
+                      let density = 0.0035;
                       
                       let base_sky = getSkyColor(rd);
                       var local_fog_col = base_sky;
