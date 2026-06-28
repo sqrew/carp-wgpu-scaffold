@@ -23,27 +23,22 @@
         (+ max-val (* (* (* h h) h) (* k (/ 1.0 6.0)))))))
 
   (defn pack-and-copy-chunk! [ctx ren slot]
-    (let [v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
-          v-half-b @(WGPURenderer.voxel-half-buffer ren)
+    (let [v-half-b @(WGPURenderer.voxel-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
-          bufs [v-gpu-b v-half-b]
+          bg @(WGPURenderer.pack-bind-group ren)
           slot-x (Int.mod slot 12)
           slot-y (Int.mod (/ slot 12) 12)
           slot-z (/ slot 144)
           ox (* slot-x 32)
           oy (* slot-y 32)
           oz (* slot-z 32)]
-      (match (WGPU.create-bind-group ctx pipe &bufs)
-        (Result.Error e) (IO.println &(format "Pack Bind Group error: %s" &e))
-        (Result.Success bg)
-          (do
-            (WGPU.dispatch ctx pipe bg 512)
-            (WGPU.free-bind-group bg)
-            (WGPURender.copy-buffer-to-3d-texture-offset 
-              ctx 
-              v-half-b 
-              @(WGPURenderer.voxel-texture ren) 
-              ox oy oz 32 32 32)))))
+      (do
+        (WGPU.dispatch ctx pipe bg 512)
+        (WGPURender.copy-buffer-to-3d-texture-offset 
+          ctx 
+          v-half-b 
+          @(WGPURenderer.voxel-texture ren) 
+          ox oy oz 32 32 32))))
 
   (defn chunk-overlaps-sphere? [chunk center radius]
     (let [qx @(Chunk.coord-x chunk)
@@ -121,49 +116,47 @@
           num-shapes (Array.length static-sdfs)]
       (do
         (for [z start-z end-z]
-          (for [y 0 h-dim]
-            (for [x 0 w-dim]
-              (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
-                    py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
-                    pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
-                    p (Vector3.init px py pz)
-                    
-                    ;; Compute procedural terrain height using 2D multi-biome engine
-                    final-h (WGPURenderer.get-terrain-height px pz)
-                    
-                    ;; Base SDF is the distance to the terrain height
-                    terrain-d (- py final-h)
-                    
-                    ;; Carve out caves if below terrain height using 3D noise
-                    cave-val (if (< terrain-d 0.0)
-                                 (noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
-                                 0.0)
-                    
-                    ;; Compute smooth cave SDF (using optimal 1/0.08 = 12.5 scale factor for correct gradient of 1.0)
-                    cave-sdf (if (< terrain-d 0.0)
-                                 (* (- cave-val 0.65) 12.5)
-                                 -1000.0)
-                    
-                    ;; Combine terrain and cave smoothly
-                    voxel-d (if (> cave-sdf terrain-d) cave-sdf terrain-d)
-                    
-                    min-d voxel-d
-                    mat-id (if (< min-d 0.0) 1.0f 0.0f)]
-                (do
-                  ;; Bake static CSG/SDF colliders on top
-                  (for [i 0 num-shapes]
-                    (let [sdf (Array.unsafe-nth static-sdfs i)
-                          d (SDF.distance-world sdf &p)]
-                      (when (< d min-d)
-                        (do
-                          (set! min-d d)
-                          (set! mat-id @(Array.unsafe-nth static-mat-ids i))))))
-                  (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
-                    (do
-                      (Array.aset! voxel-data idx (Double.to-float min-d))
-                      (Array.aset! voxel-data (+ idx 1) mat-id)
-                      (Array.aset! voxel-data (+ idx 2) 0.0f)
-                      (Array.aset! voxel-data (+ idx 3) 0.0f)))))))))))
+          (for [x 0 w-dim]
+            (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
+                  pz (+ oz (* (+ (Double.from-int z) 0.5) cell-size))
+                  final-h (WGPURenderer.get-terrain-height px pz)]
+              (for [y 0 h-dim]
+                (let [py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
+                      p (Vector3.init px py pz)
+                      
+                      ;; Base SDF is the distance to the terrain height
+                      terrain-d (- py final-h)
+                      
+                      ;; Carve out caves if below terrain height using 3D noise
+                      cave-val (if (< terrain-d 0.0)
+                                   (noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
+                                   0.0)
+                      
+                      ;; Compute smooth cave SDF (using optimal 1/0.08 = 12.5 scale factor for correct gradient of 1.0)
+                      cave-sdf (if (< terrain-d 0.0)
+                                   (* (- cave-val 0.65) 12.5)
+                                   -1000.0)
+                      
+                      ;; Combine terrain and cave smoothly
+                      voxel-d (if (> cave-sdf terrain-d) cave-sdf terrain-d)
+                      
+                      min-d voxel-d
+                      mat-id (if (< min-d 0.0) 1.0f 0.0f)]
+                  (do
+                    ;; Bake static CSG/SDF colliders on top
+                    (for [i 0 num-shapes]
+                      (let [sdf (Array.unsafe-nth static-sdfs i)
+                            d (SDF.distance-world sdf &p)]
+                        (when (< d min-d)
+                          (do
+                            (set! min-d d)
+                            (set! mat-id @(Array.unsafe-nth static-mat-ids i))))))
+                    (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
+                      (do
+                        (Array.aset! voxel-data idx (Double.to-float min-d))
+                        (Array.aset! voxel-data (+ idx 1) mat-id)
+                        (Array.aset! voxel-data (+ idx 2) 0.0f)
+                        (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))))
 
   (defn compute-chunk-lighting! [chunk]
     (let [voxel-data (Chunk.voxel-data chunk)
@@ -201,22 +194,8 @@
                               ao-val (- 1.0f (* (Float.from-int num-solid) 0.15f))
                               ao-clamped (if (< ao-val 0.1f) 0.1f (if (> ao-val 1.0f) 1.0f ao-val))
                               
-                              shadow-val 1.0f
-                              step 1]
+                              shadow-val (if solid-u 0.2f 1.0f)]
                           (do
-                            (while (< (+ y step) 32)
-                              (let [tx (+ x (/ step 2))
-                                    tz (+ z (/ (* step 3) 10))]
-                                (do
-                                  (if (and (and (>= tx 0) (< tx 32))
-                                           (and (>= tz 0) (< tz 32)))
-                                      (let [n-idx (* (+ tx (+ (+ y-offset (* step 32)) (* tz 1024))) 4)]
-                                        (when (< @(Array.unsafe-nth voxel-data n-idx) 0.0f)
-                                          (do
-                                            (set! shadow-val 0.2f)
-                                            (set! step 999))))
-                                      (set! step 999))
-                                  (set! step (inc step)))))
                             (Array.aset! voxel-data (+ idx 2) shadow-val)
                             (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))))
 

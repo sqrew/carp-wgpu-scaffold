@@ -163,7 +163,7 @@
           return mix(y0, y1, w);
       }
 
-      fn getVoxelAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+      fn getVoxelAt(gx: i32, gy: i32, gz: i32, only_dist: bool) -> vec4<f32> {
           let qx = gx >> 5u;
           let qy = gy >> 5u;
           let qz = gz >> 5u;
@@ -221,6 +221,10 @@
               let voxel_d = max(cave_sdf, terrain_d);
               let mat_id = 1.0;
               
+              if (only_dist) {
+                  return vec4<f32>(voxel_d, mat_id, 1.0, 1.0);
+              }
+
               let h_dx = get_terrain_height(px + 1.0, pz) - final_h;
               let h_dz = get_terrain_height(px, pz + 1.0) - final_h;
               let terrain_normal = normalize(vec3<f32>(-h_dx, 1.0, -h_dz));
@@ -234,7 +238,7 @@
           }
       }
 
-      fn sampleVoxelGrid(p: vec3<f32>) -> vec4<f32> {
+      fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
           let tx = p / 1.0 - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
@@ -300,14 +304,14 @@
               v6 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
               v7 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
           } else {
-              v0 = getVoxelAt(c0.x,     c0.y,     c0.z);
-              v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z);
-              v2 = getVoxelAt(c0.x,     c0.y + 1, c0.z);
-              v3 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z);
-              v4 = getVoxelAt(c0.x,     c0.y,     c0.z + 1);
-              v5 = getVoxelAt(c0.x + 1, c0.y,     c0.z + 1);
-              v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1);
-              v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1);
+              v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
+              v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);
+              v2 = getVoxelAt(c0.x,     c0.y + 1, c0.z,     only_dist);
+              v3 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z,     only_dist);
+              v4 = getVoxelAt(c0.x,     c0.y,     c0.z + 1, only_dist);
+              v5 = getVoxelAt(c0.x + 1, c0.y,     c0.z + 1, only_dist);
+              v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1, only_dist);
+              v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1, only_dist);
           }
           
           v0.x = min(v0.x, 1.5);
@@ -346,10 +350,10 @@
           return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
       }
 
-       fn sampleVoxelGridPoint(p: vec3<f32>) -> vec2<f32> {
+       fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
            let tx = p / 1.0;
            let c0 = vec3<i32>(floor(tx));
-           let val = getVoxelAt(c0.x, c0.y, c0.z);
+           let val = getVoxelAt(c0.x, c0.y, c0.z, only_dist);
            return vec2<f32>(val.x, val.y);
        }
 
@@ -802,10 +806,10 @@
               let gy = i32(floor(p_local.y / u.cell_size));
               let gz = i32(floor(p_local.z / u.cell_size));
 
-              let voxel_pt = sampleVoxelGridPoint(p);
+              let voxel_pt = sampleVoxelGridPoint(p, true);
               var voxel_dist = voxel_pt.x;
               if (voxel_dist < 16.0) {
-                  let voxel_tri = sampleVoxelGrid(p);
+                  let voxel_tri = sampleVoxelGrid(p, true);
                   voxel_dist = voxel_tri.x;
               }
 
@@ -1168,7 +1172,7 @@
                 }
 
                 // Sample voxel and metaball distances for color and shading blending
-                let voxel_val = sampleVoxelGrid(p);
+                let voxel_val = sampleVoxelGrid(p, false);
                 let voxel_d = voxel_val.x;
                 let metaball_d = final_metaball_d;
                 let solid_surface_d = select(0.0, voxel_d, hitId == -1.0);

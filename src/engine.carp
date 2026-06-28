@@ -984,6 +984,7 @@
           flat-grid (RenderDatabase.s-data r-db)
           csg-data (RenderDatabase.csg-data r-db)
           lookup-data (RenderDatabase.lookup-data r-db)
+          geom-map (RenderDatabase.geom-map r-db)
           world (Engine.world e)
           world-data (Engine.world-data e)
           grid (Engine.grid e)
@@ -1043,7 +1044,7 @@
 
         ;; 6. Flatten Spatial Grid (if dirty)
         (when grid-dirty
-          (GPUSpatial.flatten-in-place! db world grid 64 flat-grid)))))
+          (GPUSpatial.flatten-in-place! db world grid 64 flat-grid geom-map)))))
 
   (defn tick! [e ctx ren]
     (let [dt (Clock.unscaled-dt (Engine.clock e))]

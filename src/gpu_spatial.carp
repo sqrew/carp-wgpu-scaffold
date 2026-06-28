@@ -11,23 +11,22 @@
   (defn required-floats [grid max-ids]
     (* (GPUSpatial.cell-count grid) (GPUSpatial.stride max-ids)))
 
-  (defn flatten-in-place! [db world grid max-ids data]
+  (defn flatten-in-place! [db world grid max-ids data geom-map]
     (let [total-cells (GPUSpatial.cell-count grid)
           st (GPUSpatial.stride max-ids)
           heads (SpatialGrid.heads grid)
           entries (SpatialGrid.entries grid)
-          max-entities (Array.length (ECSRegistry.generations (GameWorld.registry world)))
-          geom-map-size (if (< max-entities 1024) 1024 max-entities)
-          geom-map (the (Array Int) (replicate geom-map-size &-1))
+          geom-map-size (Array.length geom-map)
           active (FieldDatabase.active db)
           handles (FieldDatabase.handles db)]
       (do
+        (clear-ints! geom-map -1)
         (for [i 0 (Array.length active)]
           (when @(Array.unsafe-nth active i)
             (let [h (Array.unsafe-nth handles i)
                   eid (the Int (Long.to-int (Uint64.to-long (Handle.index h))))]
               (when (< eid geom-map-size)
-                (Array.aset! &geom-map eid i)))))
+                (Array.aset! geom-map eid i)))))
         (for [i 0 total-cells]
           (let [curr @(Array.unsafe-nth heads i)
                 count 0
@@ -38,7 +37,7 @@
                       ent-idx-u32 @(GridEntry.id entry)
                       eid-int (Long.to-int (Uint32.to-long ent-idx-u32))
                       geom-id (if (and (>= eid-int 0) (< eid-int geom-map-size))
-                                  @(Array.unsafe-nth &geom-map eid-int)
+                                  @(Array.unsafe-nth geom-map eid-int)
                                   -1)]
                   (do
                     (Array.aset! data (+ base-idx (+ 4 count)) (the Float (Double.to-float (Double.from-int geom-id))))

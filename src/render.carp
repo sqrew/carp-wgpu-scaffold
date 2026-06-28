@@ -55,6 +55,7 @@
   chunk-lookup-buffer WGPUBuffer
   noise-texture (Ptr WGPURenderTexture)
   noise-sampler WGPUSampler
+  pack-bind-group WGPUBindGroup
 ])
 
 (defmodule VoxelBaker
@@ -260,9 +261,11 @@
                                                                           (match (WGPU.create-pipeline ctx Shaders.pack-shader "main")
                                                                             (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
                                                                             (Result.Success p-pipe)
-                                                                               (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true c-pipe p-pipe v-gpu-b v-half-b c-params-b chunk-lookup-b noise-tex noise-samp)))))))))))))))))))))))
-
-
+                                                                              (let [pack-bufs [v-gpu-b v-half-b]]
+                                                                                (match (WGPU.create-bind-group ctx p-pipe &pack-bufs)
+                                                                                  (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack bind group failed: " e)))
+                                                                                  (Result.Success p-bg)
+                                                                                    (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex voxel-samp [] true c-pipe p-pipe v-gpu-b v-half-b c-params-b chunk-lookup-b noise-tex noise-samp p-bg)))))))))))))))))))))))))
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]

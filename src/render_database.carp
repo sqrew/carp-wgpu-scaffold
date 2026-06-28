@@ -11,11 +11,16 @@
   "void $NAME(Array* dest, Array* src)"
   "$DECL { if (dest->data && src->data && dest->len == src->len) { memcpy(dest->data, src->data, dest->len * sizeof(float)); } }")
 
+(deftemplate clear-ints! (Fn [(Ref (Array Int)) Int] ())
+  "void $NAME(Array* arr, int val)"
+  "$DECL { if (arr->data) { memset(arr->data, val, arr->len * sizeof(int)); } }")
+
 (deftype RenderDatabase [
   u-data (Array Float)
   s-data (Array Float)
   csg-data (Array Float)
   lookup-data (Array Int)
+  geom-map (Array Int)
   line-commands (Array RenderCommand)
   voxel-dirty Bool
   csg-dirty Bool
@@ -41,6 +46,7 @@
           s-arr (the (Array Float) (replicate s-size &0.0f))
           csg-arr (the (Array Float) (replicate (/ csg-size 4) &0.0f))
           lookup-arr (the (Array Int) (replicate 33284 &0))
+          geom-map-arr (the (Array Int) (replicate 2048 &-1))
           line-cmds (the (Array RenderCommand) [])]
-      (RenderDatabase.init u-arr s-arr csg-arr lookup-arr line-cmds true true true)))
+      (RenderDatabase.init u-arr s-arr csg-arr lookup-arr geom-map-arr line-cmds true true true)))
 )

@@ -222,61 +222,28 @@
           
           sum-val 0.0
           sum-W 0.0
-          epsilon 0.01]
-      (if (null? @(FieldKernelStorage.grid-ptr storage))
-          (let [len (Array.length active)]
-            (do
-              (for [i 0 len]
-                (when @(Array.unsafe-nth active i)
-                  (let [inst-pos (Array.unsafe-nth positions i)
-                        scale @(Array.unsafe-nth scales i)
-                        val @(Array.unsafe-nth values i)
-                        to-pos (Vector3.sub pos inst-pos)
-                        dist (Vector3.mag &to-pos)]
-                    (when (or (not (= idx 5))
-                              (and (not (= val -999.0))
-                                   (< dist (* scale 2.0))))
-                      (let [d (- dist scale)
-                            w-denom (+ (* d d) epsilon)
-                            w (/ 1.0 w-denom)]
-                        (do
-                          (set! sum-val (+ sum-val (* val w)))
-                          (set! sum-W (+ sum-W w))))))))
-              (if (> sum-W 0.00001)
-                (/ sum-val sum-W)
-                (if (= idx 5) 1.0 0.0))))
-          (let [grid (ptr->ref @(FieldKernelStorage.grid-ptr storage))
-                ms @(FieldDatabase.max-scale db)
-                query-radius (* ms 2.0)
-                radius-vec (Vector3.init query-radius query-radius query-radius)
-                aabb (AABB.init (Vector3.sub pos &radius-vec) (Vector3.add pos &radius-vec))
-                candidates (SpatialGrid.query-unique grid &aabb)
-                len (Array.length &candidates)]
-            (do
-              (for [c 0 len]
-                (let [ent-id @(Array.unsafe-nth &candidates c)
-                      h (Handle.init (Uint64.from-long (Uint32.to-long ent-id)) (Uint32.from-long 1l))
-                      i (FieldDatabase.get-index-by-handle db &h)]
-                  (when (>= i 0)
-                    (when @(Array.unsafe-nth active i)
-                      (let [inst-pos (Array.unsafe-nth positions i)
-                            scale @(Array.unsafe-nth scales i)
-                            val @(Array.unsafe-nth values i)
-                            to-pos (Vector3.sub pos inst-pos)
-                            dist (Vector3.mag &to-pos)]
-                        (when (or (not (= idx 5))
-                                  (and (not (= val -999.0))
-                                       (< dist (* scale 2.0))))
-                          (let [d (- dist scale)
-                                w-denom (+ (* d d) epsilon)
-                                w (/ 1.0 w-denom)]
-                            (do
-                              (set! sum-val (+ sum-val (* val w)))
-                              (set! sum-W (+ sum-W w))))))))))
-              (Array.delete candidates)
-              (if (> sum-W 0.00001)
-                (/ sum-val sum-W)
-                (if (= idx 5) 1.0 0.0)))))))
+          epsilon 0.01
+          len (Array.length active)]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active i)
+            (let [inst-pos (Array.unsafe-nth positions i)
+                  scale @(Array.unsafe-nth scales i)
+                  val @(Array.unsafe-nth values i)
+                  to-pos (Vector3.sub pos inst-pos)
+                  dist (Vector3.mag &to-pos)]
+              (when (or (not (= idx 5))
+                        (and (not (= val -999.0))
+                             (< dist (* scale 2.0))))
+                (let [d (- dist scale)
+                      w-denom (+ (* d d) epsilon)
+                      w (/ 1.0 w-denom)]
+                  (do
+                    (set! sum-val (+ sum-val (* val w)))
+                    (set! sum-W (+ sum-W w))))))))
+        (if (> sum-W 0.00001)
+          (/ sum-val sum-W)
+          (if (= idx 5) 1.0 0.0)))))
 
   (defn update [storage dt]
     ())
@@ -300,55 +267,25 @@
           
           sum-vel (Vector3.init 0.0 0.0 0.0)
           sum-W 0.0
-          epsilon 0.01]
-      (if (null? @(FieldKernelStorageVector.grid-ptr storage))
-          (let [len (Array.length active)]
-            (do
-              (for [i 0 len]
-                (when @(Array.unsafe-nth active i)
-                  (let [inst-pos (Array.unsafe-nth positions i)
-                        scale @(Array.unsafe-nth scales i)
-                        vel (Array.unsafe-nth velocities i)
-                        to-pos (Vector3.sub pos inst-pos)
-                        dist (Vector3.mag &to-pos)
-                        d (- dist scale)
-                        w-denom (+ (* d d) epsilon)
-                        w (/ 1.0 w-denom)]
-                    (do
-                      (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
-                      (set! sum-W (+ sum-W w))))))
-              (if (> sum-W 0.00001)
-                (Vector3.mul &sum-vel (/ 1.0 sum-W))
-                (Vector3.init 0.0 0.0 0.0))))
-          (let [grid (ptr->ref @(FieldKernelStorageVector.grid-ptr storage))
-                ms @(FieldDatabase.max-scale db)
-                query-radius (* ms 2.0)
-                radius-vec (Vector3.init query-radius query-radius query-radius)
-                aabb (AABB.init (Vector3.sub pos &radius-vec) (Vector3.add pos &radius-vec))
-                candidates (SpatialGrid.query-unique grid &aabb)
-                len (Array.length &candidates)]
-            (do
-              (for [c 0 len]
-                (let [ent-id @(Array.unsafe-nth &candidates c)
-                      h (Handle.init (Uint64.from-long (Uint32.to-long ent-id)) (Uint32.from-long 1l))
-                      i (FieldDatabase.get-index-by-handle db &h)]
-                  (when (>= i 0)
-                    (when @(Array.unsafe-nth active i)
-                      (let [inst-pos (Array.unsafe-nth positions i)
-                            scale @(Array.unsafe-nth scales i)
-                            vel (Array.unsafe-nth velocities i)
-                            to-pos (Vector3.sub pos inst-pos)
-                            dist (Vector3.mag &to-pos)
-                            d (- dist scale)
-                            w-denom (+ (* d d) epsilon)
-                            w (/ 1.0 w-denom)]
-                        (do
-                          (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
-                          (set! sum-W (+ sum-W w))))))))
-              (Array.delete candidates)
-              (if (> sum-W 0.00001)
-                (Vector3.mul &sum-vel (/ 1.0 sum-W))
-                (Vector3.init 0.0 0.0 0.0)))))))
+          epsilon 0.01
+          len (Array.length active)]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active i)
+            (let [inst-pos (Array.unsafe-nth positions i)
+                  scale @(Array.unsafe-nth scales i)
+                  vel (Array.unsafe-nth velocities i)
+                  to-pos (Vector3.sub pos inst-pos)
+                  dist (Vector3.mag &to-pos)
+                  d (- dist scale)
+                  w-denom (+ (* d d) epsilon)
+                  w (/ 1.0 w-denom)]
+              (do
+                (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
+                (set! sum-W (+ sum-W w))))))
+        (if (> sum-W 0.00001)
+          (Vector3.mul &sum-vel (/ 1.0 sum-W))
+          (Vector3.init 0.0 0.0 0.0)))))
 
   (defn update [storage dt]
     ())
