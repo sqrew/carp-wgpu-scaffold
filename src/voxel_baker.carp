@@ -10,6 +10,18 @@
 
   (def sdf-padding 6.0)
 
+  (defn smin [a b k]
+    (let [h (let [diff (- k (Double.abs (- a b)))]
+              (if (> diff 0.0) (/ diff k) 0.0))]
+      (let [min-val (if (< a b) a b)]
+        (- min-val (* (* (* h h) h) (* k (/ 1.0 6.0)))))))
+
+  (defn smax [a b k]
+    (let [h (let [diff (- k (Double.abs (- a b)))]
+              (if (> diff 0.0) (/ diff k) 0.0))]
+      (let [max-val (if (> a b) a b)]
+        (+ max-val (* (* (* h h) h) (* k (/ 1.0 6.0)))))))
+
   (defn pack-and-copy-chunk! [ctx ren slot]
     (let [v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
           v-half-b @(WGPURenderer.voxel-half-buffer ren)
@@ -294,8 +306,7 @@
                             dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
                             crater-dist (- dist-to-crater-center radius)
                             old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                            new-dist (let [neg-crater-dist (- 0.0 crater-dist)]
-                                       (if (> old-dist neg-crater-dist) old-dist neg-crater-dist))]
+                            new-dist (smax old-dist (- 0.0 crater-dist) 2.5)]
                         (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))))
 
   (defn build-voxel-grid-cpu! [chunk center radius]
@@ -349,7 +360,7 @@
                             dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
                             sphere-dist (- dist-to-sphere-center radius)
                             old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                            new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
+                            new-dist (smin old-dist sphere-dist 2.5)]
                         (do
                           (Array.aset! voxel-data idx-full (Double.to-float new-dist))
                           (when (< sphere-dist 0.0)
