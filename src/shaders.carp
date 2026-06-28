@@ -608,8 +608,11 @@
                           var s = f32(-99 - csg_root_idx) / 100.0;
                           if (s < 0.05) { s = 0.6; }
                           let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                          let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
-                          let local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
+                          let wave_phase = (local_p.x + local_p.z) * 8.0 - u.time * 12.0;
+                          let wave = 0.05 * sin(wave_phase) * exp(-length(local_p) * 0.15);
+                          let wavy_p = vec3<f32>(local_p.x, local_p.y + wave, local_p.z);
+                          let squashed_p = vec3<f32>(wavy_p.x, wavy_p.y / s, wavy_p.z);
+                          let local_dist = (length(squashed_p) - raw_w) * min(1.0, s) * 0.85;
                           metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
                       }
                     }
@@ -857,11 +860,14 @@
                         let csg_root_idx = i32(round(s_data.color_csg.w));
                         if (csg_root_idx <= -99) {
                             if (!eval_metaballs) { continue; }
-                            var s = f32(-99 - csg_root_idx) / 100.0;
-                            if (s < 0.05) { s = 0.6; }
-                            let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
-                            local_dist = (length(squashed_p) - raw_w) * min(1.0, s);
-                            metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
+                             var s = f32(-99 - csg_root_idx) / 100.0;
+                             if (s < 0.05) { s = 0.6; }
+                             let wave_phase = (local_p.x + local_p.z) * 8.0 - u.time * 12.0;
+                             let wave = 0.05 * sin(wave_phase) * exp(-length(local_p) * 0.15);
+                             let wavy_p = vec3<f32>(local_p.x, local_p.y + wave, local_p.z);
+                             let squashed_p = vec3<f32>(wavy_p.x, wavy_p.y / s, wavy_p.z);
+                             local_dist = (length(squashed_p) - raw_w) * min(1.0, s) * 0.85;
+                             metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
                             has_metaballs = true;
                             metaball_idx = f32(s_idx);
                         } else {
