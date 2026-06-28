@@ -25,7 +25,7 @@
 (defmodule RenderDatabase
   (use Array)
 
-  (defn create [grid-ref]
+  (defn create [grid-ref max-ids]
     (let [max-spheres 512
           header-size 144
           sphere-data-size 64
@@ -35,7 +35,7 @@
           cols @(SpatialGrid.cols grid-ref)
           rows @(SpatialGrid.rows grid-ref)
           layers @(SpatialGrid.layers grid-ref)
-          s-size (* (* cols (* rows layers)) 68) ;; 64 + 4 stride
+          s-size (* (* cols (* rows layers)) (+ max-ids 4))
           csg-size (* max-csg-nodes csg-node-size)
           u-arr (the (Array Float) (replicate (/ u-size 4) &0.0f))
           s-arr (the (Array Float) (replicate s-size &0.0f))

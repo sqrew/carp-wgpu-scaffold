@@ -27,13 +27,13 @@
           world (GameWorld.new)
           coord (Coordinator.new)
           db-ptr (Pointer.address (World.sdf-db &world-data))
-          pres-field (Field.init (FieldKernelStorage.init db-ptr 3) FieldKernelStorage.sample FieldKernelStorage.update)
-          vel-field (Field.init (FieldKernelStorageVector.init db-ptr) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
-          temp-field (Field.init (FieldKernelStorage.init db-ptr 0) FieldKernelStorage.sample FieldKernelStorage.update)
-          age-field (Field.init (FieldKernelStorage.init db-ptr 1) FieldKernelStorage.sample FieldKernelStorage.update)
-          hum-field (Field.init (FieldKernelStorage.init db-ptr 2) FieldKernelStorage.sample FieldKernelStorage.update)
-          ch-field (Field.init (FieldKernelStorage.init db-ptr 4) FieldKernelStorage.sample FieldKernelStorage.update)
-          grav-field (Field.init (FieldKernelStorage.init db-ptr 5) FieldKernelStorage.sample FieldKernelStorage.update)]
+          pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
+          vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
+          temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
+          age-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
+          hum-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 2) FieldKernelStorage.sample FieldKernelStorage.update)
+          ch-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
+          grav-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)]
       (do
         (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
         (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
@@ -196,7 +196,7 @@
                 (ECS.add-component! &world &ent color)
                 (ECS.add-component! &world &ent fi)))))
 
-          (let [r-db (RenderDatabase.create &grid)]
+          (let [r-db (RenderDatabase.create &grid WGPURenderer.max-ids-per-cell)]
             (Engine.init 
               (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
               (Clock.new)
@@ -295,6 +295,7 @@
 
   (defn init-fields! [e]
     (let [db-ptr (Pointer.address (World.sdf-db (Engine.world-data e)))
+          grid-ptr (Pointer.address (Engine.grid e))
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)
           temp-field (Engine.temperature-field e)
@@ -304,12 +305,19 @@
           grav-field (Engine.gravity-field e)]
       (do
         (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage pres-field) grid-ptr)
         (FieldKernelStorageVector.set-db-ptr! (Field.storage vel-field) db-ptr)
+        (FieldKernelStorageVector.set-grid-ptr! (Field.storage vel-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage temp-field) db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage temp-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage age-field) db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage age-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage hum-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage ch-field) db-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage grav-field) db-ptr))))
+        (FieldKernelStorage.set-grid-ptr! (Field.storage ch-field) grid-ptr)
+        (FieldKernelStorage.set-db-ptr! (Field.storage grav-field) db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage grav-field) grid-ptr))))
 
   (defn register-internal-handlers! [e]
     (Coordinator.subscribe! (Engine.coordinator e)

@@ -251,7 +251,7 @@
                                                               (match (WGPU.create-buffer ctx 262144)
                                                                 (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Voxel Half Buffer failed: " e)))
                                                                 (Result.Success v-half-b)
-                                                                  (match (WGPU.create-buffer ctx 12)
+                                                                  (match (WGPU.create-buffer ctx 48)
                                                                     (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Carve params buffer failed: " e)))
                                                                     (Result.Success c-params-b)
                                                                       (match (WGPU.create-pipeline ctx Shaders.carve-shader "main")

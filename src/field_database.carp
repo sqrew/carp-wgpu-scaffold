@@ -23,6 +23,7 @@
   gravities (Array Double)
   velocities (Array (Vector3 Double))
   handle-to-index (Array Int)
+  max-scale Double
 ])
 
 (defmodule FieldDatabase
@@ -53,7 +54,7 @@
           grav (the (Array Double) (replicate n &-999.0))
           vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
           h-to-idx (the (Array Int) (replicate 1024 &-1))]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel h-to-idx)))
+      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel h-to-idx 4.0)))
   (sig new (Fn [] FieldDatabase))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
   (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double)] Int))
@@ -128,6 +129,9 @@
           (do
             (ensure-capacity! (FieldDatabase.handle-to-index db) (inc h-idx) -1)
             (Array.aset! (FieldDatabase.handle-to-index db) h-idx idx)
+            (let [ms (FieldDatabase.max-scale db)]
+              (when (> scale-val @ms)
+                (FieldDatabase.set-max-scale! db scale-val)))
             idx)))))
 
   (defn release-instance! [db handle]
@@ -144,7 +148,11 @@
   (defn set-scale! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.scales db) id val))))
+        (do
+          (Array.aset! (FieldDatabase.scales db) id val)
+          (let [ms (FieldDatabase.max-scale db)]
+            (when (> val @ms)
+              (FieldDatabase.set-max-scale! db val)))))))
 
   (defn set-velocity! [db handle val]
     (let [id (get-index-by-handle db handle)]

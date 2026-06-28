@@ -21,10 +21,10 @@
   last-cam-x Int
   last-cam-y Int
   last-cam-z Int
-  cache-qx Int
-  cache-qy Int
-  cache-qz Int
-  cache-idx Int
+  cache-qx (Array Int)
+  cache-qy (Array Int)
+  cache-qz (Array Int)
+  cache-idx (Array Int)
   modified-chunks (Array Chunk)
 ])
 
@@ -46,7 +46,11 @@
         arr)))
 
   (defn new [origin cell-size w h d]
-    (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999 -999 -999 -999 -1 []))
+    (let [cqx (the (Array Int) (replicate 64 &-999))
+          cqy (the (Array Int) (replicate 64 &-999))
+          cqz (the (Array Int) (replicate 64 &-999))
+          cidx (the (Array Int) (replicate 64 &-1))]
+      (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx [])))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -122,21 +126,17 @@
           lz (Int.bit-and gz 31)
           res 32
           chunks (World.chunks world)
-          found-idx -1]
+          found-idx -1
+          hash-idx (Int.mod (Int.abs (+ qx (+ (* qy 3) (* qz 9)))) 64)]
       (do
-        (if (and (= qx @(World.cache-qx world))
-                 (and (= qy @(World.cache-qy world))
-                      (= qz @(World.cache-qz world))))
-            (let [cached-idx @(World.cache-idx world)]
-              (if (and (>= cached-idx 0) (< cached-idx (Array.length chunks)))
-                  (let [c (Array.unsafe-nth chunks cached-idx)]
-                    (if (and (= @(Chunk.coord-x c) qx)
-                             (and (= @(Chunk.coord-y c) qy)
-                                  (= @(Chunk.coord-z c) qz)))
-                        (set! found-idx cached-idx)
-                        ()))
-                  ()))
-            ())
+        (let [cached-qx @(Array.unsafe-nth (World.cache-qx world) hash-idx)
+              cached-qy @(Array.unsafe-nth (World.cache-qy world) hash-idx)
+              cached-qz @(Array.unsafe-nth (World.cache-qz world) hash-idx)]
+          (if (and (= qx cached-qx)
+                   (and (= qy cached-qy)
+                        (= qz cached-qz)))
+              (set! found-idx @(Array.unsafe-nth (World.cache-idx world) hash-idx))
+              ()))
         (when (= found-idx -1)
           (let [len (Array.length chunks)
                 i 0]
@@ -149,10 +149,10 @@
                                     (= @(Chunk.coord-z chunk) qz)))
                       (set! found-idx i))
                     (set! i (inc i)))))
-              (World.set-cache-qx! world qx)
-              (World.set-cache-qy! world qy)
-              (World.set-cache-qz! world qz)
-              (World.set-cache-idx! world found-idx))))
+              (Array.aset! (World.cache-qx world) hash-idx qx)
+              (Array.aset! (World.cache-qy world) hash-idx qy)
+              (Array.aset! (World.cache-qz world) hash-idx qz)
+              (Array.aset! (World.cache-idx world) hash-idx found-idx))))
         (if (= found-idx -1)
             1.5
             (let [chunk (Array.unsafe-nth chunks found-idx)

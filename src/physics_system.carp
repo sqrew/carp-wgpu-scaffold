@@ -50,6 +50,34 @@
           (Vector3.init 0.0 1.0 0.0)
           (Vector3.mul &(Vector3.init dx dy dz) (/ 1.0 len)))))
 
+  (defn check-corner! [world-data contacts cx cy cz]
+    (let [v (Vector3.init cx cy cz)
+          d (sample-static-world world-data &v)]
+      (if (< d 0.0)
+          (let [depth (neg d)
+                normal (estimate-sdf-normal world-data &v)]
+            (Array.push-back! contacts (Contact.init depth v normal)))
+          (Vector3.delete v))))
+
+  (defn check-offset-rad! [world-data contacts pos rot rad-val ox oy oz]
+    (let [local-offset (Vector3.init ox oy oz)
+          world-offset (Quaternion.rotate rot &local-offset)
+          v (Vector3.add pos &world-offset)
+          d (sample-static-world world-data &v)]
+      (do
+        (Vector3.delete local-offset)
+        (Vector3.delete world-offset)
+        (if (< d rad-val)
+            (let [depth (- rad-val d)
+                  normal (estimate-sdf-normal world-data &v)]
+              (if (= rad-val 0.0)
+                  (Array.push-back! contacts (Contact.init depth v normal))
+                  (let [contact-pt (Vector3.sub &v &(Vector3.mul &normal rad-val))]
+                    (do
+                      (Vector3.delete v)
+                      (Array.push-back! contacts (Contact.init depth contact-pt normal))))))
+            (Vector3.delete v)))))
+
   (defn sample-static-world-material [world p]
     (let [min-d 10000.0
           mat-id 0.0]
@@ -124,6 +152,13 @@
                 (when (not (ECS.has-component? world &ent StaticWorldTag))
                   (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
 
+        (ECS.query world [ent (fi FieldInstance) (rb RigidBody)]
+          (let [pos (RigidBody.position rb)
+                scale (* @(FieldInstance.scale fi) 2.0)
+                pad-vec (Vector3.init scale scale scale)
+                aabb (AABB.init (Vector3.sub pos &pad-vec) (Vector3.add pos &pad-vec))]
+            (SpatialGrid.insert! grid &aabb (ECS.Entity.id &ent))))
+
         ;; 3. Detect Collisions between Entities (including the static floor)
         (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
           (when (not (ECS.has-component? world &ent1 StaticWorldTag))
@@ -151,164 +186,87 @@
                               min-z @(Vector3.z amin)
                               max-x @(Vector3.x amax)
                               max-y @(Vector3.y amax)
-                              max-z @(Vector3.z amax)
-                              corners [
-                                (Vector3.init min-x min-y min-z)
-                                (Vector3.init min-x min-y max-z)
-                                (Vector3.init min-x max-y min-z)
-                                (Vector3.init min-x max-y max-z)
-                                (Vector3.init max-x min-y min-z)
-                                (Vector3.init max-x min-y max-z)
-                                (Vector3.init max-x max-y min-z)
-                                (Vector3.init max-x max-y max-z)
-                              ]]
-                          (do
-                            (for [i 0 8]
-                              (let [v (Array.unsafe-nth &corners i)
-                                    d (sample-static-world world-data v)]
-                                (when (< d 0.0)
-                                  (let [depth (neg d)
-                                        normal (estimate-sdf-normal world-data v)]
-                                    (Array.push-back! &contacts (Contact.init depth @v normal))))))
-                            (for [i 0 8]
-                              (Vector3.delete @(Array.unsafe-nth &corners i)))))
+                              max-z @(Vector3.z amax)]
+                              (do
+                            (check-corner! world-data &contacts min-x min-y min-z)
+                            (check-corner! world-data &contacts min-x min-y max-z)
+                            (check-corner! world-data &contacts min-x max-y min-z)
+                            (check-corner! world-data &contacts min-x max-y max-z)
+                            (check-corner! world-data &contacts max-x min-y min-z)
+                            (check-corner! world-data &contacts max-x min-y max-z)
+                            (check-corner! world-data &contacts max-x max-y min-z)
+                            (check-corner! world-data &contacts max-x max-y max-z)
+                            ()))
                       (Volume.Sdf sdf)
                         (match-ref (SDF.base sdf)
                           (BaseShape.Box half-extents)
                             (let [ex @(Vector3.x half-extents)
                                   ey @(Vector3.y half-extents)
-                                  ez @(Vector3.z half-extents)
-                                  offsets [
-                                    (Vector3.init ex ey ez)
-                                    (Vector3.init ex ey (neg ez))
-                                    (Vector3.init ex (neg ey) ez)
-                                    (Vector3.init ex (neg ey) (neg ez))
-                                    (Vector3.init (neg ex) ey ez)
-                                    (Vector3.init (neg ex) ey (neg ez))
-                                    (Vector3.init (neg ex) (neg ey) ez)
-                                    (Vector3.init (neg ex) (neg ey) (neg ez))
-                                  ]]
-                              (do
-                                (for [i 0 8]
-                                  (let [local-offset (Array.unsafe-nth &offsets i)
-                                        world-offset (Quaternion.rotate rot local-offset)
-                                        v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world-data &v)]
-                                    (do
-                                      (when (< d 0.0)
-                                        (let [depth (neg d)
-                                              normal (estimate-sdf-normal world-data &v)]
-                                          (Array.push-back! &contacts (Contact.init depth v normal)))))))
-                                (for [i 0 8]
-                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                                  ez @(Vector3.z half-extents)]
+                                  (do
+                                (check-offset-rad! world-data &contacts pos rot 0.0 ex ey ez)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 ex ey (neg ez))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 ex (neg ey) ez)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 ex (neg ey) (neg ez))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg ex) ey ez)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg ex) ey (neg ez))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg ex) (neg ey) ez)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg ex) (neg ey) (neg ez))
+                                ()))
                           (BaseShape.Cylinder rad hh)
                             (let [rad-val @rad
-                                  hh-val @hh
-                                  offsets [
-                                    (Vector3.init 0.0 hh-val 0.0)
-                                    (Vector3.init 0.0 (neg hh-val) 0.0)
-                                    (Vector3.init rad-val hh-val 0.0)
-                                    (Vector3.init (neg rad-val) hh-val 0.0)
-                                    (Vector3.init 0.0 hh-val rad-val)
-                                    (Vector3.init 0.0 hh-val (neg rad-val))
-                                    (Vector3.init (* rad-val 0.7071) hh-val (* rad-val 0.7071))
-                                    (Vector3.init (* rad-val -0.7071) hh-val (* rad-val 0.7071))
-                                    (Vector3.init (* rad-val 0.7071) hh-val (* rad-val -0.7071))
-                                    (Vector3.init (* rad-val -0.7071) hh-val (* rad-val -0.7071))
-                                    
-                                    (Vector3.init rad-val (neg hh-val) 0.0)
-                                    (Vector3.init (neg rad-val) (neg hh-val) 0.0)
-                                    (Vector3.init 0.0 (neg hh-val) rad-val)
-                                    (Vector3.init 0.0 (neg hh-val) (neg rad-val))
-                                    (Vector3.init (* rad-val 0.7071) (neg hh-val) (* rad-val 0.7071))
-                                    (Vector3.init (* rad-val -0.7071) (neg hh-val) (* rad-val 0.7071))
-                                    (Vector3.init (* rad-val 0.7071) (neg hh-val) (* rad-val -0.7071))
-                                    (Vector3.init (* rad-val -0.7071) (neg hh-val) (* rad-val -0.7071))
-                                  ]]
-                              (do
-                                (for [i 0 18]
-                                  (let [local-offset (Array.unsafe-nth &offsets i)
-                                        world-offset (Quaternion.rotate rot local-offset)
-                                        v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world-data &v)]
-                                    (do
-                                      (when (< d 0.0)
-                                        (let [depth (neg d)
-                                              normal (estimate-sdf-normal world-data &v)]
-                                          (Array.push-back! &contacts (Contact.init depth v normal)))))))
-                                (for [i 0 18]
-                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                                  hh-val @hh]
+                                  (do
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 hh-val 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 (neg hh-val) 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 rad-val hh-val 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg rad-val) hh-val 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 hh-val rad-val)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 hh-val (neg rad-val))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val 0.7071) hh-val (* rad-val 0.7071))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val -0.7071) hh-val (* rad-val 0.7071))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val 0.7071) hh-val (* rad-val -0.7071))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val -0.7071) hh-val (* rad-val -0.7071))
+                                
+                                (check-offset-rad! world-data &contacts pos rot 0.0 rad-val (neg hh-val) 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg rad-val) (neg hh-val) 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 (neg hh-val) rad-val)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 (neg hh-val) (neg rad-val))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val 0.7071) (neg hh-val) (* rad-val 0.7071))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val -0.7071) (neg hh-val) (* rad-val 0.7071))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val 0.7071) (neg hh-val) (* rad-val -0.7071))
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (* rad-val -0.7071) (neg hh-val) (* rad-val -0.7071))
+                                ()))
                           (BaseShape.Capsule rad hh)
                             (let [rad-val @rad
-                                  hh-val @hh
-                                  offsets [
-                                    (Vector3.init 0.0 hh-val 0.0)
-                                    (Vector3.init 0.0 (neg hh-val) 0.0)
-                                  ]]
-                              (do
-                                (for [i 0 2]
-                                  (let [local-offset (Array.unsafe-nth &offsets i)
-                                        world-offset (Quaternion.rotate rot local-offset)
-                                        v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world-data &v)]
-                                    (do
-                                      (when (< d rad-val)
-                                        (let [depth (- rad-val d)
-                                              normal (estimate-sdf-normal world-data &v)
-                                              contact-pt (Vector3.sub &v &(Vector3.mul &normal rad-val))]
-                                          (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
-                                (for [i 0 2]
-                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                                  hh-val @hh]
+                                  (do
+                                (check-offset-rad! world-data &contacts pos rot rad-val 0.0 hh-val 0.0)
+                                (check-offset-rad! world-data &contacts pos rot rad-val 0.0 (neg hh-val) 0.0)
+                                ()))
                           (BaseShape.Torus rad-maj rad-min)
                             (let [rmaj @rad-maj
-                                  rmin @rad-min
-                                  offsets [
-                                    (Vector3.init rmaj 0.0 0.0)
-                                    (Vector3.init (neg rmaj) 0.0 0.0)
-                                    (Vector3.init 0.0 0.0 rmaj)
-                                    (Vector3.init 0.0 0.0 (neg rmaj))
-                                    (Vector3.init (* rmaj 0.7071) 0.0 (* rmaj 0.7071))
-                                    (Vector3.init (* rmaj -0.7071) 0.0 (* rmaj 0.7071))
-                                    (Vector3.init (* rmaj 0.7071) 0.0 (* rmaj -0.7071))
-                                    (Vector3.init (* rmaj -0.7071) 0.0 (* rmaj -0.7071))
-                                  ]]
-                              (do
-                                (for [i 0 8]
-                                  (let [local-offset (Array.unsafe-nth &offsets i)
-                                        world-offset (Quaternion.rotate rot local-offset)
-                                        v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world-data &v)]
-                                    (do
-                                      (when (< d rmin)
-                                        (let [depth (- rmin d)
-                                              normal (estimate-sdf-normal world-data &v)
-                                              contact-pt (Vector3.sub &v &(Vector3.mul &normal rmin))]
-                                          (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
-                                (for [i 0 8]
-                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                                  rmin @rad-min]
+                                  (do
+                                (check-offset-rad! world-data &contacts pos rot rmin rmaj 0.0 0.0)
+                                (check-offset-rad! world-data &contacts pos rot rmin (neg rmaj) 0.0 0.0)
+                                (check-offset-rad! world-data &contacts pos rot rmin 0.0 0.0 rmaj)
+                                (check-offset-rad! world-data &contacts pos rot rmin 0.0 0.0 (neg rmaj))
+                                (check-offset-rad! world-data &contacts pos rot rmin (* rmaj 0.7071) 0.0 (* rmaj 0.7071))
+                                (check-offset-rad! world-data &contacts pos rot rmin (* rmaj -0.7071) 0.0 (* rmaj 0.7071))
+                                (check-offset-rad! world-data &contacts pos rot rmin (* rmaj 0.7071) 0.0 (* rmaj -0.7071))
+                                (check-offset-rad! world-data &contacts pos rot rmin (* rmaj -0.7071) 0.0 (* rmaj -0.7071))
+                                ()))
                           (BaseShape.Octahedron s)
-                            (let [size @s
-                                  offsets [
-                                    (Vector3.init size 0.0 0.0)
-                                    (Vector3.init (neg size) 0.0 0.0)
-                                    (Vector3.init 0.0 size 0.0)
-                                    (Vector3.init 0.0 (neg size) 0.0)
-                                    (Vector3.init 0.0 0.0 size)
-                                    (Vector3.init 0.0 0.0 (neg size))
-                                  ]]
-                              (do
-                                (for [i 0 6]
-                                  (let [local-offset (Array.unsafe-nth &offsets i)
-                                        world-offset (Quaternion.rotate rot local-offset)
-                                        v (Vector3.add pos &world-offset)
-                                        d (sample-static-world world-data &v)]
-                                    (do
-                                      (when (< d 0.0)
-                                        (let [depth (neg d)
-                                              normal (estimate-sdf-normal world-data &v)]
-                                          (Array.push-back! &contacts (Contact.init depth v normal)))))))
-                                (for [i 0 6]
-                                  (Vector3.delete @(Array.unsafe-nth &offsets i)))))
+                            (let [size @s]
+                                  (do
+                                (check-offset-rad! world-data &contacts pos rot 0.0 size 0.0 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 (neg size) 0.0 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 size 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 (neg size) 0.0)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 0.0 size)
+                                (check-offset-rad! world-data &contacts pos rot 0.0 0.0 0.0 (neg size))
+                                ()))
                           _ (let [is-bouncy (ECS.has-component? world &ent1 BouncyTag)
                                   rad (if is-bouncy 0.2 0.4)
                                   d (sample-static-world world-data pos)]
