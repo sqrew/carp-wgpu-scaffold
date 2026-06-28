@@ -212,6 +212,7 @@
               true
               true
               []
+              []
               1.2
               true
               0
@@ -340,12 +341,12 @@
                       rad @(CraterSpawnData.radius data)
                       op @(CraterSpawnData.op-type data)]
                   (do
-                    (when (< op 0.5)
+                    (if (< op 0.5)
                       (do
-                        (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos (* rad 3.0) 800.0 120.0 30.0)
-                        (ignore (Engine.spawn-crater! e @pos rad (Maybe.Nothing)))))
-                    (Engine.set-voxel-dirty! e true)
-                    (Array.push-back! (Engine.craters e) @data)
+                        (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos rad 800.0 120.0 30.0)
+                        (Engine.set-voxel-dirty! e true))
+                      (let [build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4))]
+                        (Array.push-back! (Engine.growing-builds e) build)))
                     (Result.Success ())))
               _ (Result.Success ()))
           _ (Result.Success ())))))
@@ -466,6 +467,31 @@
     (let [cam (Engine.camera e)
           world (Engine.world e)]
       (do
+        ;; Update growing builds
+        (let [gb-arr (Engine.growing-builds e)
+              len (Array.length gb-arr)
+              keep-gb []]
+          (do
+            (for [i 0 len]
+              (let [gb @(Array.unsafe-nth gb-arr i)
+                    pos (GrowingBuild.pos &gb)
+                    curr @(GrowingBuild.current-radius &gb)
+                    target @(GrowingBuild.target-radius &gb)
+                    speed @(GrowingBuild.speed &gb)
+                    new-r (+ curr (* speed dt))]
+                (if (< new-r target)
+                    (let [updated-gb (GrowingBuild.init @pos new-r target speed)
+                          crater-data (CraterSpawnData.init @pos new-r 1.0)]
+                      (do
+                        (Array.push-back! &keep-gb updated-gb)
+                        (Array.push-back! (Engine.craters e) crater-data)
+                        (Engine.set-voxel-dirty! e true)))
+                    (let [crater-data (CraterSpawnData.init @pos target 1.0)]
+                      (do
+                        (Array.push-back! (Engine.craters e) crater-data)
+                        (Engine.set-voxel-dirty! e true))))))
+            (Engine.set-growing-builds! e keep-gb)))
+
         ;; Update Camera using live RotationState to decouple from physics roll & run bounds check
         (PlayerSystem.update-camera-and-bounds! world cam dt)
 

@@ -14,14 +14,14 @@
   (defn spawn! [world db pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
           params (Vector4.init max-radius 0.0 0.0 0.0)
-          fi (FieldInstance.init 1 params 0.1 -1 temp-val 0.0 0.0 pres-val 0.0 -999.0)
+          fi (FieldInstance.init 1 params 0.3 -1 temp-val 0.0 0.0 pres-val 0.0 -999.0)
           r (Double.random-between 0.2 1.0)
           g (Double.random-between 0.2 1.0)
           b (Double.random-between 0.2 1.0)]
       (do
         (ECS.add-component! world &exp-ent fi)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
-        (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.1)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
+        (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.3)) (Uint32.from-long 0l) (Uint32.from-long 0l) false))
         (ECS.add-component! world &exp-ent (Color.init (Vector3.init r g b)))
         (ECS.add-component! world &exp-ent (Lifetime.init 0.5))
         (ECS.add-component! world &exp-ent (Explosion.init 0.1 20.0 max-radius force pres-val temp-val (Maybe.Nothing)))
@@ -41,10 +41,10 @@
                 (Explosion.set-radius! exp new-r)
                 (Engine.set-grid-dirty! e true)
                 ;; Update scale in the FieldInstance component
-                (FieldInstance.set-scale! fi new-r)
+                (FieldInstance.set-scale! fi (* new-r 3.0))
                 ;; Update Collidable volume sphere radius to expand the spatial grid footprint
                 (match-ref (Collidable.volume col)
-                  (Volume.Ball s) (Sphere.set-radius! s new-r)
+                  (Volume.Ball s) (Sphere.set-radius! s (* new-r 3.0))
                   _ ())
                 ;; Decay values dynamically
                 (let [raw-decay (- 1.0 (/ new-r max-r))
@@ -56,7 +56,16 @@
                     (FieldInstance.set-pressure! fi new-pres)
                     (FieldInstance.set-temperature! fi new-temp)))
                 ;; 1. Carve terrain dynamically as shockwave expands
-                (let [new-handle (Engine.spawn-crater! e @pos new-r @(Explosion.crater-handle exp))]
-                  (Explosion.set-crater-handle! exp new-handle)))
-              ())))))
+                (let [new-handle (Engine.spawn-crater! e @pos new-r @(Explosion.crater-handle exp))
+                      crater-data (CraterSpawnData.init @pos new-r 0.0)]
+                  (do
+                    (Explosion.set-crater-handle! exp new-handle)
+                    (Array.push-back! (Engine.craters e) crater-data)
+                    (Engine.set-voxel-dirty! e true))))
+              (when (< @current-r max-r)
+                (let [crater-data (CraterSpawnData.init @pos max-r 0.0)]
+                  (do
+                    (Explosion.set-radius! exp max-r)
+                    (Array.push-back! (Engine.craters e) crater-data)
+                    (Engine.set-voxel-dirty! e true)))))))))
 )

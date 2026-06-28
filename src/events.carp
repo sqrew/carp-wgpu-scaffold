@@ -17,6 +17,13 @@
   op-type Double
 ])
 
+(deftype GrowingBuild [
+  pos (Vector3 Double)
+  current-radius Double
+  target-radius Double
+  speed Double
+])
+
 (deftype GameEvent
   (SpawnBullet [BulletSpawnData])
   (EntityDestroyed [Uint32])
