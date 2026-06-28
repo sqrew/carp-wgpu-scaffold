@@ -26,7 +26,7 @@
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)
-          db-ptr (Pointer.address (World.sdf-db &world-data))
+          db-ptr (Pointer.address (World.field-db &world-data))
           pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
           vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
           temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
@@ -229,7 +229,7 @@
               false)))))
 
   (defn db [e]
-    (World.sdf-db (Engine.world-data e)))
+    (World.field-db (Engine.world-data e)))
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))
   (defn spawn-crater! [e pos rad existing-crater]
@@ -296,7 +296,7 @@
 (defmodule Engine
 
   (defn init-fields! [e]
-    (let [db-ptr (Pointer.address (World.sdf-db (Engine.world-data e)))
+    (let [db-ptr (Pointer.address (World.field-db (Engine.world-data e)))
           grid-ptr (Pointer.address (Engine.grid e))
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)

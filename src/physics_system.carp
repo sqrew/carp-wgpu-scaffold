@@ -152,9 +152,9 @@
                 (when (not (ECS.has-component? world &ent StaticWorldTag))
                   (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
 
-        (let [active-arr (FieldDatabase.active (World.sdf-db (Engine.world-data e)))
+        (let [active-arr (FieldDatabase.active (World.field-db (Engine.world-data e)))
               len (Array.length active-arr)
-              db (World.sdf-db (Engine.world-data e))]
+              db (World.field-db (Engine.world-data e))]
           (for [id 0 len]
             (when @(Array.unsafe-nth active-arr id)
               (let [h (Array.unsafe-nth (FieldDatabase.handles db) id)

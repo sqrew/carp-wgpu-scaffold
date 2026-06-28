@@ -1011,18 +1011,18 @@
                        }
                    }
                    
-                   var sdf_density = 0.0;
-                   if (is_volumetric) {
-                        if (res.y < 0.0) {
-                            sdf_density = clamp(-res.y * 0.5, 0.0, 1.0) * 0.4;
-                        } else {
-                            sdf_density = clamp(1.0 - res.y / 8.0, 0.0, 1.0) * 0.08;
-                        }
-                   }
+                    let view_mode = u.grid_origin.w;
+                    var sdf_density = 0.0;
+                    if (is_volumetric && view_mode == 0.0) {
+                         if (res.y < 0.0) {
+                             sdf_density = clamp(-res.y * 0.5, 0.0, 1.0) * 0.4;
+                         } else {
+                             sdf_density = clamp(1.0 - res.y / 8.0, 0.0, 1.0) * 0.08;
+                         }
+                    }
                    
                    let interp_data = getInterpolatedFieldsAndColor(p);
                    let fields = interp_data.fields;
-                   let view_mode = u.grid_origin.w;
                    let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
                    
                    let base_sky = getSkyColor(rd);
