@@ -52,6 +52,7 @@
         (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
         (InputManager.add-binding! &mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
         (InputManager.add-binding! &mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
+        (InputManager.add-binding! &mgr "Implode" (InputSource.Key GLFW.Keycode.I) 1.0)
         (InputManager.add-binding! &mgr "MorphLess" (InputSource.Key GLFW.Keycode.COMMA) 1.0)
         (InputManager.add-binding! &mgr "MorphMore" (InputSource.Key GLFW.Keycode.PERIOD) 1.0)
         (InputManager.add-binding! &mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
@@ -345,8 +346,12 @@
                       (do
                         (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos rad 800.0 120.0 30.0)
                         (Engine.set-voxel-dirty! e true))
-                      (let [build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4))]
-                        (Array.push-back! (Engine.growing-builds e) build)))
+                      (if (< op 1.5)
+                        (let [build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4))]
+                          (Array.push-back! (Engine.growing-builds e) build))
+                        (do
+                          (ExplosionSystem.spawn-implosion! (Engine.world e) (Engine.db e) pos rad -1200.0 -40.0 -80.0)
+                          (Engine.set-voxel-dirty! e true))))
                     (Result.Success ())))
               _ (Result.Success ()))
           _ (Result.Success ())))))
@@ -404,6 +409,8 @@
           (PlayerSystem.fire-laser! e))
         (when (InputManager.action-pressed? mgr "Build")
           (PlayerSystem.build-laser! e))
+        (when (InputManager.action-pressed? mgr "Implode")
+          (PlayerSystem.fire-implosion-laser! e))
         (when (InputManager.action-pressed? mgr "ScaleUp")
           (PlayerSystem.scale-player! e 1.1))
         (when (InputManager.action-pressed? mgr "ScaleDown")

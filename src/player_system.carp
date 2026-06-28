@@ -247,4 +247,30 @@
               (IO.println &(str* "Build hit at " &(Vector3.str hit-p) ", building sphere of radius " &(Double.str rad)))
               (Coordinator.dispatch! (Engine.coordinator e) ev)))
           (IO.println "Build missed!"))))
+
+  (defn fire-implosion-laser! [e]
+    (let [cam (Engine.camera e)
+          world (Engine.world e)
+          grid (Engine.grid e)
+          cam-pos (Camera.pos cam)
+          cam-front (Camera.front cam)
+          ray (Ray.make @cam-pos @cam-front)
+          config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
+          hit (march-world world (Engine.world-data e) grid &ray &config)]
+      (if @(RaymarchHit.hit &hit)
+          (let [hit-p (RaymarchHit.p &hit)
+                p-rad (let [r 1.0]
+                        (do
+                          (ECS.query world [p-ent (p-col Collidable) (p-tag PlayerTag)]
+                            (match-ref (Collidable.volume p-col)
+                              (Volume.Ball sphere) (set! r @(Sphere.radius sphere))
+                              _ ()))
+                          r))
+                rad (* p-rad 1.5)
+                crater-data (CraterSpawnData.init @hit-p rad 2.0)
+                ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+            (do
+              (IO.println &(str* "Implosion hit at " &(Vector3.str hit-p) ", spawning implosion of radius " &(Double.str rad)))
+              (Coordinator.dispatch! (Engine.coordinator e) ev)))
+          (IO.println "Implosion missed!"))))
 )
