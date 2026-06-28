@@ -386,7 +386,7 @@
            if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                let cell = grid[idx];
-               let count = min(i32(round(cell.header.x)), 16);
+               let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                for(var i = 0; i < count; i = i + 1) {
                    let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                    if (s_idx >= 0 && s_idx < 1024) {
@@ -402,7 +402,13 @@
                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                        let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                        let d = (length(squashed_p) - raw_w) * min(1.0, s);
-                       let w = 1.0 / (d * d + 0.01);
+                       var w = 1.0 / (d * d + 0.01);
+                        if (s_data.sph_fields.x > 0.0) {
+                            let dist_from_center = length(squashed_p);
+                            let max_influence_dist = raw_w * 2.0;
+                            let norm_dist = dist_from_center / max_influence_dist;
+                            w = clamp(1.0 - norm_dist, 0.0, 1.0) * 3.0;
+                        }
                        
                        var instance_fields = s_data.sph_fields;
                        if (instance_fields.w > 0.0) {
@@ -432,7 +438,7 @@
             if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                 let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                 let cell = grid[idx];
-                let count = min(i32(round(cell.header.x)), 16);
+                let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                 for(var i = 0; i < count; i = i + 1) {
                     let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                     if (s_idx >= 0 && s_idx < 1024) {
@@ -476,7 +482,7 @@
            if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                let cell = grid[idx];
-               let count = min(i32(round(cell.header.x)), 16);
+               let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                for(var i = 0; i < count; i = i + 1) {
                    let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                    if (s_idx >= 0 && s_idx < 1024) {
@@ -492,7 +498,19 @@
                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                        let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                        let d = (length(squashed_p) - raw_w) * min(1.0, s);
-                       let w = 1.0 / (d * d + 0.01);
+                       var w = 1.0 / (d * d + 0.01);
+                        if (s_data.sph_fields.x > 0.0) {
+                            let dist_from_center = length(squashed_p);
+                            let max_influence_dist = raw_w * 2.0;
+                            let norm_dist = dist_from_center / max_influence_dist;
+                            w = clamp(1.0 - norm_dist, 0.0, 1.0) * 3.0;
+                            
+                            // Soft thermal yellow-white light cloud
+                            let thermal_col = vec3<f32>(1.0, 0.85, 0.5);
+                            sum_color = sum_color + thermal_col * w;
+                            sum_w = sum_w + w;
+                            continue;
+                        }
                        
                        sum_color = sum_color + s_data.color_csg.rgb * w;
                        sum_w = sum_w + w;
@@ -530,7 +548,7 @@
           if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
               let cell = grid[idx];
-              let count = min(i32(round(cell.header.x)), 16);
+              let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
               for(var i = 0; i < count; i = i + 1) {
                   let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                   if (s_idx >= 0 && s_idx < 1024) {
@@ -738,7 +756,7 @@
               if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                   let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                   let cell = grid[idx];
-                  let count = min(i32(round(cell.header.x)), 16);
+                  let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                   for(var i = 0; i < count; i = i + 1) {
                       let s_idx = i32(round(cell.ids[i / 4][i % 4]));
                       if (s_idx >= 0 && s_idx < 1024) {
@@ -777,7 +795,7 @@
 
                 let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                 let cell = grid[idx];
-                let count = min(i32(round(cell.header.x)), 16);
+                let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
                 var has_metaballs = false;
                 var metaball_idx = -1.0;
                 for(var i = 0; i < count; i = i + 1) {

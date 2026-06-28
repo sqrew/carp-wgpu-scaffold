@@ -678,7 +678,6 @@
           craters (Engine.craters e)
           next-csg-node-idx 0]
       (do
-        (println* "Frame stats: csg-dirty=" csg-dirty " grid-dirty=" grid-dirty " voxel-dirty=" voxel-dirty " e-voxel-dirty=" @(Engine.voxel-dirty e))
         (RenderDatabase.set-voxel-dirty! r-db voxel-dirty)
         (RenderDatabase.set-csg-dirty! r-db csg-dirty)
         (RenderDatabase.set-grid-dirty! r-db grid-dirty)
