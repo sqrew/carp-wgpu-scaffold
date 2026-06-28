@@ -377,83 +377,95 @@
       }
 
        struct InterpolatedData {
-           fields: vec4<f32>,
-           color: vec3<f32>,
-       }
+            fields: vec4<f32>,
+            color: vec3<f32>,
+            emissive: vec3<f32>,
+        }
 
-       fn getInterpolatedFieldsAndColor(p: vec3<f32>) -> InterpolatedData {
-           let p_local = p - u.grid_origin.xyz;
-           let gx = i32(floor(p_local.x / u.cell_size));
-           let gy = i32(floor(p_local.y / u.cell_size));
-           let gz = i32(floor(p_local.z / u.cell_size));
-           var sum_fields = vec4<f32>(0.0);
-           var sum_fields_w = 0.0;
-           var sum_color = vec3<f32>(0.0);
-           var sum_color_w = 0.0;
-           if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
-               let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
-               let cell = grid[idx];
-               let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
-               for(var i = 0; i < count; i = i + 1) {
-                   let s_idx = i32(round(cell.ids[i]));
-                   if (s_idx >= 0 && s_idx < 1024) {
-                     let s_data = u.instances[s_idx];
-                     let raw_w = s_data.pos_scale.w;
-                     if (raw_w != 0.0) {
-                       let csg_root_idx = i32(round(s_data.color_csg.w));
-                       var s = 1.0;
-                       if (csg_root_idx <= -99) {
-                           s = f32(-99 - csg_root_idx) / 100.0;
-                           if (s < 0.05) { s = 0.6; }
-                       }
-                       let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                       let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
-                       let d = (length(squashed_p) - raw_w) * min(1.0, s);
-                       var w = 1.0 / (d * d + 0.01);
-                       
-                       var instance_fields = s_data.sph_fields;
-                       if (instance_fields.w > 0.0) {
-                           let wave_phase = u.time * 8.0 - d * 2.0;
-                           instance_fields.w += instance_fields.w * (sin(wave_phase) * 0.4 / (d * 0.2 + 1.0));
-                       }
-                       
-                       if (s_data.sph_fields.x > 0.0) {
-                           let dist_from_center = length(squashed_p);
-                           let max_influence_dist = raw_w * 2.0;
-                           let norm_dist = dist_from_center / max_influence_dist;
-                           w = clamp(1.0 - norm_dist, 0.0, 1.0) * 3.0;
-                           
-                           // Soft thermal yellow-white light cloud
-                           let thermal_col = vec3<f32>(1.0, 0.85, 0.5);
-                           sum_color += thermal_col * w;
-                           sum_color_w += w;
-                           
-                           sum_fields += instance_fields * w;
-                           sum_fields_w += w;
-                       } else {
-                           sum_fields += instance_fields * w;
-                           sum_fields_w += w;
-                           
-                           sum_color += s_data.color_csg.rgb * w;
-                           sum_color_w += w;
-                       }
-                     }
-                   }
-               }
-           }
-           var out: InterpolatedData;
-           if (sum_fields_w > 0.0) {
-               out.fields = sum_fields / sum_fields_w;
-           } else {
-               out.fields = vec4<f32>(0.0);
-           }
-           if (sum_color_w > 0.0) {
-               out.color = sum_color / sum_color_w;
-           } else {
-               out.color = vec3<f32>(0.0);
-           }
-           return out;
-       }
+        fn getInterpolatedFieldsAndColor(p: vec3<f32>) -> InterpolatedData {
+            let p_local = p - u.grid_origin.xyz;
+            let gx = i32(floor(p_local.x / u.cell_size));
+            let gy = i32(floor(p_local.y / u.cell_size));
+            let gz = i32(floor(p_local.z / u.cell_size));
+            var sum_fields = vec4<f32>(0.0);
+            var sum_fields_w = 0.0;
+            var sum_color = vec3<f32>(0.0);
+            var sum_color_w = 0.0;
+            var sum_emissive = vec3<f32>(0.0);
+            if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
+                let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
+                let cell = grid[idx];
+                let count = min(i32(round(cell.header.x)), 64);
+                for(var i = 0; i < count; i = i + 1) {
+                    let s_idx = i32(round(cell.ids[i]));
+                    if (s_idx >= 0 && s_idx < 1024) {
+                      let s_data = u.instances[s_idx];
+                      let raw_w = s_data.pos_scale.w;
+                      if (raw_w != 0.0) {
+                        let csg_root_idx = i32(round(s_data.color_csg.w));
+                        var s = 1.0;
+                        if (csg_root_idx <= -99) {
+                            s = f32(-99 - csg_root_idx) / 100.0;
+                            if (s < 0.05) { s = 0.6; }
+                        }
+                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                        let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
+                        let d = (length(squashed_p) - raw_w) * min(1.0, s);
+                        let w_color = 1.0 / (d * d + 0.01);
+                        var w_fields = w_color;
+                        
+                        var instance_fields = s_data.sph_fields;
+                        if (instance_fields.w > 0.0) {
+                            let wave_phase = u.time * 8.0 - d * 2.0;
+                            instance_fields.w += instance_fields.w * (sin(wave_phase) * 0.4 / (d * 0.2 + 1.0));
+                        }
+                        
+                        if (s_data.sph_fields.x != 0.0) {
+                            let dist_from_center = length(squashed_p);
+                            let max_influence_dist = raw_w * 2.0;
+                            let norm_dist = dist_from_center / max_influence_dist;
+                            w_fields = clamp(1.0 - norm_dist, 0.0, 1.0) * 3.0;
+                            
+                            sum_fields += instance_fields * w_fields;
+                            sum_fields_w += w_fields;
+                            
+                            let temp_factor = abs(s_data.sph_fields.x);
+                            let thermal_col = select(
+                                mix(vec3<f32>(0.05, 0.35, 1.0), vec3<f32>(0.2, 0.9, 1.0), clamp(temp_factor / 80.0, 0.0, 1.0)),
+                                mix(vec3<f32>(1.0, 0.22, 0.02), vec3<f32>(1.0, 0.85, 0.4), clamp(temp_factor / 120.0, 0.0, 1.0)),
+                                s_data.sph_fields.x > 0.0
+                            );
+                            
+                            let intensity = temp_factor / 20.0;
+                            sum_color += thermal_col * w_color * intensity;
+                            sum_color_w += w_color * intensity;
+                            sum_emissive += thermal_col * w_color * intensity;
+                        } else {
+                            sum_fields += instance_fields * w_fields;
+                            sum_fields_w += w_fields;
+                            
+                            sum_color += s_data.color_csg.rgb * w_color;
+                            sum_color_w += w_color;
+                            sum_emissive += s_data.color_csg.rgb * w_color * 0.3;
+                        }
+                      }
+                    }
+                }
+            }
+            var out: InterpolatedData;
+            if (sum_fields_w > 0.0) {
+                out.fields = sum_fields / sum_fields_w;
+            } else {
+                out.fields = vec4<f32>(0.0);
+            }
+            if (sum_color_w > 0.0) {
+                out.color = sum_color / sum_color_w;
+            } else {
+                out.color = vec3<f32>(0.0);
+            }
+            out.emissive = sum_emissive;
+            return out;
+        }
 
        fn getInterpolatedFields(p: vec3<f32>) -> vec4<f32> {
            return getInterpolatedFieldsAndColor(p).fields;
@@ -518,7 +530,8 @@
                 d = clamp(abs(fields.w) / 30.0, 0.0, 1.0) * 0.6;
             } else {
                 // Default Normal View (Water Volume / SPH fluid)
-                d = (fields.z / 100.0) * 0.3 + (fields.w / 30.0) * 0.15;
+                // Include temperature influence so hot/cold explosions/implosions generate fog density
+                d = (fields.z / 100.0) * 0.3 + (fields.w / 30.0) * 0.15 + clamp(abs(fields.x) / 120.0, 0.0, 1.0) * 0.55;
             }
             return d;
         }
@@ -550,7 +563,7 @@
             } else if (view_mode == 4.0) {
                 return clamp(abs(fields.w) / 5.0, 0.0, 1.0);
             }
-            return clamp(abs(fields.w) / 5.0, 0.0, 1.0);
+            return clamp((abs(fields.w) + abs(fields.x)) / 5.0, 0.0, 1.0);
         }
 
        fn getInterpolatedColor(p: vec3<f32>) -> vec3<f32> {
@@ -854,13 +867,10 @@
                                 local_dist = evaluateCsgTree(local_p, csg_root_idx);
                             } else {
                                 if (raw_w > 0.0 && raw_w < 500.0) {
-                                  local_dist = sdSphere(local_p, raw_w);
                                   if (s_data.sph_fields.x != 0.0) {
-                                      let noise_factor = clamp(abs(s_data.sph_fields.x) / 120.0, 0.0, 1.0);
-                                      let scroll = vec3<f32>(0.0, u.time * 2.0, 0.0);
-                                      let n = evaluateFbm(local_p * 2.5 - scroll);
-                                      local_dist -= n * 0.4 * raw_w * noise_factor;
+                                      continue;
                                   }
+                                  local_dist = sdSphere(local_p, raw_w);
                                 } else if (raw_w < 0.0 && raw_w > -1000.0) {
                                   let size = -raw_w;
                                   local_dist = sdBox(local_p, vec3<f32>(size));
@@ -993,7 +1003,7 @@
                        if (res.y < 1.0) {
                            dt = 0.4;
                        } else {
-                           dt = min(res.x, res.y * 0.5);
+                           dt = min(min(res.x, res.y * 0.5), 1.2);
                        }
                    } else {
                        if (res.y < 1.5) {
@@ -1030,6 +1040,7 @@
                          let inst_col = getFieldColor(fields, view_mode, interp_data.color);
                          local_fog_col = mix(local_fog_col, inst_col, color_weight);
                    }
+                    local_fog_col += interp_data.emissive * 0.12;
                    
                    fog_color_accum += local_fog_col * density * dt;
                    fog_optical_depth += density * dt;
@@ -1058,6 +1069,7 @@
                            let inst_col = getFieldColor(fields, view_mode, interp_data.color);
                            local_fog_col = mix(base_sky, inst_col, color_weight);
                        }
+                        local_fog_col += interp_data.emissive * 0.12;
                       
                       fog_color_accum += local_fog_col * density * dt;
                       fog_optical_depth += density * dt;
@@ -1277,7 +1289,7 @@
                     let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                     if (s_data.sph_fields.x != 0.0) {
                         let temp_factor = clamp(abs(s_data.sph_fields.x) / 120.0, 0.0, 1.0);
-                        let scroll_col = vec3<f32>(0.0, u.time * 4.0, 0.0);
+                        let scroll_col = vec3<f32>(0.0);
                         let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
                         let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
                         let n_col = clamp(base_noise * 0.7 + detail_noise * 0.3, 0.0, 1.0);

@@ -452,12 +452,35 @@
               (Engine.set-shadow-quality! e next)
               (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next))))))
         (when (InputManager.action-pressed? mgr "ToggleVolumetricSdf")
-          (let [curr @(Engine.volumetric-sdf e)
-                next (not curr)]
+          (let [is-on @(Engine.volumetric-sdf e)
+                mode @(Engine.view-mode e)]
             (do
-              (Engine.set-volumetric-sdf! e next)
-              (Engine.set-grid-dirty! e true)
-              (IO.println &(str* "Volumetric SDF Fog Mode: " (if next "ON" "OFF")))))))))
+              (if (not is-on)
+                  (do
+                    (Engine.set-volumetric-sdf! e true)
+                    (Engine.set-view-mode! e 0)
+                    (IO.println "Volumetric Sdf Fog Mode: ON (SDF Vol Fog)"))
+                  (if (= mode 0)
+                      (do
+                        (Engine.set-view-mode! e 4)
+                        (IO.println "Volumetric Sdf Fog Mode: ON (Pressure Field)"))
+                      (if (= mode 4)
+                          (do
+                            (Engine.set-view-mode! e 1)
+                            (IO.println "Volumetric Sdf Fog Mode: ON (Temperature)"))
+                          (if (= mode 1)
+                              (do
+                                (Engine.set-view-mode! e 2)
+                                (IO.println "Volumetric Sdf Fog Mode: ON (Age / Spawn Time)"))
+                              (if (= mode 2)
+                                  (do
+                                    (Engine.set-view-mode! e 3)
+                                    (IO.println "Volumetric Sdf Fog Mode: ON (Humidity)"))
+                                  (do
+                                    (Engine.set-volumetric-sdf! e false)
+                                    (Engine.set-view-mode! e 0)
+                                    (IO.println "Volumetric Sdf Fog Mode: OFF")))))))
+              (Engine.set-grid-dirty! e true)))))))
 
   (defn tick-simulation! [e dt]
     (let [world (Engine.world e)
@@ -608,10 +631,12 @@
           (for [i 0 len]
             (when @(Array.unsafe-nth active-arr i)
               (let [h (Array.unsafe-nth (FieldDatabase.handles db) i)
-                    ent-val (ECS.Entity.init @h)]
-                (when (or (not (ECS.Registry.valid? registry-ref &ent-val))
-                          (not (ECS.has-component? world &ent-val FieldInstance)))
-                  (FieldDatabase.release-instance! db h))))))
+                    h-id (the Int (Long.to-int (Uint64.to-long (Handle.index h))))]
+                (when (< h-id 512)
+                  (let [ent-val (ECS.Entity.init @h)]
+                    (when (or (not (ECS.Registry.valid? registry-ref &ent-val))
+                              (not (ECS.has-component? world &ent-val FieldInstance)))
+                      (FieldDatabase.release-instance! db h))))))))
 
         ;; 3. Register new FieldInstances or sync existing ones
         (ECS.query world [ent (fi FieldInstance)]
