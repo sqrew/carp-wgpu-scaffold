@@ -209,7 +209,7 @@
               let detail_h = fbm2d(px * 0.07, pz * 0.07) * 4.5 * detail_fade;
               
               let base_terrain_d = py - final_h;
-              let terrain_d = base_terrain_d - detail_h;
+              let terrain_d = (base_terrain_d - detail_h) * 0.55;
               
               var cave_val = 0.0;
               var cave_sdf = -1000.0;
@@ -271,7 +271,7 @@
               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
               let detail_h = fbm2d(p.x * 0.07, p.z * 0.07) * 4.5 * detail_fade;
               
-              let terrain_d = p.y - (final_h + detail_h);
+              let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
               let mat_id = 1.0;
               return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
           }
@@ -722,7 +722,36 @@
           return d;
       }
 
-      fn get_wireframe_edge(lp: vec3<f32>, raw_w: f32, thickness: f32) -> f32 {
+       fn getInstanceDist(p: vec3<f32>, s_idx: i32) -> f32 {
+           let s_data = u.instances[s_idx];
+           let raw_w = s_data.pos_scale.w;
+           let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+           let csg_root_idx = i32(round(s_data.color_csg.w));
+           if (csg_root_idx >= 0) {
+               return evaluateCsgTree(local_p, csg_root_idx);
+           } else {
+               if (raw_w > 0.0 && raw_w < 500.0) {
+                   return sdSphere(local_p, raw_w);
+               } else if (raw_w < 0.0 && raw_w > -1000.0) {
+                   let size = -raw_w;
+                   return sdBox(local_p, vec3<f32>(size));
+               } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
+                   let size = -raw_w - 1000.0;
+                   return sdCapsule(local_p, size, size);
+               } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
+                   let size = raw_w - 1000.0;
+                   return sdCylinder(local_p, size, size);
+               } else if (raw_w >= 2000.0) {
+                   let size = raw_w - 2000.0;
+                   return sdTorus(local_p, vec2<f32>(size, 0.25 * size));
+               } else {
+                   let size = -raw_w - 2000.0;
+                   return sdOctahedron(local_p, size);
+               }
+           }
+       }
+
+       fn get_wireframe_edge(lp: vec3<f32>, raw_w: f32, thickness: f32) -> f32 {
           if (raw_w > 0.0 && raw_w < 500.0) {
               let rx = smoothstep(thickness, thickness - 0.01, abs(lp.x));
               let ry = smoothstep(thickness, thickness - 0.01, abs(lp.y));
@@ -992,9 +1021,7 @@
                            dt = min(min(res.x, res.y * 0.5), 1.2);
                        }
                    } else {
-                       if (res.y < 1.5) {
-                           dt = res.y * 0.5;
-                       }
+                       dt = min(res.x, res.y * 0.7);
                    }
                    
                     let view_mode = u.grid_origin.w;
@@ -1086,10 +1113,27 @@
                 }
 
                 if (is_sphere) {
-                    let s_idx = i32(hitId);
-                    let s_data = u.instances[s_idx];
-                    normal = normalize(p - s_data.pos_scale.xyz);
-                } else if (is_metaball) {
+                     let s_idx = i32(hitId);
+                     let s_data = u.instances[s_idx];
+                     normal = normalize(p - s_data.pos_scale.xyz);
+                 } else if (hitId != -1.0 && !is_metaball) {
+                     let s_idx = i32(hitId);
+                     let eps = 0.005;
+                     let d1 = getInstanceDist(p + vec3<f32>( eps, -eps, -eps), s_idx);
+                     let d2 = getInstanceDist(p + vec3<f32>(-eps, -eps,  eps), s_idx);
+                     let d3 = getInstanceDist(p + vec3<f32>(-eps,  eps, -eps), s_idx);
+                     let d4 = getInstanceDist(p + vec3<f32>( eps,  eps,  eps), s_idx);
+                     let grad = vec3<f32>( eps, -eps, -eps) * d1 +
+                                vec3<f32>(-eps, -eps,  eps) * d2 +
+                                vec3<f32>(-eps,  eps, -eps) * d3 +
+                                vec3<f32>( eps,  eps,  eps) * d4;
+                     let len = length(grad);
+                     if (len > 1e-6) {
+                         normal = grad / len;
+                     } else {
+                         normal = vec3<f32>(0.0, 1.0, 0.0);
+                     }
+                 } else if (is_metaball) {
                     let eps = 0.01;
                     let d1 = getMetaballDist(p + vec3<f32>( eps, -eps, -eps));
                     let d2 = getMetaballDist(p + vec3<f32>(-eps, -eps,  eps));
@@ -1127,7 +1171,8 @@
                 let voxel_val = sampleVoxelGrid(p);
                 let voxel_d = voxel_val.x;
                 let metaball_d = final_metaball_d;
-                let is_wet = is_metaball || (metaball_d < voxel_d + u.grid_dims.w);
+                let solid_surface_d = select(0.0, voxel_d, hitId == -1.0);
+                let is_wet = is_metaball || (metaball_d < solid_surface_d + u.grid_dims.w);
 
                 if (is_wet) {
                     let fields = getInterpolatedFields(p);
@@ -1136,7 +1181,7 @@
                     let rx = sin(p.x * 10.0 + p.z * 6.0 + w_speed) * cos(p.z * 12.0 - p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
                     let ry = sin(p.y * 15.0 - w_speed) * (0.06 + temp_factor * 0.08);
                     let rz = cos(p.x * 8.0 - p.z * 6.0 - w_speed) * sin(p.z * 12.0 + p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
-                    let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
+                    let h = clamp(0.5 + 0.5 * (solid_surface_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
                     
                     let ripples = getWaterRipples(p);
                     normal = normalize(normal + (vec3<f32>(rx, ry, rz) + ripples) * h);
