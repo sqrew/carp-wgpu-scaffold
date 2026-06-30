@@ -989,7 +989,8 @@
           (VoxelBaker.bake-voxel-grid! ctx ren grid world world-data)
           (let [chunks (World.chunks world-data)
                 num-chunks (Array.length chunks)
-                num-craters (Array.length craters)]
+                num-craters (Array.length craters)
+                diag (Engine.diagnostics e)]
             (for [j 0 num-chunks]
               (let [chunk (Array.unsafe-nth chunks j)
                     overlapped false]
@@ -1001,16 +1002,24 @@
                           op @(CraterSpawnData.op-type crater)]
                       (when (VoxelBaker.chunk-overlaps-sphere? chunk pos rad)
                         (do
+                          (Diagnostics.start-zone! diag "Bake: Carve CPU")
                           (if (< op 0.5)
                               (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad)
                               (VoxelBaker.build-voxel-grid-cpu! chunk pos rad))
+                          (Diagnostics.end-zone! diag "Bake: Carve CPU")
                           (set! overlapped true)))))
                   (when overlapped
                     (do
+                      (Diagnostics.start-zone! diag "Bake: Compute Lighting")
                       (VoxelBaker.compute-chunk-lighting! chunk)
+                      (Diagnostics.end-zone! diag "Bake: Compute Lighting")
                       (Chunk.set-modified! chunk true)
+                      (Diagnostics.start-zone! diag "Bake: GPU Upload")
                       (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
-                      (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk)))))))))
+                      (Diagnostics.end-zone! diag "Bake: GPU Upload")
+                      (Diagnostics.start-zone! diag "Bake: Pack & Copy")
+                      (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
+                      (Diagnostics.end-zone! diag "Bake: Pack & Copy"))))))))
         (Engine.set-voxel-dirty! e false))))
 
   (defn sync-render-db! [e ctx ren]

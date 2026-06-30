@@ -808,7 +808,7 @@
 
               let voxel_pt = sampleVoxelGridPoint(p, true);
               var voxel_dist = voxel_pt.x;
-              if (voxel_dist < 16.0) {
+              if (voxel_dist < 2.0) {
                   let voxel_tri = sampleVoxelGrid(p, true);
                   voxel_dist = voxel_tri.x;
               }
@@ -1010,90 +1010,84 @@
             var fog_optical_depth = 0.0;
             var fog_color_accum = vec3<f32>(0.0);
             let is_volumetric = u.shadow_ao_quality.z > 0.5;
-               for(var i = 0; i < 80; i = i + 1) {
-                   let p = ro + rd * t;
-                   let res = worldSDF(p, rd, dither_threshold, true);
-                   hitId = res.z;
-                   final_metaball_d = res.w;
-                   if (res.y < 0.001 && !is_volumetric) { break; }
-                   
-                   var dt = res.x;
-                   if (is_volumetric) {
-                       if (res.y < 1.0) {
-                           dt = 0.4;
-                       } else {
-                           dt = min(min(res.x, res.y * 0.5), 1.2);
-                       }
-                   } else {
-                       dt = min(res.x, res.y * 0.7);
-                   }
-                   
+
+            if (!is_volumetric) {
+                // Fast non-volumetric raymarching path
+                for(var i = 0; i < 80; i = i + 1) {
+                    let p = ro + rd * t;
+                    let res = worldSDF(p, rd, dither_threshold, true);
+                    hitId = res.z;
+                    final_metaball_d = res.w;
+                    if (res.y < 0.001) { break; }
+                    t += res.y * 0.95;
+                    if (t > 800.0) { break; }
+                }
+                if (t <= 800.0) {
+                    for (var j = 0; j < 2; j = j + 1) {
+                        let p = ro + rd * t;
+                        let res = worldSDF(p, rd, dither_threshold, true);
+                        hitId = res.z;
+                        final_metaball_d = res.w;
+                        t += res.y * 0.5;
+                    }
+                }
+                fog_optical_depth = 0.0035 * t;
+                fog_color_accum = getSkyColor(rd) * fog_optical_depth;
+            } else {
+                // Volumetric raymarching path
+                for(var i = 0; i < 80; i = i + 1) {
+                    let p = ro + rd * t;
+                    let res = worldSDF(p, rd, dither_threshold, true);
+                    hitId = res.z;
+                    final_metaball_d = res.w;
+                    if (res.y < 0.001) { break; }
+                    
+                    var dt = res.x;
+                    if (res.y < 1.0) {
+                        dt = 0.4;
+                    } else {
+                        dt = min(min(res.x, res.y * 0.5), 1.2);
+                    }
+                    
                     let view_mode = u.grid_origin.w;
                     var sdf_density = 0.0;
-                    if (is_volumetric && view_mode == 0.0) {
+                    if (view_mode == 0.0) {
                          if (res.y < 0.0) {
                              sdf_density = clamp(-res.y * 0.5, 0.0, 1.0) * 0.4;
                          } else {
                              sdf_density = clamp(1.0 - res.y / 8.0, 0.0, 1.0) * 0.08;
                          }
                     }
-                   
+                    
                     let interp_data = getInterpolatedFieldsAndColor(p);
                     let fields = interp_data.fields;
-                    let density = 0.0035 + select(0.0, getFieldDensity(fields, view_mode), is_volumetric) + sdf_density;
-                   
-                   let base_sky = getSkyColor(rd);
-                   var local_fog_col = base_sky;
-                    if (is_volumetric && sdf_density > 0.0) {
-                        let height_factor = clamp((p.y - 5.0) / 15.0, 0.0, 1.0);
-                        let terr_col = mix(vec3<f32>(0.18, 0.38, 0.12), vec3<f32>(0.42, 0.42, 0.45), height_factor);
-                        let glow_factor = clamp(-res.y / 4.0, 0.0, 1.0);
-                        let sdf_col = mix(terr_col * 0.6, vec3<f32>(0.1, 0.3, 0.6), glow_factor);
-                        local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
-                   }
-                   
+                    let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
+                    
+                    let base_sky = getSkyColor(rd);
+                    var local_fog_col = base_sky;
+                    if (sdf_density > 0.0) {
+                         let height_factor = clamp((p.y - 5.0) / 15.0, 0.0, 1.0);
+                         let terr_col = mix(vec3<f32>(0.18, 0.38, 0.12), vec3<f32>(0.42, 0.42, 0.45), height_factor);
+                         let glow_factor = clamp(-res.y / 4.0, 0.0, 1.0);
+                         let sdf_col = mix(terr_col * 0.6, vec3<f32>(0.1, 0.3, 0.6), glow_factor);
+                         local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
+                    }
+                    
                     let color_weight = getFieldColorWeight(fields, view_mode);
                     if (color_weight > 0.0) {
                          let inst_col = getFieldColor(fields, view_mode, interp_data.color);
                          local_fog_col = mix(local_fog_col, inst_col, color_weight);
-                   }
+                    }
                     local_fog_col += interp_data.emissive * 0.12;
-                   
-                   fog_color_accum += local_fog_col * density * dt;
-                   fog_optical_depth += density * dt;
-                   
-                   t += dt;
-                   if (t > 800.0) { break; }
-                   if (is_volumetric && fog_optical_depth > 5.3) { break; }
-               }
-              if (t <= 800.0 && !is_volumetric) {
-                  for (var j = 0; j < 2; j = j + 1) {
-                      let p = ro + rd * t;
-                      let res = worldSDF(p, rd, dither_threshold, true);
-                      hitId = res.z;
-                      final_metaball_d = res.w;
-                      let dt = res.y * 0.5;
-                      
-                      let interp_data = getInterpolatedFieldsAndColor(p);
-                      let fields = interp_data.fields;
-                      let view_mode = u.grid_origin.w;
-                      let density = 0.0035;
-                      
-                      let base_sky = getSkyColor(rd);
-                      var local_fog_col = base_sky;
-                       let color_weight = getFieldColorWeight(fields, view_mode);
-                       if (color_weight > 0.0) {
-                           let inst_col = getFieldColor(fields, view_mode, interp_data.color);
-                           local_fog_col = mix(base_sky, inst_col, color_weight);
-                       }
-                        local_fog_col += interp_data.emissive * 0.12;
-                      
-                      fog_color_accum += local_fog_col * density * dt;
-                      fog_optical_depth += density * dt;
-                      
-                      t += dt;
-                  }
-              }
+                    
+                    fog_color_accum += local_fog_col * density * dt;
+                    fog_optical_depth += density * dt;
+                    
+                    t += dt;
+                    if (t > 800.0) { break; }
+                    if (fog_optical_depth > 5.3) { break; }
+                }
+            }
               var color = getSkyColor(rd);
              if (t <= 800.0 && !is_volumetric) {
                 let p = ro + rd * t;
@@ -1212,16 +1206,15 @@
                             shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
                         }
                     }
-                    if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                        let shadow_dist = select(120.0, 250.0, t > 200.0);
-                        sky_visibility = getShadow(p + normal * 0.05, vec3<f32>(0.0, 1.0, 0.0), 0.05, shadow_dist, 4.0, dither_threshold, 16);
-                    }
                     if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
                         if (hitId == -1.0) {
                             ao = voxel_val.w;
                         } else {
                             ao = getAO(p, normal, dither_threshold);
                         }
+                    }
+                    if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                        sky_visibility = ao;
                     }
                 } else {
                     shadow = voxel_val.z;

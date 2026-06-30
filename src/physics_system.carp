@@ -99,11 +99,13 @@
           coord (Engine.coordinator e)
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)
+          diag (Engine.diagnostics e)
           collision-occurred false
           manifolds []]
       (do
         
         ;; 1. Apply Gravity, SPH Pressure, Aerodynamic Wake/Drag Forces, and Step Bodies
+        (Diagnostics.start-zone! diag "Phys: Forces & Integrator")
         (let [coeff -30.0
               drag-coeff 0.15]
           (ECS.query world [ent (rb RigidBody)]
@@ -122,8 +124,10 @@
               (do
                 (RigidBody.apply-force! rb &total-force)
                 (RigidBody.step-custom! rb fixed-dt fixed-dt)))))
-
+        (Diagnostics.end-zone! diag "Phys: Forces & Integrator")
+ 
         ;; 2. Rebuild Spatial Grid
+        (Diagnostics.start-zone! diag "Phys: Spatial Grid Rebuild")
         (SpatialGrid.clear! grid)
         (ECS.query world [ent (rb RigidBody) (col Collidable)]
           (let [vol (Collidable.volume col)
@@ -152,7 +156,7 @@
                                        swept)]
                 (when (not (ECS.has-component? world &ent StaticWorldTag))
                   (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
-
+ 
         (let [active-arr (FieldDatabase.active (World.field-db (Engine.world-data e)))
               len (Array.length active-arr)
               db (World.field-db (Engine.world-data e))]
@@ -165,8 +169,10 @@
                     aabb (AABB.init (Vector3.sub pos &pad-vec) (Vector3.add pos &pad-vec))
                     ent-id (the Uint32 (Uint32.from-long (Uint64.to-long (Handle.index h))))]
                 (SpatialGrid.insert! grid &aabb ent-id)))))
-
+        (Diagnostics.end-zone! diag "Phys: Spatial Grid Rebuild")
+ 
         ;; 3. Detect Collisions between Entities (including the static floor)
+        (Diagnostics.start-zone! diag "Phys: Collision Detection")
         (ECS.query world [ent1 (rb1 RigidBody) (col1 Collidable)]
           (when (not (ECS.has-component? world &ent1 StaticWorldTag))
             (let [aabb (Collision.get-aabb (Collidable.volume col1))
@@ -298,17 +304,23 @@
                                 (ECS.with-components world @bullet-ent [e (lt Lifetime)]
                                   (Lifetime.set-time! lt 0.0))))
                             (do
-                              (set! collision-occurred true)
-                              (Array.push-back! &manifolds m)))))))
-
+                               (set! collision-occurred true)
+                               (Array.push-back! &manifolds m)))))))
+ 
                 (for [c 0 (Array.length &candidates)]
                   (let [id2 (Array.unsafe-nth &candidates c)
                         ent2 (ECS.Entity.init (Handle.init (Uint64.from-long (Uint32.to-long @id2)) (Uint32.from-long 1l)))]
                     (do
                       (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
                                  (Handle.less-than? (Collidable.handle col1) (ECS.Entity.handle &ent2)))
-                        (ECS.with-components world @&ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
-                          (let [res (CollisionChecker.check-pair col1 col2)]
+                        (let [db (World.field-db world-data)
+                              h-idx (the Int (Long.to-int (Uint32.to-long @id2)))
+                              is-field (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
+                                           (>= @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx) 0)
+                                           false)]
+                          (when (not is-field)
+                            (ECS.with-components world @&ent2 [e2 (rb2 RigidBody) (col2 Collidable)]
+                              (let [res (CollisionChecker.check-pair col1 col2)]
                           (match res
                             (Maybe.Just (CollisionResult.Physical actual-col))
                               (do
@@ -340,8 +352,11 @@
                                       (do
                                         (set! collision-occurred true)
                                         (Array.push-back! &manifolds @(Collision.contact-set &actual-col))))))
-                            _ ())))))))))))
+                            _ ())))))))))))))
+        (Diagnostics.end-zone! diag "Phys: Collision Detection")
+ 
         ;; 4. Solve Constraints Iteratively over Cached Manifolds
+        (Diagnostics.start-zone! diag "Phys: Constraint Solver")
         (let [resolved-manifolds []]
           (do
             (for [m-idx 0 (Array.length &manifolds)]
@@ -370,5 +385,6 @@
                       rb-a (ECS.ptr->ref ptr-a world)
                       rb-b (ECS.ptr->ref ptr-b world)]
                   (Solver.solve! rb-a rb-b m fixed-dt))))))
-
+        (Diagnostics.end-zone! diag "Phys: Constraint Solver")
+ 
         collision-occurred)))

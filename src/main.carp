@@ -129,7 +129,11 @@
                             (do
                               (set! frame-count (inc frame-count))
                               (when (= (Int.mod frame-count 60) 0)
-                                 (println* "Frame " frame-count " | Pos: (" @(Vector3.x (Camera.pos cam)) ", " @(Vector3.y (Camera.pos cam)) ", " @(Vector3.z (Camera.pos cam)) ") | Tick: " dt-tick "ms | Proc: " dt-proc "ms | Draw: " dt-draw "ms"))))))))
+                                (do
+                                  (println* "Frame " frame-count " | Pos: (" @(Vector3.x (Camera.pos cam)) ", " @(Vector3.y (Camera.pos cam)) ", " @(Vector3.z (Camera.pos cam)) ") | Tick: " dt-tick "ms | Proc: " dt-proc "ms | Draw: " dt-draw "ms")
+                                  (let [fps (/ 1000.0 dt-frame)
+                                        title (str* "Carp WGPU Game Scaffold | FPS: " (Double.str fps))]
+                                    (GLFW.set-window-title win (String.cstr &title)))))))))))
 
                   (println* "Shutting down...")
                   (Diagnostics.print-stats! (Engine.diagnostics &eng))
