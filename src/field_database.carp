@@ -38,13 +38,8 @@
   scales (Array Double)
   root-csg-indices (Array Int)
   colors (Array (Vector3 Double))
-  temperatures (Array Double)
-  ages (Array Double)
-  humidities (Array Double)
-  pressures (Array Double)
-  charges (Array Double)
-  gravities (Array Double)
-  velocities (Array (Vector3 Double))
+  scalar-fields (Array (Array Double))
+  vector-fields (Array (Array (Vector3 Double)))
   sdfs (Array (Maybe SDF))
   handle-to-index (Array Int)
   max-scale Double
@@ -73,19 +68,20 @@
           sc (the (Array Double) (replicate n &1.0))
           csg (the (Array Int) (replicate n &-1))
           col (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
-          temp (the (Array Double) (replicate n &0.0))
-          age (the (Array Double) (replicate n &0.0))
-          hum (the (Array Double) (replicate n &0.0))
-          pres (the (Array Double) (replicate n &0.0))
-          ch (the (Array Double) (replicate n &0.0))
-          grav (the (Array Double) (replicate n &-999.0))
-          vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
+          sc-fields [(the (Array Double) (replicate n &0.0))    ;; temp
+                     (the (Array Double) (replicate n &0.0))    ;; age
+                     (the (Array Double) (replicate n &0.0))    ;; hum
+                     (the (Array Double) (replicate n &0.0))    ;; pres
+                     (the (Array Double) (replicate n &0.0))    ;; charge
+                     (the (Array Double) (replicate n &-999.0)) ;; gravity
+                     (the (Array Double) (replicate n &1.0))]   ;; influence
+          vec-fields [(the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
           sdfs (the (Array (Maybe SDF)) (replicate n &(Maybe.Nothing)))
           h-to-idx (the (Array Int) (replicate 1024 &-1))]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel sdfs h-to-idx 4.0 [] 512)))
+      (FieldDatabase.init act hnd st pm pos rot sc csg col sc-fields vec-fields sdfs h-to-idx 4.0 [] 512)))
   (sig new (Fn [] FieldDatabase))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
-  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double) (Maybe SDF)] Int))
+  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double) Double (Maybe SDF)] Int))
   (sig release-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ()))] ()))
   (sig set-scale! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-velocity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
@@ -97,6 +93,7 @@
   (sig set-age! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-humidity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-charge! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-influence! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-root-csg-index! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int] ()))
 
   (defn get-index-by-handle [db handle]
@@ -105,7 +102,7 @@
           @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
           -1)))
 
-  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val sdf-val]
+  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val influence-val sdf-val]
     (let [found-idx -1
           active-arr (FieldDatabase.active db)
           handles-arr (FieldDatabase.handles db)
@@ -126,13 +123,13 @@
             (Array.push-back! (FieldDatabase.scales db) 1.0)
             (Array.push-back! (FieldDatabase.root-csg-indices db) -1)
             (Array.push-back! (FieldDatabase.colors db) (Vector3.init 0.0 0.0 0.0))
-            (Array.push-back! (FieldDatabase.temperatures db) 0.0)
-            (Array.push-back! (FieldDatabase.ages db) 0.0)
-            (Array.push-back! (FieldDatabase.humidities db) 0.0)
-            (Array.push-back! (FieldDatabase.pressures db) 0.0)
-            (Array.push-back! (FieldDatabase.charges db) 0.0)
-            (Array.push-back! (FieldDatabase.gravities db) -999.0)
-            (Array.push-back! (FieldDatabase.velocities db) (Vector3.init 0.0 0.0 0.0))
+            (for [f 0 (Array.length (FieldDatabase.scalar-fields db))]
+              (let [arr (Array.unsafe-nth (FieldDatabase.scalar-fields db) f)
+                    def-val (if (= f 5) -999.0 (if (= f 6) 1.0 0.0))]
+                (Array.push-back! arr def-val)))
+            (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
+              (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
+                (Array.push-back! arr (Vector3.init 0.0 0.0 0.0))))
             (Array.push-back! (FieldDatabase.sdfs db) (Maybe.Nothing))
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
@@ -144,13 +141,14 @@
         (Array.aset! (FieldDatabase.scales db) found-idx scale-val)
         (Array.aset! (FieldDatabase.root-csg-indices db) found-idx csg-idx-val)
         (Array.aset! (FieldDatabase.colors db) found-idx color-val)
-        (Array.aset! (FieldDatabase.temperatures db) found-idx temp-val)
-        (Array.aset! (FieldDatabase.ages db) found-idx age-val)
-        (Array.aset! (FieldDatabase.humidities db) found-idx hum-val)
-        (Array.aset! (FieldDatabase.pressures db) found-idx pres-val)
-        (Array.aset! (FieldDatabase.charges db) found-idx charge-val)
-        (Array.aset! (FieldDatabase.gravities db) found-idx gravity-val)
-        (Array.aset! (FieldDatabase.velocities db) found-idx vel-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 0) found-idx temp-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 1) found-idx age-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 2) found-idx hum-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 3) found-idx pres-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 4) found-idx charge-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 5) found-idx gravity-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 6) found-idx influence-val)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) found-idx vel-val)
         (Array.aset! (FieldDatabase.sdfs db) found-idx sdf-val)
         (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
           (do
@@ -169,6 +167,13 @@
           (do
             (Array.aset! (FieldDatabase.active db) id false)
             (Array.aset! (FieldDatabase.shape-types db) id -1)
+            (for [f 0 (Array.length (FieldDatabase.scalar-fields db))]
+              (let [arr (Array.unsafe-nth (FieldDatabase.scalar-fields db) f)
+                    def-val (if (= f 5) -999.0 (if (= f 6) 1.0 0.0))]
+                (Array.aset! arr id def-val)))
+            (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
+              (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
+                (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
             (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing))))
         (when (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
           (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)))))
@@ -185,22 +190,22 @@
   (defn set-velocity! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.velocities db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) id val))))
 
   (defn set-pressure! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.pressures db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 3) id val))))
 
   (defn set-gravity! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.gravities db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 5) id val))))
 
   (defn set-temperature! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.temperatures db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 0) id val))))
 
   (defn set-position! [db handle val]
     (let [id (get-index-by-handle db handle)]
@@ -215,17 +220,22 @@
   (defn set-age! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.ages db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 1) id val))))
 
   (defn set-humidity! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.humidities db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 2) id val))))
 
   (defn set-charge! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.charges db) id val))))
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 4) id val))))
+
+  (defn set-influence! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (Array.aset! (Array.unsafe-nth (FieldDatabase.scalar-fields db) 6) id val))))
 
   (defn set-root-csg-index! [db handle val]
     (let [id (get-index-by-handle db handle)]
@@ -319,6 +329,52 @@
                   (set! min-d inst-d)
                   (set! mat-id (Double.from-int (inc i))))))))
         (Vector2.init min-d mat-id))))
+ 
+  (defn get-shape-bounding-radius [shape-type scale params]
+    (if (= shape-type 1)
+        (* @(Vector4.x params) scale) ;; Sphere
+        (if (= shape-type 2)
+            (let [bx (* @(Vector4.x params) scale)
+                  by (* @(Vector4.y params) scale)
+                  bz (* @(Vector4.z params) scale)]
+              (Double.sqrt (+ (* bx bx) (+ (* by by) (* bz bz))))) ;; Box
+            (if (= shape-type 3)
+                (let [r (* @(Vector4.x params) scale)
+                      h (* @(Vector4.y params) scale)]
+                  (Double.sqrt (+ (* r r) (* h h)))) ;; Cylinder
+                (if (= shape-type 4)
+                    (let [r (* @(Vector4.x params) scale)
+                          h (* @(Vector4.y params) scale)]
+                      (+ r h)) ;; Capsule
+                    (if (= shape-type 5)
+                        (let [R-torus (* @(Vector4.x params) scale)
+                              r-torus (* @(Vector4.y params) scale)]
+                          (+ R-torus r-torus)) ;; Torus
+                        (if (= shape-type 6)
+                            (* @(Vector4.x params) scale) ;; Octahedron
+                            0.0)))))))
+ 
+  (defn evaluate-scene-sdf-material-subset [db pos indices-ref]
+    (let [len (Array.length indices-ref)
+          min-d 10000.0
+          mat-id 0.0]
+      (do
+        (for [k 0 len]
+          (let [i @(Array.unsafe-nth indices-ref k)
+                inst-d (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) i)
+                          (Maybe.Just sdf) (SDF.distance-world sdf pos)
+                          (Maybe.Nothing)
+                            (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)
+                                  params (Array.unsafe-nth (FieldDatabase.params db) i)
+                                  inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                                  rot (Array.unsafe-nth (FieldDatabase.rotations db) i)
+                                  scale @(Array.unsafe-nth (FieldDatabase.scales db) i)]
+                              (evaluate-csg-primitive pos shape-type inst-pos rot scale params)))]
+            (when (< inst-d min-d)
+              (do
+                (set! min-d inst-d)
+                (set! mat-id (Double.from-int (inc i)))))))
+        (Vector2.init min-d mat-id))))
 
   (sig calculate-pressure-gradient-grid (Fn [(Ref FieldDatabase) (Ref (Vector3 Double)) (Ptr (SpatialGrid Uint32))] (Vector3 Double)))
   (defn calculate-pressure-gradient-grid [db pos grid-ptr]
@@ -335,7 +391,7 @@
               (when @(Array.unsafe-nth active-arr i)
                 (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
                       scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                      pres @(Array.unsafe-nth (FieldDatabase.pressures db) i)
+                      pres @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.scalar-fields db) 3) i)
                       to-pos (Vector3.sub pos inst-pos)
                       dist (Vector3.mag &to-pos)
                       d (- dist scale)
@@ -366,7 +422,7 @@
                   (when @(Array.unsafe-nth active-arr i)
                     (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
                           scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                          pres @(Array.unsafe-nth (FieldDatabase.pressures db) i)
+                          pres @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.scalar-fields db) 3) i)
                           to-pos (Vector3.sub pos inst-pos)
                           dist (Vector3.mag &to-pos)
                           d (- dist scale)
@@ -407,7 +463,7 @@
           (when @(Array.unsafe-nth active-arr i)
             (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
                   scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                  vel (Array.unsafe-nth (FieldDatabase.velocities db) i)
+                  vel (Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) i)
                   to-pos (Vector3.sub pos inst-pos)
                   dist (Vector3.mag &to-pos)
                   d (- dist scale)
@@ -441,7 +497,7 @@
           event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime temp pres @col h-id update-fn)]
       (do
         (FieldDatabase.set-next-virtual-id! db (inc h-id))
-        (ignore (register-instance! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col temp 0.0 0.0 pres 0.0 -999.0 @vel (Maybe.Nothing)))
+        (ignore (register-instance! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col temp 0.0 0.0 pres 0.0 -999.0 @vel 1.0 (Maybe.Nothing)))
         (Array.push-back! (FieldDatabase.events db) event))))
 
   (defn tick! [db dt]

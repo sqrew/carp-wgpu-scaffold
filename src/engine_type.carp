@@ -30,6 +30,8 @@
     gravity-field (Field FieldKernelStorage Double)
     render-db RenderDatabase
     volumetric-sdf Bool
+    chunk-loading-enabled Bool
+    diagnostics Diagnostics
   ])
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))

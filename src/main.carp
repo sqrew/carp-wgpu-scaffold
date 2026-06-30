@@ -34,6 +34,7 @@
 (load "../carp-ecs-lite/src/ecs.carp")
 
 ;; --- PROJECT MODULES ---
+(load "../carp-diagnostics/diagnostics.carp")
 (load "events.carp")
 (load "coordinator.carp")
 (load "commands.carp")
@@ -131,5 +132,6 @@
                                  (println* "Frame " frame-count " | Pos: (" @(Vector3.x (Camera.pos cam)) ", " @(Vector3.y (Camera.pos cam)) ", " @(Vector3.z (Camera.pos cam)) ") | Tick: " dt-tick "ms | Proc: " dt-proc "ms | Draw: " dt-draw "ms"))))))))
 
                   (println* "Shutting down...")
+                  (Diagnostics.print-stats! (Engine.diagnostics &eng))
                   (Init.destroy-app app)
                   0)))))))

@@ -114,8 +114,25 @@
           cell-size 1.0
           w-dim 32
           h-dim 32
-          db (World.field-db world-data)]
+          db (World.field-db world-data)
+          near-indices (the (Array Int) [])
+          chunk-center (Vector3.init (+ ox 16.0) (+ oy 16.0) (+ oz 16.0))
+          chunk-radius 28.0
+          active-arr (FieldDatabase.active db)
+          num-active (Array.length active-arr)]
       (do
+        (for [i 0 num-active]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)]
+              (when (/= shape-type -1)
+                (let [scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                      params (Array.unsafe-nth (FieldDatabase.params db) i)
+                      inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                      R (FieldDatabase.get-shape-bounding-radius shape-type scale params)
+                      diff (Vector3.sub &chunk-center inst-pos)
+                      dist (Vector3.mag &diff)]
+                  (when (<= dist (+ chunk-radius R))
+                    (Array.push-back! &near-indices i)))))))
         (for [z start-z end-z]
           (for [x 0 w-dim]
             (let [px (+ ox (* (+ (Double.from-int x) 0.5) cell-size))
@@ -145,7 +162,7 @@
                       mat-id (if (< min-d 0.0) 1.0f 0.0f)]
                   (do
                     ;; Bake dynamic/static SDF colliders from FieldDatabase
-                    (let [scene-res (FieldDatabase.evaluate-scene-sdf-material db &p)
+                    (let [scene-res (FieldDatabase.evaluate-scene-sdf-material-subset db &p &near-indices)
                           scene-d @(Vector2.x &scene-res)
                           scene-mat @(Vector2.y &scene-res)]
                       (when (< scene-d min-d)

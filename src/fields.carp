@@ -207,12 +207,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           
-          values (if (= idx 0) (FieldDatabase.temperatures db)
-                 (if (= idx 1) (FieldDatabase.ages db)
-                 (if (= idx 2) (FieldDatabase.humidities db)
-                 (if (= idx 3) (FieldDatabase.pressures db)
-                 (if (= idx 4) (FieldDatabase.charges db)
-                 (FieldDatabase.gravities db))))))
+          values (Array.unsafe-nth (FieldDatabase.scalar-fields db) idx)
+          influences (Array.unsafe-nth (FieldDatabase.scalar-fields db) 6)
           
           sum-val 0.0
           sum-W 0.0
@@ -232,7 +228,8 @@
                                  (< dist (* scale 2.0))))
                     (let [d (- dist scale)
                           w-denom (+ (* d d) epsilon)
-                          w (/ 1.0 w-denom)]
+                          influence @(Array.unsafe-nth influences i)
+                          w (/ influence w-denom)]
                       (do
                         (set! sum-val (+ sum-val (* val w)))
                         (set! sum-W (+ sum-W w)))))))))
@@ -248,20 +245,21 @@
                           -1)]
                 (when (>= i 0)
                   (when @(Array.unsafe-nth active i)
-                    (let [inst-pos (Array.unsafe-nth positions i)
-                          scale @(Array.unsafe-nth scales i)
-                          val @(Array.unsafe-nth values i)
-                          to-pos (Vector3.sub pos inst-pos)
-                          dist (Vector3.mag &to-pos)]
-                      (when (or (not (= idx 5))
-                                (and (not (= val -999.0))
-                                     (< dist (* scale 2.0))))
-                        (let [d (- dist scale)
-                              w-denom (+ (* d d) epsilon)
-                              w (/ 1.0 w-denom)]
-                          (do
-                            (set! sum-val (+ sum-val (* val w)))
-                            (set! sum-W (+ sum-W w))))))))))))
+                     (let [inst-pos (Array.unsafe-nth positions i)
+                           scale @(Array.unsafe-nth scales i)
+                           val @(Array.unsafe-nth values i)
+                           to-pos (Vector3.sub pos inst-pos)
+                           dist (Vector3.mag &to-pos)]
+                       (when (or (not (= idx 5))
+                                 (and (not (= val -999.0))
+                                      (< dist (* scale 2.0))))
+                         (let [d (- dist scale)
+                               w-denom (+ (* d d) epsilon)
+                               influence @(Array.unsafe-nth influences i)
+                               w (/ influence w-denom)]
+                           (do
+                             (set! sum-val (+ sum-val (* val w)))
+                             (set! sum-W (+ sum-W w))))))))))))
         (if (> sum-W 0.00001)
           (/ sum-val sum-W)
           (if (= idx 5) 1.0 0.0)))))
@@ -285,7 +283,8 @@
           active (FieldDatabase.active db)
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
-          velocities (FieldDatabase.velocities db)
+          velocities (Array.unsafe-nth (FieldDatabase.vector-fields db) 0)
+          influences (Array.unsafe-nth (FieldDatabase.scalar-fields db) 6)
           
           sum-vel (Vector3.init 0.0 0.0 0.0)
           sum-W 0.0
@@ -299,13 +298,14 @@
                       scale @(Array.unsafe-nth scales i)
                       vel (Array.unsafe-nth velocities i)
                       to-pos (Vector3.sub pos inst-pos)
-                      dist (Vector3.mag &to-pos)
-                      d (- dist scale)
-                      w-denom (+ (* d d) epsilon)
-                      w (/ 1.0 w-denom)]
-                  (do
-                    (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
-                    (set! sum-W (+ sum-W w)))))))
+                      dist (Vector3.mag &to-pos)]
+                  (let [d (- dist scale)
+                        w-denom (+ (* d d) epsilon)
+                        influence @(Array.unsafe-nth influences i)
+                        w (/ influence w-denom)]
+                    (do
+                      (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
+                      (set! sum-W (+ sum-W w))))))))
           (let [grid (ptr->ref grid-p)
                 aabb (AABB.init (Vector3.sub pos &(Vector3.init 0.01 0.01 0.01))
                                 (Vector3.add pos &(Vector3.init 0.01 0.01 0.01)))
@@ -322,13 +322,14 @@
                           scale @(Array.unsafe-nth scales i)
                           vel (Array.unsafe-nth velocities i)
                           to-pos (Vector3.sub pos inst-pos)
-                          dist (Vector3.mag &to-pos)
-                          d (- dist scale)
-                          w-denom (+ (* d d) epsilon)
-                          w (/ 1.0 w-denom)]
-                      (do
-                        (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
-                        (set! sum-W (+ sum-W w))))))))))
+                          dist (Vector3.mag &to-pos)]
+                      (let [d (- dist scale)
+                            w-denom (+ (* d d) epsilon)
+                            influence @(Array.unsafe-nth influences i)
+                            w (/ influence w-denom)]
+                        (do
+                          (set! sum-vel (Vector3.add &sum-vel &(Vector3.mul vel w)))
+                          (set! sum-W (+ sum-W w)))))))))))
         (if (> sum-W 0.00001)
           (Vector3.mul &sum-vel (/ 1.0 sum-W))
           (Vector3.init 0.0 0.0 0.0)))))
