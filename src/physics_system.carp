@@ -109,7 +109,8 @@
           (ECS.query world [ent (rb RigidBody)]
             (let [pos (RigidBody.position rb)
                   vel (Body.velocity (RigidBody.body rb))
-                  grad (Field.sample-gradient pres-field pos 0.05)
+                  db (World.field-db (Engine.world-data e))
+                  grad (FieldDatabase.calculate-pressure-gradient-grid db pos (Pointer.address grid))
                   p-force (Vector3.mul &grad coeff)
                   ind-vel (Field.sample vel-field pos)
                   rel-vel (Vector3.sub &ind-vel vel)

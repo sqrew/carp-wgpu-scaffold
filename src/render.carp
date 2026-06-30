@@ -59,8 +59,8 @@
 ])
 
 (defmodule VoxelBaker
-  (sig bake-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Array SDF)) (Ref (Array Float))] ()))
-  (sig bake-chunk-slices! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Array SDF)) (Ref (Array Float)) Int Int] ()))
+  (sig bake-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref World)] ()))
+  (sig bake-chunk-slices! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref World) Int Int] ()))
   (sig bake-voxel-grid! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref (SpatialGrid Uint32)) (Ref GameWorld) (Ref World)] ()))
   (sig chunk-overlaps-sphere? (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] Bool))
   (sig carve-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double] ()))

@@ -7,6 +7,7 @@
   (use Collidable)
   (use Volume)
   (use SDF)
+  (use FieldDatabase)
 
   (def sdf-padding 6.0)
 
@@ -102,7 +103,7 @@
   (defn build-voxel-grid-gpu! [ctx ren chunk center radius]
     (run-voxel-action-gpu! ctx ren chunk center radius 1.0))
 
-  (defn bake-chunk-slices! [ctx ren chunk static-sdfs static-mat-ids start-z end-z]
+  (defn bake-chunk-slices! [ctx ren chunk world-data start-z end-z]
     (let [voxel-data (Chunk.voxel-data chunk)
           qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
@@ -113,7 +114,7 @@
           cell-size 1.0
           w-dim 32
           h-dim 32
-          num-shapes (Array.length static-sdfs)]
+          db (World.field-db world-data)]
       (do
         (for [z start-z end-z]
           (for [x 0 w-dim]
@@ -143,14 +144,14 @@
                       min-d voxel-d
                       mat-id (if (< min-d 0.0) 1.0f 0.0f)]
                   (do
-                    ;; Bake static CSG/SDF colliders on top
-                    (for [i 0 num-shapes]
-                      (let [sdf (Array.unsafe-nth static-sdfs i)
-                            d (SDF.distance-world sdf &p)]
-                        (when (< d min-d)
-                          (do
-                            (set! min-d d)
-                            (set! mat-id @(Array.unsafe-nth static-mat-ids i))))))
+                    ;; Bake dynamic/static SDF colliders from FieldDatabase
+                    (let [scene-res (FieldDatabase.evaluate-scene-sdf-material db &p)
+                          scene-d @(Vector2.x &scene-res)
+                          scene-mat @(Vector2.y &scene-res)]
+                      (when (< scene-d min-d)
+                        (do
+                          (set! min-d scene-d)
+                          (set! mat-id (Double.to-float scene-mat)))))
                     (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
                       (do
                         (Array.aset! voxel-data idx (Double.to-float min-d))
@@ -199,40 +200,20 @@
                             (Array.aset! voxel-data (+ idx 2) shadow-val)
                             (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))))
 
-  (defn bake-chunk! [ctx ren chunk static-sdfs static-mat-ids]
+  (defn bake-chunk! [ctx ren chunk world-data]
     (do
-      (bake-chunk-slices! ctx ren chunk static-sdfs static-mat-ids 0 32)
+      (bake-chunk-slices! ctx ren chunk world-data 0 32)
       (VoxelBaker.compute-chunk-lighting! chunk)
       (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
       (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
-    (let [static-sdfs []
-          static-mat-ids []]
+    (let [chunks (World.chunks world-data)]
       (do
         (IO.println "BAKING VOXEL GRID (CHUNKED)...")
-        (ECS.query ecs-world [ent (rb RigidBody) (col Collidable)]
-          (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-            (match-ref (Collidable.volume col)
-              (Volume.Sdf sdf)
-                (do
-                  (SDF.set-position! sdf @(RigidBody.position rb))
-                  (SDF.set-rotation! sdf @(RigidBody.rotation rb))
-                  (let [saved-nodes @(SDF.csg-nodes sdf)]
-                    (do
-                      (SDF.set-csg-nodes! sdf [])
-                      (Array.push-back! &static-sdfs @sdf)
-                      (SDF.set-csg-nodes! sdf saved-nodes)))
-                  (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
-              _ ())))
-        (let [num-shapes (Array.length &static-sdfs)
-              chunks (World.chunks world-data)]
-          (do
-            (IO.println &(format "NUM STATIC SHAPES: %d" num-shapes))
-            (for [i 0 (Array.length chunks)]
-              (let [chunk (Array.unsafe-nth chunks i)]
-                (bake-chunk! ctx ren chunk &static-sdfs &static-mat-ids)))))
-        )))
+        (for [i 0 (Array.length chunks)]
+          (let [chunk (Array.unsafe-nth chunks i)]
+            (bake-chunk! ctx ren chunk world-data))))))
 
   (defn carve-voxel-grid-cpu! [chunk center radius]
     (let [qx @(Chunk.coord-x chunk)

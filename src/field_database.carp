@@ -1,4 +1,10 @@
-;; src/field_database.carp
+(deftemplate ptr->ref (Fn [(Ptr t)] (Ref t))
+  "$t* $NAME($t* p)"
+  "$DECL { return p; }")
+
+(deftemplate null-ptr (Fn [] (Ptr t))
+  "$t* $NAME()"
+  "$DECL { return NULL; }")
 
 (deftype Vector4 [x Double y Double z Double w Double])
 (defmodule Vector4
@@ -39,6 +45,7 @@
   charges (Array Double)
   gravities (Array Double)
   velocities (Array (Vector3 Double))
+  sdfs (Array (Maybe SDF))
   handle-to-index (Array Int)
   max-scale Double
   events (Array FieldEvent)
@@ -49,6 +56,7 @@
   (use Array)
   (use Vector3)
   (use Quaternion)
+  (use SpatialGrid)
 
   (defn ensure-capacity! [arr size default-val]
     (while (< (Array.length arr) size)
@@ -72,11 +80,12 @@
           ch (the (Array Double) (replicate n &0.0))
           grav (the (Array Double) (replicate n &-999.0))
           vel (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
+          sdfs (the (Array (Maybe SDF)) (replicate n &(Maybe.Nothing)))
           h-to-idx (the (Array Int) (replicate 1024 &-1))]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel h-to-idx 4.0 [] 512)))
+      (FieldDatabase.init act hnd st pm pos rot sc csg col temp age hum pres ch grav vel sdfs h-to-idx 4.0 [] 512)))
   (sig new (Fn [] FieldDatabase))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
-  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double)] Int))
+  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double) (Maybe SDF)] Int))
   (sig release-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ()))] ()))
   (sig set-scale! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-velocity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
@@ -96,7 +105,7 @@
           @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
           -1)))
 
-  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val]
+  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val sdf-val]
     (let [found-idx -1
           active-arr (FieldDatabase.active db)
           handles-arr (FieldDatabase.handles db)
@@ -124,6 +133,7 @@
             (Array.push-back! (FieldDatabase.charges db) 0.0)
             (Array.push-back! (FieldDatabase.gravities db) -999.0)
             (Array.push-back! (FieldDatabase.velocities db) (Vector3.init 0.0 0.0 0.0))
+            (Array.push-back! (FieldDatabase.sdfs db) (Maybe.Nothing))
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
         (Array.aset! handles-arr found-idx @handle)
@@ -141,6 +151,7 @@
         (Array.aset! (FieldDatabase.charges db) found-idx charge-val)
         (Array.aset! (FieldDatabase.gravities db) found-idx gravity-val)
         (Array.aset! (FieldDatabase.velocities db) found-idx vel-val)
+        (Array.aset! (FieldDatabase.sdfs db) found-idx sdf-val)
         (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
           (do
             (ensure-capacity! (FieldDatabase.handle-to-index db) (inc h-idx) -1)
@@ -157,7 +168,8 @@
         (when (>= id 0)
           (do
             (Array.aset! (FieldDatabase.active db) id false)
-            (Array.aset! (FieldDatabase.shape-types db) id -1)))
+            (Array.aset! (FieldDatabase.shape-types db) id -1)
+            (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing))))
         (when (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
           (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)))))
 
@@ -220,38 +232,157 @@
       (when (>= id 0)
         (Array.aset! (FieldDatabase.root-csg-indices db) id val))))
 
-  (sig calculate-pressure-gradient (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector3 Double)))
-  (defn calculate-pressure-gradient [db pos]
+  (defn sd-sphere [p s]
+    (- (Vector3.mag p) s))
+
+  (defn max-double [a b] (if (> a b) a b))
+  (defn min-double [a b] (if (< a b) a b))
+
+  (defn sd-box [p b]
+    (let [qx (- (Double.abs @(Vector3.x p)) @(Vector3.x b))
+          qy (- (Double.abs @(Vector3.y p)) @(Vector3.y b))
+          qz (- (Double.abs @(Vector3.z p)) @(Vector3.z b))
+          max-q (max-double qx (max-double qy qz))
+          outside (Vector3.init (max-double qx 0.0) (max-double qy 0.0) (max-double qz 0.0))
+          dist-outside (Vector3.mag &outside)
+          dist-inside (min-double max-q 0.0)]
+      (+ dist-outside dist-inside)))
+
+  (defn sd-cylinder [p r h]
+    (let [xz-len (Double.sqrt (+ (* @(Vector3.x p) @(Vector3.x p)) (* @(Vector3.z p) @(Vector3.z p))))
+          dx (- xz-len r)
+          dy (- (Double.abs @(Vector3.y p)) h)
+          outside-x (max-double dx 0.0)
+          outside-y (max-double dy 0.0)
+          outside (Double.sqrt (+ (* outside-x outside-x) (* outside-y outside-y)))
+          inside (min-double (max-double dx dy) 0.0)]
+      (+ outside inside)))
+
+  (defn sd-capsule [p r h]
+    (let [py (Double.clamp (- 0.0 h) h @(Vector3.y p))
+          p-caps (Vector3.init 0.0 py 0.0)
+          diff (Vector3.sub p &p-caps)]
+      (- (Vector3.mag &diff) r)))
+
+  (defn sd-torus [p R r]
+    (let [xz-len (Double.sqrt (+ (* @(Vector3.x p) @(Vector3.x p)) (* @(Vector3.z p) @(Vector3.z p))))
+          q (Vector2.init (- xz-len R) @(Vector3.y p))
+          q-len (Double.sqrt (+ (* @(Vector2.x &q) @(Vector2.x &q)) (* @(Vector2.y &q) @(Vector2.y &q))))]
+      (- q-len r)))
+
+  (defn sd-octahedron [p s]
+    (let [qx (Double.abs @(Vector3.x p))
+          qy (Double.abs @(Vector3.y p))
+          qz (Double.abs @(Vector3.z p))]
+      (* (- (+ qx (+ qy qz)) s) 0.57735027)))
+
+  (defn evaluate-csg-primitive [p shape-type pos rot scale params]
+    (let [inv-rot (Quaternion.conjugate rot)
+          local-p (Quaternion.rotate &inv-rot &(Vector3.sub p pos))
+          d 10000.0]
+      (do
+        (when (= shape-type 1)
+          (set! d (sd-sphere &local-p (* @(Vector4.x params) scale))))
+        (when (= shape-type 2)
+          (let [b (Vector3.init (* @(Vector4.x params) scale) (* @(Vector4.y params) scale) (* @(Vector4.z params) scale))]
+            (set! d (sd-box &local-p &b))))
+        (when (= shape-type 3)
+          (set! d (sd-cylinder &local-p (* @(Vector4.x params) scale) (* @(Vector4.y params) scale))))
+        (when (= shape-type 4)
+          (set! d (sd-capsule &local-p (* @(Vector4.x params) scale) (* @(Vector4.y params) scale))))
+        (when (= shape-type 5)
+          (set! d (sd-torus &local-p (* @(Vector4.x params) scale) (* @(Vector4.y params) scale))))
+        (when (= shape-type 6)
+          (set! d (sd-octahedron &local-p (* @(Vector4.x params) scale))))
+        d)))
+
+  (sig evaluate-scene-sdf-material (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector2 Double)))
+  (defn evaluate-scene-sdf-material [db pos]
+    (let [active (FieldDatabase.active db)
+          len (Array.length active)
+          min-d 10000.0
+          mat-id 0.0]
+      (do
+        (for [i 0 len]
+          (when @(Array.unsafe-nth active i)
+            (let [inst-d (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) i)
+                           (Maybe.Just sdf) (SDF.distance-world sdf pos)
+                           (Maybe.Nothing)
+                             (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)
+                                   params (Array.unsafe-nth (FieldDatabase.params db) i)
+                                   inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                                   rot (Array.unsafe-nth (FieldDatabase.rotations db) i)
+                                   scale @(Array.unsafe-nth (FieldDatabase.scales db) i)]
+                               (evaluate-csg-primitive pos shape-type inst-pos rot scale params)))]
+              (when (< inst-d min-d)
+                (do
+                  (set! min-d inst-d)
+                  (set! mat-id (Double.from-int (inc i))))))))
+        (Vector2.init min-d mat-id))))
+
+  (sig calculate-pressure-gradient-grid (Fn [(Ref FieldDatabase) (Ref (Vector3 Double)) (Ptr (SpatialGrid Uint32))] (Vector3 Double)))
+  (defn calculate-pressure-gradient-grid [db pos grid-ptr]
     (let [sum-grad-S (Vector3.init 0.0 0.0 0.0)
           sum-grad-W (Vector3.init 0.0 0.0 0.0)
           sum-S 0.0
           sum-W 0.0
           active-arr (FieldDatabase.active db)
-          len (Array.length active-arr)
           epsilon 0.01]
       (do
-        (for [i 0 len]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
-                  scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                  pres @(Array.unsafe-nth (FieldDatabase.pressures db) i)
-                  to-pos (Vector3.sub pos inst-pos)
-                  dist (Vector3.mag &to-pos)
-                  d (- dist scale)
-                  w-denom (+ (* d d) epsilon)
-                  w (/ 1.0 w-denom)]
-              (do
-                (set! sum-S (+ sum-S (* pres w)))
-                (set! sum-W (+ sum-W w))
-                (when (> dist 0.00001)
-                  (let [dir (Vector3.mul &to-pos (/ 1.0 dist))
-                        ;; grad w = -2.0 * d * dir / (w-denom * w-denom)
-                        grad-w-mag (/ (* -2.0 d) (* w-denom w-denom))
-                        grad-w (Vector3.mul &dir grad-w-mag)
-                        grad-s (Vector3.mul &grad-w pres)]
-                    (do
-                      (set! sum-grad-S (Vector3.add &sum-grad-S &grad-s))
-                      (set! sum-grad-W (Vector3.add &sum-grad-W &grad-w)))))))))
+        (if (null? grid-ptr)
+          (let [len (Array.length active-arr)]
+            (for [i 0 len]
+              (when @(Array.unsafe-nth active-arr i)
+                (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                      scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                      pres @(Array.unsafe-nth (FieldDatabase.pressures db) i)
+                      to-pos (Vector3.sub pos inst-pos)
+                      dist (Vector3.mag &to-pos)
+                      d (- dist scale)
+                      w-denom (+ (* d d) epsilon)
+                      w (/ 1.0 w-denom)]
+                  (do
+                    (set! sum-S (+ sum-S (* pres w)))
+                    (set! sum-W (+ sum-W w))
+                    (when (> dist 0.00001)
+                      (let [dir (Vector3.mul &to-pos (/ 1.0 dist))
+                            grad-w-mag (/ (* -2.0 d) (* w-denom w-denom))
+                            grad-w (Vector3.mul &dir grad-w-mag)
+                            grad-s (Vector3.mul &grad-w pres)]
+                        (do
+                          (set! sum-grad-S (Vector3.add &sum-grad-S &grad-s))
+                          (set! sum-grad-W (Vector3.add &sum-grad-W &grad-w))))))))))
+          (let [grid (ptr->ref grid-ptr)
+                aabb (AABB.init (Vector3.sub pos &(Vector3.init 0.01 0.01 0.01))
+                                (Vector3.add pos &(Vector3.init 0.01 0.01 0.01)))
+                candidates (SpatialGrid.query-unique grid &aabb)
+                cand-len (Array.length &candidates)]
+            (for [c 0 cand-len]
+              (let [h-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth &candidates c))))
+                    i (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
+                          @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
+                          -1)]
+                (when (>= i 0)
+                  (when @(Array.unsafe-nth active-arr i)
+                    (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                          scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                          pres @(Array.unsafe-nth (FieldDatabase.pressures db) i)
+                          to-pos (Vector3.sub pos inst-pos)
+                          dist (Vector3.mag &to-pos)
+                          d (- dist scale)
+                          w-denom (+ (* d d) epsilon)
+                          w (/ 1.0 w-denom)]
+                      (do
+                        (set! sum-S (+ sum-S (* pres w)))
+                        (set! sum-W (+ sum-W w))
+                        (when (> dist 0.00001)
+                          (let [dir (Vector3.mul &to-pos (/ 1.0 dist))
+                                grad-w-mag (/ (* -2.0 d) (* w-denom w-denom))
+                                grad-w (Vector3.mul &dir grad-w-mag)
+                                grad-s (Vector3.mul &grad-w pres)]
+                            (do
+                              (set! sum-grad-S (Vector3.add &sum-grad-S &grad-s))
+                              (set! sum-grad-W (Vector3.add &sum-grad-W &grad-w)))))))))))))
         (if (> sum-W 0.00001)
           (let [term1 (Vector3.mul &sum-grad-S sum-W)
                 term2 (Vector3.mul &sum-grad-W sum-S)
@@ -259,6 +390,10 @@
                 grad (Vector3.mul &num (/ 1.0 (* sum-W sum-W)))]
             grad)
           (Vector3.init 0.0 0.0 0.0)))))
+
+  (sig calculate-pressure-gradient (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector3 Double)))
+  (defn calculate-pressure-gradient [db pos]
+    (calculate-pressure-gradient-grid db pos (null-ptr)))
 
   (sig calculate-induced-velocity (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector3 Double)))
   (defn calculate-induced-velocity [db pos]
@@ -306,7 +441,7 @@
           event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime temp pres @col h-id update-fn)]
       (do
         (FieldDatabase.set-next-virtual-id! db (inc h-id))
-        (ignore (register-instance! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col temp 0.0 0.0 pres 0.0 -999.0 @vel))
+        (ignore (register-instance! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col temp 0.0 0.0 pres 0.0 -999.0 @vel (Maybe.Nothing)))
         (Array.push-back! (FieldDatabase.events db) event))))
 
   (defn tick! [db dt]

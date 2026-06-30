@@ -656,7 +656,16 @@
                               (set! rot @(RigidBody.rotation rb)))))
                     _c (when (ECS.has-component? world &ent Color)
                          (ECS.with-components world @&ent [ent-col (c Color)]
-                           (set! col @(Color.v c))))]
+                           (set! col @(Color.v c))))
+                    sdf-maybe (if (ECS.has-component? world &ent Collidable)
+                                  (match (ECS.get-component-ptr world &ent)
+                                    (Maybe.Just col-ptr)
+                                      (let [collidable-ref (ECS.ptr->ref col-ptr world)]
+                                        (match-ref (Collidable.volume collidable-ref)
+                                          (Volume.Sdf sdf) (Maybe.Just @sdf)
+                                          _ (Maybe.Nothing)))
+                                    _ (Maybe.Nothing))
+                                  (Maybe.Nothing))]
                 (ignore (FieldDatabase.register-instance! db h
                           @(FieldInstance.shape-type fi)
                           @(FieldInstance.params fi)
@@ -671,7 +680,8 @@
                           @(FieldInstance.pressure fi)
                           @(FieldInstance.charge fi)
                           @(FieldInstance.gravity fi)
-                          vel)))
+                          vel
+                          sdf-maybe)))
               ;; Update
               (do
                 (when (ECS.has-component? world &ent RigidBody)
@@ -861,26 +871,9 @@
                       next-prog (+ current-prog 4)
                       qx @(Chunk.coord-x chunk-ref)
                       qy @(Chunk.coord-y chunk-ref)
-                      qz @(Chunk.coord-z chunk-ref)
-                      static-sdfs []
-                      static-mat-ids []]
+                      qz @(Chunk.coord-z chunk-ref)]
                   (do
-                    ;; Gather static SDFs
-                    (ECS.query world [ent (rb RigidBody) (col Collidable)]
-                      (when (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)
-                        (match-ref (Collidable.volume col)
-                          (Volume.Sdf sdf)
-                            (do
-                              (SDF.set-position! sdf @(RigidBody.position rb))
-                              (SDF.set-rotation! sdf @(RigidBody.rotation rb))
-                              (let [saved-nodes @(SDF.csg-nodes sdf)]
-                                (do
-                                  (SDF.set-csg-nodes! sdf [])
-                                  (Array.push-back! &static-sdfs @sdf)
-                                  (SDF.set-csg-nodes! sdf saved-nodes)))
-                              (Array.push-back! &static-mat-ids (Double.to-float (Double.from-int (inc (the Int (Long.to-int (Uint32.to-long (ECS.Entity.id &ent)))))))))
-                          _ ())))
-                    (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref &static-sdfs &static-mat-ids current-prog next-prog)
+                    (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref world-data current-prog next-prog)
                     (Chunk.set-bake-progress! chunk-ref next-prog)
                     (when (= next-prog 32)
                       (do
