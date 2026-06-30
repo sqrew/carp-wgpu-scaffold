@@ -354,9 +354,9 @@
                             (* @(Vector4.x params) scale) ;; Octahedron
                             0.0)))))))
  
-  (defn evaluate-scene-sdf-material-subset [db pos indices-ref]
+  (defn evaluate-scene-sdf-material-subset [db pos indices-ref base-d]
     (let [len (Array.length indices-ref)
-          min-d 10000.0
+          min-d base-d
           mat-id 0.0]
       (do
         (for [k 0 len]
@@ -370,10 +370,13 @@
                                   rot (Array.unsafe-nth (FieldDatabase.rotations db) i)
                                   scale @(Array.unsafe-nth (FieldDatabase.scales db) i)]
                               (evaluate-csg-primitive pos shape-type inst-pos rot scale params)))]
-            (when (< inst-d min-d)
-              (do
-                (set! min-d inst-d)
-                (set! mat-id (Double.from-int (inc i)))))))
+            (let [csg-op @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) i)]
+              (if (= csg-op -2)
+                  (set! min-d (max-double min-d (- 0.0 inst-d)))
+                  (when (< inst-d min-d)
+                    (do
+                      (set! min-d inst-d)
+                      (set! mat-id (Double.from-int (inc i)))))))))
         (Vector2.init min-d mat-id))))
 
   (sig calculate-pressure-gradient-grid (Fn [(Ref FieldDatabase) (Ref (Vector3 Double)) (Ptr (SpatialGrid Uint32))] (Vector3 Double)))

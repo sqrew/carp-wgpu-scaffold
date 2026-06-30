@@ -1,0 +1,96 @@
+;; src/ui_system.carp
+(load "components.carp")
+
+(defmodule UiSystem
+  (use Double)
+  (use Vector3)
+  (use Ray)
+
+  (defn get-cursor-ray [cam mx my sw sh]
+    (let [ndc-x (- (* 2.0 (/ mx sw)) 1.0)
+          ndc-y (- 1.0 (* 2.0 (/ my sh)))
+          fov @(Camera.fov cam)
+          aspect @(Camera.aspect cam)
+          half-h (tan (* fov 0.00872664625))
+          half-w (* half-h aspect)
+          dx (* ndc-x half-w)
+          dy (* ndc-y half-h)
+          right (Camera.right cam)
+          up (Camera.up cam)
+          front (Camera.front cam)
+          scaled-right (the (Vector3 Double) (Vector3.mul right dx))
+          scaled-up (the (Vector3 Double) (Vector3.mul up dy))
+          dir (the (Vector3 Double) (Vector3.normalize &(Vector3.add &(Vector3.add front &scaled-right) &scaled-up)))]
+      (Ray.make @(Camera.pos cam) dir)))
+
+  (defn ray-plane-intersect [ray center normal]
+    (let [ray-org (Ray.origin ray)
+          ray-dir (Ray.direction ray)
+          denom (Vector3.dot normal ray-dir)]
+      (if (> (abs denom) 0.0001)
+        (let [diff (Vector3.sub center ray-org)
+              t (/ (Vector3.dot normal &diff) denom)]
+          (if (> t 0.0)
+            (Maybe.Just (Vector3.add ray-org &(Vector3.mul ray-dir t)))
+            (Maybe.Nothing)))
+        (Maybe.Nothing))))
+
+  (defn world-to-local [p panel-pos panel-rot]
+    (let [diff (Vector3.sub p panel-pos)
+          inv-q (Quaternion.conjugate panel-rot)]
+      (Quaternion.rotate &inv-q &diff)))
+
+  (defn find-hit-entity [world hit-p]
+    (let [best-ent (Maybe.Nothing)
+          best-dist 10.0]
+      (do
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+          (when (not (ECS.has-component? world &ent StaticWorldTag))
+            (let [pos (RigidBody.position rb)
+                  d (Vector3.dist hit-p pos)]
+              (when (< d best-dist)
+                (do
+                  (set! best-dist d)
+                  (set! best-ent (Maybe.Just @(ECS.Entity.handle &ent))))))))
+        best-ent)))
+
+  (defn spawn-ui-panel! [world target-handle target-pos cam-pos]
+    (let [panel-ent (GameWorld.create-entity! world)
+          dir (Vector3.normalize &(Vector3.sub &cam-pos &target-pos))
+          target-radius 1.0]
+      (do
+        (ECS.query world [ent (fi FieldInstance)]
+          (when (= (ECS.Entity.id &ent) (Uint32.from-long (Uint64.to-long (Handle.index &target-handle))))
+            (set! target-radius @(FieldInstance.scale fi))))
+        (let [panel-pos (Vector3.add &target-pos &(Vector3.mul &dir (+ target-radius 1.5)))
+              panel-rb (RigidBody.static panel-pos (Quaternion.identity) 0.0 0.0)
+              ctrl1 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 0.2 0.0) 1.0 0.5 0)  ;; Radius
+              ctrl2 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 -0.2 0.0) 1.0 0.5 1) ;; Gravity
+              panel-comp (UiPanel.init target-handle 2.0 1.2 [ctrl1 ctrl2] true)
+              bbt (BillboardTag.init)
+              fi-comp (FieldInstance.init 0 (Vector4.init 2.0 1.2 0.5 0.5) 1.0 -5 2.0 1.2 0.5 0.5 0.0 -999.0 1.0)]
+          (do
+            (ECS.add-component! world &panel-ent panel-rb)
+            (ECS.add-component! world &panel-ent panel-comp)
+            (ECS.add-component! world &panel-ent bbt)
+            (ECS.add-component! world &panel-ent fi-comp)
+            @(ECS.Entity.handle &panel-ent))))))
+
+  (defn spawn-voxel-field-source! [world pos]
+    (let [ent (GameWorld.create-entity! world)
+          rb (RigidBody.static @&pos (Quaternion.identity) 0.0 0.0)
+          vol (Volume.Sdf (SDF.init-sphere 4.0 @&pos (Quaternion.identity)))
+          col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          color (Color.init (Vector3.init 0.8 0.2 0.8))
+          fi (FieldInstance.init 1 (Vector4.init 1.0 1.0 1.0 0.0) 4.0 -2 0.5 0.5 0.0 0.5 0.0 0.0 1.0)
+          csg (CsgNode.init (Box.init (SDF.init-sphere 4.0 pos (Quaternion.identity))) 1)
+          gs (GravitySource.init 0.0)]
+      (do
+        (ECS.add-component! world &ent rb)
+        (ECS.add-component! world &ent col)
+        (ECS.add-component! world &ent color)
+        (ECS.add-component! world &ent fi)
+        (ECS.add-component! world &ent csg)
+        (ECS.add-component! world &ent gs)
+        @(ECS.Entity.handle &ent))))
+)

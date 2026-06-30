@@ -32,6 +32,7 @@
     volumetric-sdf Bool
     chunk-loading-enabled Bool
     diagnostics Diagnostics
+    active-ui-panel (Maybe (Handle ()))
   ])
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))

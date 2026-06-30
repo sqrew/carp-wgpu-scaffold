@@ -869,6 +869,43 @@
                        var local_dist = 10000.0;
                         let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                         let csg_root_idx = i32(round(s_data.color_csg.w));
+                        if (csg_root_idx == -5) {
+                             let width = s_data.sph_fields.x;
+                             let height = s_data.sph_fields.y;
+                             let slider1_val = s_data.sph_fields.z;
+                             let slider2_val = s_data.sph_fields.w;
+
+                             let board_half = vec3<f32>(width * 0.5, height * 0.5, 0.015);
+                             let board_d = sdBox(local_p, board_half) - 0.005;
+
+                             let slider1_track_pos = vec3<f32>(-0.5, 0.2, 0.0);
+                             let slider1_track_d = sdBox(local_p - slider1_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+
+                             let knob1_x = -0.5 + (slider1_val - 0.5) * 1.0;
+                             let knob1_pos = vec3<f32>(knob1_x, 0.2, 0.02);
+                             let knob1_d = sdSphere(local_p - knob1_pos, 0.045);
+
+                             let slider2_track_pos = vec3<f32>(-0.5, -0.2, 0.0);
+                             let slider2_track_d = sdBox(local_p - slider2_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+
+                             let knob2_x = -0.5 + (slider2_val - 0.5) * 1.0;
+                             let knob2_pos = vec3<f32>(knob2_x, -0.2, 0.02);
+                             let knob2_d = sdSphere(local_p - knob2_pos, 0.045);
+
+                             var final_d = max(board_d, -slider1_track_d);
+                             final_d = max(final_d, -slider2_track_d);
+                             final_d = min(final_d, knob1_d);
+                             final_d = min(final_d, knob2_d);
+
+                             local_dist = final_d;
+
+                             if (local_dist < metaball_d) {
+                                 metaball_d = local_dist;
+                                 has_metaballs = true;
+                                 metaball_idx = f32(s_idx);
+                             }
+                             continue;
+                         }
                         if (csg_root_idx <= -99) {
                             if (!eval_metaballs) { continue; }
                              var s = f32(-99 - csg_root_idx) / 100.0;
@@ -1315,7 +1352,49 @@
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                    if (s_data.sph_fields.x != 0.0) {
+                    if (s_data.color_csg.w == -5.0) {
+                        let width = s_data.sph_fields.x;
+                        let height = s_data.sph_fields.y;
+                        let slider1_val = s_data.sph_fields.z;
+                        let slider2_val = s_data.sph_fields.w;
+
+                        var panel_color = vec3<f32>(0.02, 0.15, 0.35); // base cyber blue
+                        
+                        let knob1_x = -0.5 + (slider1_val - 0.5) * 1.0;
+                        let knob1_pos = vec3<f32>(knob1_x, 0.2, 0.02);
+                        let d_knob1 = length(lp - knob1_pos);
+                        
+                        let knob2_x = -0.5 + (slider2_val - 0.5) * 1.0;
+                        let knob2_pos = vec3<f32>(knob2_x, -0.2, 0.02);
+                        let d_knob2 = length(lp - knob2_pos);
+
+                        if (d_knob1 < 0.05) {
+                            base_col = vec3<f32>(1.0, 0.5, 0.0);
+                            edge = 1.0;
+                        } else if (d_knob2 < 0.05) {
+                            base_col = vec3<f32>(0.0, 1.0, 0.5);
+                            edge = 1.0;
+                        } else {
+                            let slider1_track_pos = vec3<f32>(-0.5, 0.2, 0.0);
+                            let d_track1 = sdBox(lp - slider1_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+                            let slider2_track_pos = vec3<f32>(-0.5, -0.2, 0.0);
+                            let d_track2 = sdBox(lp - slider2_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+
+                            if (d_track1 < 0.005 || d_track2 < 0.005) {
+                                base_col = vec3<f32>(0.01, 0.02, 0.05);
+                                edge = 0.0;
+                            } else {
+                                let edge_dist = max(abs(lp.x) - width * 0.5, abs(lp.y) - height * 0.5);
+                                if (abs(edge_dist) < 0.03) {
+                                    base_col = vec3<f32>(0.0, 0.8, 1.0);
+                                    edge = 1.0;
+                                } else {
+                                    base_col = panel_color;
+                                    edge = 0.3;
+                                }
+                            }
+                        }
+                    } else if (s_data.sph_fields.x != 0.0) {
                         let temp_factor = clamp(abs(s_data.sph_fields.x) / 120.0, 0.0, 1.0);
                         let scroll_col = vec3<f32>(0.0);
                         let base_noise = evaluateFbm(lp * 4.0 - scroll_col);

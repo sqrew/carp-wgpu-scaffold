@@ -62,6 +62,7 @@
         (InputManager.add-binding! &mgr "CycleShadowQuality" (InputSource.Key GLFW.Keycode.O) 1.0)
         (InputManager.add-binding! &mgr "ToggleVolumetricSdf" (InputSource.Key GLFW.Keycode.V) 1.0)
         (InputManager.add-binding! &mgr "ToggleChunkLoading" (InputSource.Key GLFW.Keycode.L) 1.0)
+        (InputManager.add-binding! &mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)
 
         ()
 
@@ -231,7 +232,8 @@
               r-db
               false
               true
-              diag)))))
+              diag
+              (Maybe.Nothing))))))
 
   (defn db [e]
     (World.field-db (Engine.world-data e)))
@@ -370,52 +372,220 @@
     (let [_ (Coordinator.tick! (Engine.coordinator e))]
       ()))
 
+  (defn handle-id [h]
+    (Uint32.from-long (Uint64.to-long (Handle.index h))))
+
+  (defn tick-billboards! [e]
+    (let [world (Engine.world e)
+          cam (Engine.camera e)
+          cam-pos (Camera.pos cam)]
+      (ECS.query world [ent (rb RigidBody) (bbt BillboardTag)]
+        (let [panel-pos (RigidBody.position rb)
+              dir (Vector3.normalize &(Vector3.sub cam-pos panel-pos))
+              pitch (asin @(Vector3.y &dir))
+              yaw (- 1.57079632679 (atan2 @(Vector3.z &dir) @(Vector3.x &dir)))
+              rot (Quaternion.from-euler yaw pitch 0.0)]
+          (RigidBody.set-rotation! rb rot)))))
+
+  (defn close-ui! [e]
+    (match @(Engine.active-ui-panel e)
+      (Maybe.Nothing) ()
+      (Maybe.Just panel-handle)
+        (do
+          (Engine.set-show-debug-lines! e false)
+          (let [world (Engine.world e)]
+            (ECS.query world [ent (panel UiPanel)]
+              (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
+                (GameWorld.destroy-entity! world &ent))))
+          (Engine.set-active-ui-panel! e (Maybe.Nothing))
+          (let [void-win (the (Ptr ()) @(InputManager.context (Engine.input e)))
+                win (Init.voidptr->glfw-window void-win)]
+            (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED))
+          (IO.println "UI Panel closed."))))
+
+  (defn open-ui-at-crosshair! [e]
+    (let [cam (Engine.camera e)
+          world (Engine.world e)
+          grid (Engine.grid e)
+          cam-pos (Camera.pos cam)
+          cam-front (Camera.front cam)
+          ray (Ray.make @cam-pos @cam-front)
+          config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
+          hit (PlayerSystem.march-world world (Engine.world-data e) grid &ray &config)]
+      (if @(RaymarchHit.hit &hit)
+          (let [hit-p (RaymarchHit.p &hit)
+                hit-ent-maybe (UiSystem.find-hit-entity world hit-p)]
+            (match hit-ent-maybe
+              (Maybe.Nothing)
+                (let [target-pos @hit-p
+                      target-handle (UiSystem.spawn-voxel-field-source! world @&target-pos)
+                      panel-handle (UiSystem.spawn-ui-panel! world @&target-handle @&target-pos @cam-pos)]
+                  (do
+                    (Engine.set-show-debug-lines! e true)
+                    (Engine.set-active-ui-panel! e (Maybe.Just panel-handle))
+                    (let [void-win (the (Ptr ()) @(InputManager.context (Engine.input e)))
+                          win (Init.voidptr->glfw-window void-win)]
+                      (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_NORMAL))
+                    (IO.println &(str* "Handle " (Long.str (Uint64.to-long (Handle.index &target-handle))) " clicked at " &(Vector3.str &target-pos)))))
+              (Maybe.Just target-handle)
+                (let [target-pos (let [pos-val (Vector3.init 0.0 0.0 0.0)]
+                                   (do
+                                     (ECS.query world [ent (rb RigidBody)]
+                                       (when (= (ECS.Entity.id &ent) (handle-id &target-handle))
+                                         (set! pos-val @(RigidBody.position rb))))
+                                     pos-val))
+                       panel-handle (UiSystem.spawn-ui-panel! world @&target-handle @&target-pos @cam-pos)]
+                  (do
+                    (Engine.set-show-debug-lines! e true)
+                    (Engine.set-active-ui-panel! e (Maybe.Just panel-handle))
+                    (let [void-win (the (Ptr ()) @(InputManager.context (Engine.input e)))
+                          win (Init.voidptr->glfw-window void-win)]
+                      (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_NORMAL))
+                    (IO.println &(str* "Handle " (Long.str (Uint64.to-long (Handle.index &target-handle))) " clicked at " &(Vector3.str &target-pos)))))))
+          (IO.println "Raycast missed terrain/objects."))))
+
+  (defn apply-control-value! [e target label-id val]
+    (let [world (Engine.world e)]
+      (do
+        (IO.println &(str* "apply-control-value! target=" (Long.str (Uint64.to-long (Handle.index &target))) " label-id=" (Int.str label-id) " val=" (Double.str val)))
+        (ECS.query world [ent (fi FieldInstance)]
+          (when (= (ECS.Entity.id &ent) (handle-id &target))
+            (do
+              (if (= label-id 0)
+                (do
+                  (FieldInstance.set-scale! fi (* val 8.0))
+                  (ECS.query world [ent2 (col Collidable)]
+                    (when (= (ECS.Entity.id &ent2) (handle-id &target))
+                      (match-ref (Collidable.volume col)
+                        (Volume.Ball sphere) (Sphere.set-radius! sphere (* val 8.0))
+                        (Volume.Sdf sdf) (SDF.set-scale! sdf (* val 8.0))
+                        _ ()))))
+                (if (= label-id 1)
+                  (do
+                    (FieldInstance.set-gravity! fi (- (* val 10.0) 5.0))
+                    (ECS.query world [ent2 (gs GravitySource)]
+                      (when (= (ECS.Entity.id &ent2) (handle-id &target))
+                        (GravitySource.set-strength! gs (- (* val 10.0) 5.0)))))
+                  ()))
+              (do
+                (Engine.set-grid-dirty! e true)
+                (Engine.set-voxel-dirty! e true))))))))
+
+  (defn tick-ui-drag! [e width height]
+    (let [mgr (Engine.input e)]
+      (when (InputManager.action-digital? mgr "Laser")
+        (match @(Engine.active-ui-panel e)
+          (Maybe.Nothing) ()
+          (Maybe.Just panel-handle)
+            (let [world (Engine.world e)
+                  cam (Engine.camera e)
+                  mx @(InputManager.last-mouse-x mgr)
+                  my @(InputManager.last-mouse-y mgr)
+                  sw (Double.from-int width)
+                  sh (Double.from-int height)
+                  ray (UiSystem.get-cursor-ray cam mx my sw sh)]
+              (do
+                (IO.println &(str* "UI Drag Click: mx=" (Double.str mx) " my=" (Double.str my)))
+                (ECS.query world [ent (rb RigidBody) (panel UiPanel)]
+                  (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
+                    (let [panel-pos (RigidBody.position rb)
+                          panel-rot (RigidBody.rotation rb)
+                          panel-norm (Transform.forward-quat panel-rot)
+                          hit-maybe (UiSystem.ray-plane-intersect &ray panel-pos &panel-norm)]
+                      (match hit-maybe
+                        (Maybe.Nothing) (IO.println "Ray-plane: Miss")
+                        (Maybe.Just hit-p)
+                          (let [local-hit (UiSystem.world-to-local &hit-p panel-pos panel-rot)
+                                lx @(Vector3.x &local-hit)
+                                ly @(Vector3.y &local-hit)
+                                _ (IO.println &(str* "Ray-plane: Hit local lx=" (Double.str lx) " ly=" (Double.str ly)))
+                                controls (UiPanel.controls panel)
+                                controls-len (Array.length controls)]
+                            (for [i 0 controls-len]
+                              (let [ctrl (Array.unsafe-nth controls i)
+                                    ctrl-pos (UiControl.local-pos ctrl)
+                                    cx @(Vector3.x ctrl-pos)
+                                    cy @(Vector3.y ctrl-pos)
+                                    cw @(UiControl.width ctrl)]
+                                (do
+                                  (IO.println &(str* "Checking control " (Int.str i) ": cx=" (Double.str cx) " cy=" (Double.str cy) " cw=" (Double.str cw)))
+                                  (when (and (< (abs (- ly cy)) 0.15)
+                                             (< (abs (- lx cx)) (/ cw 2.0)))
+                                    (let [new-val (Double.clamp 0.0 1.0 (/ (+ (- lx cx) (/ cw 2.0)) cw))]
+                                      (do
+                                        (IO.println &(str* "Slider " (Int.str i) " drag match: value=" (Double.str new-val)))
+                                        (UiControl.set-value! ctrl new-val)
+                                        (ECS.with-components world @&ent [panel-fi (fi FieldInstance)]
+                                          (do
+                                            (if (= i 0)
+                                              (FieldInstance.set-humidity! fi new-val)
+                                              (if (= i 1)
+                                                (FieldInstance.set-pressure! fi new-val)
+                                                ()))))
+                                        (Engine.apply-control-value! e @(UiPanel.target panel) @(UiControl.label-id ctrl) new-val))))))))))))))))))
+
+  (defn tick-ui! [e dt width height]
+    (do
+      (Engine.tick-billboards! e)
+      (Engine.tick-ui-drag! e width height)))
+
   (defn tick-input! [e dt]
     (let [mgr (Engine.input e)]
       (do
         (InputManager.update! mgr)
-        (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
-          (let [p-scale (match-ref (Collidable.volume p-col)
-                          (Volume.Ball sphere) @(Sphere.radius sphere)
-                          _ 1.0)]
+        (if (Maybe.just? (Engine.active-ui-panel e))
             (do
-              (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)
-              (when (InputManager.action-pressed? mgr "StopMovement")
+              (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-tag PlayerTag)]
                 (do
                   (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
                   (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
-              (when (InputManager.action-pressed? mgr "ResetPlayer")
-                (do
-                  (RigidBody.set-position! p-rb (Vector3.init 0.0 35.0 0.0))
-                  (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                  (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
-              (when (InputManager.action-pressed? mgr "Teleport")
-                (let [cam (Engine.camera e)
-                      grid (Engine.grid e)
-                      cam-pos (Camera.pos cam)
-                      cam-front (Camera.front cam)
-                      ray (Ray.make @cam-pos @cam-front)
-                      config (RaymarchConfig.init 128 150.0 0.005 0.001 0.05)
-                      hit (PlayerSystem.march-world (Engine.world e) (Engine.world-data e) grid &ray &config)]
-                  (if @(RaymarchHit.hit &hit)
-                      (let [hit-p (RaymarchHit.p &hit)
-                            dest (Vector3.add hit-p &(Vector3.init 0.0 2.5 0.0))]
-                        (do
-                          (RigidBody.set-position! p-rb @&dest)
-                          (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                          (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                          (IO.println &(str* "Teleported player to " &(Vector3.str &dest)))))
-                      (IO.println "Teleport target missed or too far!")))))))
-        (when (InputManager.action-pressed? mgr "Fire")
-          (PlayerSystem.spawn-bullet! e false))
-        (when (InputManager.action-digital? mgr "FireBouncy")
-          (PlayerSystem.spawn-bullet! e true))
-        (when (InputManager.action-pressed? mgr "Laser")
-          (PlayerSystem.fire-laser! e))
-        (when (InputManager.action-pressed? mgr "Build")
-          (PlayerSystem.build-laser! e))
-        (when (InputManager.action-pressed? mgr "Implode")
-          (PlayerSystem.fire-implosion-laser! e))
+              (when (InputManager.action-pressed? mgr "ToggleUI")
+                (Engine.close-ui! e)))
+            (do
+              (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
+                (let [p-scale (match-ref (Collidable.volume p-col)
+                                (Volume.Ball sphere) @(Sphere.radius sphere)
+                                _ 1.0)]
+                  (do
+                    (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)
+                    (when (InputManager.action-pressed? mgr "StopMovement")
+                      (do
+                        (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                        (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+                    (when (InputManager.action-pressed? mgr "ResetPlayer")
+                      (do
+                        (RigidBody.set-position! p-rb (Vector3.init 0.0 35.0 0.0))
+                        (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                        (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+                    (when (InputManager.action-pressed? mgr "Teleport")
+                      (let [cam (Engine.camera e)
+                            grid (Engine.grid e)
+                            cam-pos (Camera.pos cam)
+                            cam-front (Camera.front cam)
+                            ray (Ray.make @cam-pos @cam-front)
+                            config (RaymarchConfig.init 128 150.0 0.005 0.001 0.05)
+                            hit (PlayerSystem.march-world (Engine.world e) (Engine.world-data e) grid &ray &config)]
+                        (if @(RaymarchHit.hit &hit)
+                            (let [hit-p (RaymarchHit.p &hit)
+                                  dest (Vector3.add hit-p &(Vector3.init 0.0 2.5 0.0))]
+                              (do
+                                (RigidBody.set-position! p-rb @&dest)
+                                (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                                (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                                (IO.println &(str* "Teleported player to " &(Vector3.str &dest)))))
+                            (IO.println "Teleport target missed or too far!")))))))
+              (when (InputManager.action-pressed? mgr "Fire")
+                (PlayerSystem.spawn-bullet! e false))
+              (when (InputManager.action-digital? mgr "FireBouncy")
+                (PlayerSystem.spawn-bullet! e true))
+              (when (InputManager.action-pressed? mgr "Laser")
+                (PlayerSystem.fire-laser! e))
+              (when (InputManager.action-pressed? mgr "Build")
+                (PlayerSystem.build-laser! e))
+              (when (InputManager.action-pressed? mgr "Implode")
+                (PlayerSystem.fire-implosion-laser! e))
+              (when (InputManager.action-pressed? mgr "ToggleUI")
+                (Engine.open-ui-at-crosshair! e))))
         (when (InputManager.action-pressed? mgr "ScaleUp")
           (PlayerSystem.scale-player! e 1.1))
         (when (InputManager.action-pressed? mgr "ScaleDown")
@@ -710,8 +880,21 @@
                                   rot-val (Engine.rotation-between &up-axis &dir)]
                               (FieldDatabase.set-rotation! db h rot-val))
                             (FieldDatabase.set-rotation! db h (Quaternion.identity))))
-                        (FieldDatabase.set-rotation! db h @(RigidBody.rotation rb))))))
+                        (FieldDatabase.set-rotation! db h @(RigidBody.rotation rb)))
+                      (let [db-idx (FieldDatabase.get-index-by-handle db h)]
+                        (when (>= db-idx 0)
+                          (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) db-idx)
+                            (Maybe.Just sdf)
+                              (do
+                                (SDF.set-position! sdf @(RigidBody.position rb))
+                                (SDF.set-rotation! sdf @(RigidBody.rotation rb)))
+                            _ ()))))))
                 (FieldDatabase.set-scale! db h @(FieldInstance.scale fi))
+                (let [db-idx (FieldDatabase.get-index-by-handle db h)]
+                  (when (>= db-idx 0)
+                    (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) db-idx)
+                      (Maybe.Just sdf) (SDF.set-scale! sdf @(FieldInstance.scale fi))
+                      _ ())))
                 (FieldDatabase.set-temperature! db h @(FieldInstance.temperature fi))
                 (FieldDatabase.set-age! db h @(FieldInstance.age fi))
                 (FieldDatabase.set-humidity! db h @(FieldInstance.humidity fi))
@@ -986,7 +1169,27 @@
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
       (do
         (if (Array.empty? craters)
-          (VoxelBaker.bake-voxel-grid! ctx ren grid world world-data)
+          (match @(Engine.active-ui-panel e)
+            (Maybe.Just panel-handle)
+              (let [target-handle (the (Handle ()) (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)))
+                    target-pos (Vector3.init 0.0 0.0 0.0)
+                    target-scale 1.0]
+                (do
+                  (ECS.query world [ent (panel UiPanel)]
+                    (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
+                      (set! target-handle @(UiPanel.target panel))))
+                  (ECS.query world [ent (rb RigidBody) (fi FieldInstance)]
+                    (when (= (ECS.Entity.id &ent) (handle-id &target-handle))
+                      (do
+                        (set! target-pos @(RigidBody.position rb))
+                        (set! target-scale @(FieldInstance.scale fi)))))
+                  (let [chunks (World.chunks world-data)
+                        num-chunks (Array.length chunks)]
+                    (for [j 0 num-chunks]
+                      (let [chunk (Array.unsafe-nth chunks j)]
+                        (when (VoxelBaker.chunk-overlaps-sphere? chunk &target-pos (+ target-scale 4.0))
+                          (VoxelBaker.bake-chunk! ctx ren chunk world-data)))))))
+            _ (VoxelBaker.bake-voxel-grid! ctx ren grid world world-data))
           (let [chunks (World.chunks world-data)
                 num-chunks (Array.length chunks)
                 num-craters (Array.length craters)
@@ -1103,7 +1306,9 @@
           (GPUSpatial.flatten-in-place! db world grid 64 flat-grid geom-map))
         (Diagnostics.end-zone! diag "Sync: Flatten Spatial Grid"))))
 
-  (defn tick! [e ctx ren]
+
+
+  (defn tick! [e ctx ren width height]
     (let [dt (Clock.unscaled-dt (Engine.clock e))
           diag (Engine.diagnostics e)]
       (do
@@ -1114,6 +1319,7 @@
         (Diagnostics.start-zone! diag "Input Handling")
         (Engine.tick-input! e dt)
         (Diagnostics.end-zone! diag "Input Handling")
+        (Engine.tick-ui! e dt width height)
         (Diagnostics.start-zone! diag "Physics Simulation")
         (Engine.tick-simulation! e dt)
         (Diagnostics.end-zone! diag "Physics Simulation")

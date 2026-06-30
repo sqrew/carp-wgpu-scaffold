@@ -22,6 +22,10 @@
     "void* $NAME(GLFWwindow* w)"
     "$DECL { return (void*)w; }")
 
+  (deftemplate voidptr->glfw-window (Fn [(Ptr ())] (Ptr GLFWwindow))
+    "GLFWwindow* $NAME(void* p)"
+    "$DECL { return (GLFWwindow*)p; }")
+
   (defn create-app [width height title]
     (match (WGPU.create-context)
       (Result.Error e) (Result.Error (str* "GPU init failed: " e))
