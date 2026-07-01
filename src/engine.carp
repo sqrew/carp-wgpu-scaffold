@@ -982,10 +982,10 @@
                     rot (Array.unsafe-nth (FieldDatabase.rotations db) id)
                     rad-scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
                     c-val (Array.unsafe-nth (FieldDatabase.colors db) id)
-                    temp (FieldDatabase.sample-kernel-field db 0 pos 20 30 20)
-                    age (FieldDatabase.sample-kernel-field db 1 pos 20 30 20)
-                    humidity (FieldDatabase.sample-kernel-field db 2 pos 20 30 20)
-                    pressure (FieldDatabase.sample-kernel-field db 3 pos 20 30 20)
+                    temp (FieldDatabase.get-entity-scalar db 0 id)
+                    age (FieldDatabase.get-entity-scalar db 1 id)
+                    humidity (FieldDatabase.get-entity-scalar db 2 id)
+                    pressure (FieldDatabase.get-entity-scalar db 3 id)
                     final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
                     base (+ 36 (* id 16))]
                 (do

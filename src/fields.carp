@@ -201,68 +201,8 @@
 
   (defn sample [storage pos]
     (let [db (FieldDatabase.voidptr->db-ref @(FieldKernelStorage.db-ptr storage))
-          grid-p @(FieldKernelStorage.grid-ptr storage)
-          idx @(FieldKernelStorage.array-idx storage)
-          active (FieldDatabase.active db)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          
-          values (Array.unsafe-nth (FieldDatabase.scalar-fields db) idx)
-          influences (FieldDatabase.influences db)
-          
-          sum-val 0.0
-          sum-W 0.0
-          epsilon 0.01]
-      (do
-        (if (null? grid-p)
-          (let [len (Array.length active)]
-            (for [i 0 len]
-              (when @(Array.unsafe-nth active i)
-                (let [inst-pos (Array.unsafe-nth positions i)
-                      scale @(Array.unsafe-nth scales i)
-                      val @(Array.unsafe-nth values i)
-                      to-pos (Vector3.sub pos inst-pos)
-                      dist (Vector3.mag &to-pos)]
-                  (when (or (not (= idx 5))
-                            (and (not (= val -999.0))
-                                 (< dist (* scale 2.0))))
-                    (let [d (- dist scale)
-                          w-denom (+ (* d d) epsilon)
-                          influence @(Array.unsafe-nth influences i)
-                          w (/ influence w-denom)]
-                      (do
-                        (set! sum-val (+ sum-val (* val w)))
-                        (set! sum-W (+ sum-W w)))))))))
-          (let [grid (ptr->ref grid-p)
-                aabb (AABB.init (Vector3.sub pos &(Vector3.init 0.01 0.01 0.01))
-                                (Vector3.add pos &(Vector3.init 0.01 0.01 0.01)))
-                candidates (SpatialGrid.query-unique grid &aabb)
-                cand-len (Array.length &candidates)]
-            (for [c 0 cand-len]
-              (let [h-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth &candidates c))))
-                    i (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-                          @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
-                          -1)]
-                (when (>= i 0)
-                  (when @(Array.unsafe-nth active i)
-                     (let [inst-pos (Array.unsafe-nth positions i)
-                           scale @(Array.unsafe-nth scales i)
-                           val @(Array.unsafe-nth values i)
-                           to-pos (Vector3.sub pos inst-pos)
-                           dist (Vector3.mag &to-pos)]
-                       (when (or (not (= idx 5))
-                                 (and (not (= val -999.0))
-                                      (< dist (* scale 2.0))))
-                         (let [d (- dist scale)
-                               w-denom (+ (* d d) epsilon)
-                               influence @(Array.unsafe-nth influences i)
-                               w (/ influence w-denom)]
-                           (do
-                             (set! sum-val (+ sum-val (* val w)))
-                             (set! sum-W (+ sum-W w))))))))))))
-        (if (> sum-W 0.00001)
-          (/ sum-val sum-W)
-          (if (= idx 5) 1.0 0.0)))))
+          idx @(FieldKernelStorage.array-idx storage)]
+      (FieldDatabase.sample-kernel-field db idx pos)))
 
   (defn update [storage dt]
     ())

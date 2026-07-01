@@ -76,6 +76,7 @@
   grid-cols Int
   grid-rows Int
   grid-layers Int
+  entity-scalars (Array (Array Double))
 ])
 
 (defmodule FieldDatabase
@@ -92,8 +93,10 @@
   (sig register-kernel! (Fn [(Ref FieldDatabase) String Double Double Double (Fn [(Ptr ()) Double] ())] Int))
   (sig get-kernel-slot (Fn [(Ref FieldDatabase) (Ref String)] Int))
   (sig set-scalar-field! (Fn [(Ref FieldDatabase) Int Int Double] ()))
+  (sig get-entity-scalar (Fn [(Ref FieldDatabase) Int Int] Double))
+  (sig clear-grid-to-val! (Fn [(Ref (Array Double)) Double] ()))
   (sig write-entity-to-field-grid! (Fn [(Ref FieldDatabase) Int Int (Ref (Vector3 Double)) Double Double] ()))
-  (sig sample-kernel-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double)) Int Int Int] Double))
+  (sig sample-kernel-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double))] Double))
   (sig get-shape-bounding-radius (Fn [Int Double (Ref Vector4)] Double))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
   (sig register-instance-generic! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double (Ref (Array FieldInitialVal)) (Maybe SDF)] Int))
@@ -124,10 +127,12 @@
     (let [slot (Array.length (FieldDatabase.kernels db))
           kernel-def (FieldKernelDef.init @&name slot default-val min-val max-val)
           grid-size @(FieldDatabase.grid-total-cells db)
-          grid (the (Array Double) (replicate grid-size &default-val))]
+          grid (the (Array Double) (replicate grid-size &default-val))
+          ent-cache (the (Array Double) (replicate 128 &default-val))]
       (do
         (Array.push-back! (FieldDatabase.kernels db) kernel-def)
         (Array.push-back! (FieldDatabase.scalar-fields db) grid)
+        (Array.push-back! (FieldDatabase.entity-scalars db) ent-cache)
         (Array.push-back! (FieldDatabase.kernel-updates db) (KernelUpdate.init update-fn))
         slot)))
 
@@ -149,7 +154,8 @@
           kernels (the (Array FieldKernelDef) [])
           influences (the (Array Double) (replicate n &1.0))
           kernel-updates (the (Array KernelUpdate) [])
-          db (FieldDatabase.init act hnd st pm pos rot sc csg col sc-fields vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates total-cells origin cell-size cols rows layers)]
+          entity-scalars (the (Array (Array Double)) [])
+          db (FieldDatabase.init act hnd st pm pos rot sc csg col sc-fields vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates total-cells origin cell-size cols rows layers entity-scalars)]
       (do
         (let [t-slot (the Int (register-kernel! &db @"temperature" 0.0 -120.0 120.0 noop-update))
               a-slot (the Int (register-kernel! &db @"age" 0.0 0.0 100.0 noop-update))
@@ -181,10 +187,19 @@
         found-slot)))
 
   (defn set-scalar-field! [db slot entity-idx val]
-    (let [arr (Array.unsafe-nth (FieldDatabase.scalar-fields db) slot)]
+    (let [arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) slot)]
       (if (and (>= entity-idx 0) (< entity-idx (Array.length arr)))
           (Array.aset! arr entity-idx val)
           ())))
+
+  (defn get-entity-scalar [db slot entity-idx]
+    (let [arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) slot)]
+      @(Array.unsafe-nth arr entity-idx)))
+
+  (defn clear-grid-to-val! [arr val]
+    (let [len (Array.length arr)]
+      (for [i 0 len]
+        (Array.aset! arr i val))))
 
   (defn write-entity-to-field-grid! [db slot entity-idx pos radius val]
     (let [origin (FieldDatabase.grid-origin db)
@@ -226,7 +241,7 @@
           @(Array.unsafe-nth arr idx))
         def-val))
 
-  (defn sample-kernel-field [db slot pos grid-w grid-h grid-d]
+  (defn sample-kernel-field [db slot pos]
     (let [px @(Vector3.x pos)
           py @(Vector3.y pos)
           pz @(Vector3.z pos)
@@ -234,6 +249,9 @@
           ox @(Vector3.x (FieldDatabase.grid-origin db))
           oy @(Vector3.y (FieldDatabase.grid-origin db))
           oz @(Vector3.z (FieldDatabase.grid-origin db))
+          grid-w @(FieldDatabase.grid-cols db)
+          grid-h @(FieldDatabase.grid-rows db)
+          grid-d @(FieldDatabase.grid-layers db)
           tx (- (/ (- px ox) cs) 0.5)
           ty (- (/ (- py oy) cs) 0.5)
           tz (- (/ (- pz oz) cs) 0.5)
@@ -287,6 +305,11 @@
             (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
               (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
                 (Array.push-back! arr (Vector3.init 0.0 0.0 0.0))))
+            (for [f 0 (Array.length (FieldDatabase.entity-scalars db))]
+              (let [arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) f)
+                    k (Array.unsafe-nth (FieldDatabase.kernels db) f)
+                    def-val @(FieldKernelDef.default-val k)]
+                (Array.push-back! arr def-val)))
             (Array.push-back! (FieldDatabase.sdfs db) (Maybe.Nothing))
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
@@ -308,7 +331,9 @@
             (let [p (Array.unsafe-nth initial-fields k)
                   slot @(FieldInitialVal.slot p)
                   val @(FieldInitialVal.val p)]
-              (write-entity-to-field-grid! db slot found-idx &pos-val radius val))))
+              (do
+                (set-scalar-field! db slot found-idx val)
+                (write-entity-to-field-grid! db slot found-idx &pos-val radius val)))))
 
         (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
           (do
@@ -339,27 +364,29 @@
           h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
       (do
         (when (>= id 0)
-          (do
-            (Array.aset! (FieldDatabase.active db) id false)
-            (Array.aset! (FieldDatabase.shape-types db) id -1)
-            (Array.aset! (FieldDatabase.influences db) id 1.0)
-            
-            ;; Reset grid cells back to defaults
-            (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) id)
-                  params (Array.unsafe-nth (FieldDatabase.params db) id)
-                  pos (Array.unsafe-nth (FieldDatabase.positions db) id)
-                  scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
-                  radius (get-shape-bounding-radius shape-type scale params)
-                  num-kernels (Array.length (FieldDatabase.kernels db))]
+          (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) id)
+                params (Array.unsafe-nth (FieldDatabase.params db) id)
+                pos (Array.unsafe-nth (FieldDatabase.positions db) id)
+                scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
+                radius (get-shape-bounding-radius shape-type scale params)
+                num-kernels (Array.length (FieldDatabase.kernels db))]
+            (do
+              ;; Reset grid cells and cache values back to defaults
               (for [slot 0 num-kernels]
                 (let [k (Array.unsafe-nth (FieldDatabase.kernels db) slot)
                       def-val @(FieldKernelDef.default-val k)]
-                  (write-entity-to-field-grid! db slot id pos radius def-val))))
-                  
-            (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
-              (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
-                (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
-            (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing))))
+                  (do
+                    (set-scalar-field! db slot id def-val)
+                    (write-entity-to-field-grid! db slot id pos radius def-val))))
+              
+              (Array.aset! (FieldDatabase.active db) id false)
+              (Array.aset! (FieldDatabase.shape-types db) id -1)
+              (Array.aset! (FieldDatabase.influences db) id 1.0)
+              
+              (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
+                (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
+                  (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
+              (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing)))))
         (when (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
           (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)))))
 
@@ -579,7 +606,7 @@
               (when @(Array.unsafe-nth active-arr i)
                 (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
                       scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                      pres (sample-kernel-field db 3 inst-pos 20 30 20)
+                      pres @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.entity-scalars db) 3) i)
                       to-pos (Vector3.sub pos inst-pos)
                       dist (Vector3.mag &to-pos)
                       d (- dist scale)
@@ -610,7 +637,7 @@
                   (when @(Array.unsafe-nth active-arr i)
                     (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
                           scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                          pres (sample-kernel-field db 3 inst-pos 20 30 20)
+                          pres @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.entity-scalars db) 3) i)
                           to-pos (Vector3.sub pos inst-pos)
                           dist (Vector3.mag &to-pos)
                           d (- dist scale)
@@ -700,6 +727,29 @@
           len (Array.length ev-arr)
           keep-ev []]
       (do
+        ;; 1. Clear all voxel grids in scalar-fields to their default values
+        (let [num-kernels (Array.length (FieldDatabase.kernels db))
+              active-arr (FieldDatabase.active db)
+              num-entities (Array.length active-arr)]
+          (do
+            (for [slot 0 num-kernels]
+              (let [k (Array.unsafe-nth (FieldDatabase.kernels db) slot)
+                    def-val @(FieldKernelDef.default-val k)
+                    grid (Array.unsafe-nth (FieldDatabase.scalar-fields db) slot)]
+                (clear-grid-to-val! grid def-val)))
+
+            ;; 2. Loop over all active entities and splat their current field values
+            (for [i 0 num-entities]
+              (when @(Array.unsafe-nth active-arr i)
+                (let [pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                      scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                      shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)
+                      params (Array.unsafe-nth (FieldDatabase.params db) i)
+                      radius (get-shape-bounding-radius shape-type scale params)]
+                  (for [slot 0 num-kernels]
+                    (let [val @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.entity-scalars db) slot) i)]
+                      (write-entity-to-field-grid! db slot i pos radius val))))))))
+
         (for [i 0 len]
           (let [ev @(Array.unsafe-nth ev-arr i)
                 h-id @(FieldEvent.handle-id &ev)
