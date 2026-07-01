@@ -163,7 +163,7 @@
               h-slot (the Int (register-kernel! &db @"humidity" 0.0 0.0 100.0 noop-update))
               p-slot (the Int (register-kernel! &db @"pressure" 0.0 0.0 100.0 noop-update))
               c-slot (the Int (register-kernel! &db @"charge" 0.0 -10.0 10.0 noop-update))
-              g-slot (the Int (register-kernel! &db @"gravity" -999.0 -50.0 50.0 noop-update))]
+              g-slot (the Int (register-kernel! &db @"gravity" 1.0 -50.0 50.0 noop-update))]
           db))))
 
 
@@ -237,7 +237,7 @@
                                   (<= d 0.0))
                                 (let [dist (Vector3.mag &to-cell)]
                                   (<= dist radius)))]
-                (when inside?
+                (when (and inside? (not (= val -999.0)))
                   (let [cell-idx (+ x (* cols (+ y (* rows z))))]
                     (Array.aset! arr cell-idx val))))))))))
 

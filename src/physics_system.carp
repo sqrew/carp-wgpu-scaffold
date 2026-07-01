@@ -13,6 +13,12 @@
   (def gravity (Vector3.init 0.0 -9.81 0.0))
   (def iterations 8)
 
+  (defn clamp-vector3 [v max-val]
+    (let [mag (Vector3.mag v)]
+      (if (> mag max-val)
+          (Vector3.mul &(Vector3.normalize v) max-val)
+          @v)))
+
   (defn build-csg-tree-rec! [world parent-handle parent-sdf]
     (ECS.query world [child-ent (parent Parent) (node CsgNode)]
       (when (Handle.equal? (Parent.handle parent) parent-handle)
@@ -113,14 +119,16 @@
                   vel (Body.velocity (RigidBody.body rb))
                   db (World.field-db (Engine.world-data e))
                   grad (FieldDatabase.calculate-pressure-gradient-grid db pos (Pointer.address grid))
-                  p-force (Vector3.mul &grad coeff)
+                  p-force (let [f (Vector3.mul &grad coeff)]
+                            (PhysicsSystem.clamp-vector3 &f 300.0))
                   ind-vel (Field.sample vel-field pos)
                   rel-vel (Vector3.sub &ind-vel vel)
                   drag-force (Vector3.mul &rel-vel drag-coeff)
                   g-scale (Field.sample (Engine.gravity-field e) pos)
                   local-gravity (Vector3.mul &PhysicsSystem.gravity g-scale)
                   temp-sum (Vector3.add &local-gravity &p-force)
-                  total-force (Vector3.add &temp-sum &drag-force)]
+                  total-force (let [tf (Vector3.add &temp-sum &drag-force)]
+                                (PhysicsSystem.clamp-vector3 &tf 1000.0))]
               (do
                 (RigidBody.apply-force! rb &total-force)
                 (RigidBody.step-custom! rb fixed-dt fixed-dt)))))
