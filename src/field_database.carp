@@ -49,6 +49,10 @@
   func (Fn [(Ptr ()) Double] ())
 ])
 
+(deftype VoxelBrick [
+  data (Array Double)
+])
+
 (deftype FieldDatabase [
   active (Array Bool)
   handles (Array (Handle ()))
@@ -59,7 +63,8 @@
   scales (Array Double)
   root-csg-indices (Array Int)
   colors (Array (Vector3 Double))
-  scalar-fields (Array (Array Double))
+  svo Svo
+  bricks (Array VoxelBrick)
   vector-fields (Array (Array (Vector3 Double)))
   sdfs (Array (Maybe SDF))
   handle-to-index (Array Int)
@@ -84,6 +89,8 @@
   (use Vector3)
   (use Quaternion)
   (use SpatialGrid)
+  (use Svo)
+  (use SvoNode)
 
   (deftemplate voidptr->db-ref (Fn [(Ptr ())] (Ref FieldDatabase))
     "FieldDatabase* $NAME(void* p)"
@@ -94,7 +101,10 @@
   (sig get-kernel-slot (Fn [(Ref FieldDatabase) (Ref String)] Int))
   (sig set-scalar-field! (Fn [(Ref FieldDatabase) Int Int Double] ()))
   (sig get-entity-scalar (Fn [(Ref FieldDatabase) Int Int] Double))
-  (sig clear-grid-to-val! (Fn [(Ref (Array Double)) Double] ()))
+  (sig new-brick (Fn [(Ref (Array Double))] VoxelBrick))
+  (sig clear-bricks! (Fn [(Ref (Array VoxelBrick))] ()))
+  (sig sample-svo-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double)) Double] Double))
+  (sig get-voxel-val (Fn [(Ref FieldDatabase) Int Int Int Int Int Int Int Double] Double))
   (sig write-entity-to-field-grid! (Fn [(Ref FieldDatabase) Int Int (Ref (Vector3 Double)) Double Double] ()))
   (sig sample-kernel-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double))] Double))
   (sig get-shape-bounding-radius (Fn [Int Double (Ref Vector4)] Double))
@@ -298,15 +308,26 @@
           (let [curr-age @(Array.unsafe-nth age-arr i)]
             (Array.aset! age-arr i (+ curr-age dt)))))))
 
+  (defn new-brick [default-values-ref]
+    (let [data (the (Array Double) [])]
+      (do
+        (for [slot 0 6]
+          (let [def-val @(Array.unsafe-nth default-values-ref slot)]
+            (for [cell 0 512]
+              (Array.push-back! &data def-val))))
+        (VoxelBrick.init data))))
+
+  (defn clear-bricks! [br]
+    (while (> (Array.length br) 0)
+      (let [discarded (Array.pop-back! br)]
+        ())))
+
   (defn register-kernel! [db name default-val min-val max-val update-fn]
     (let [slot (Array.length (FieldDatabase.kernels db))
           kernel-def (FieldKernelDef.init @&name slot default-val min-val max-val)
-          grid-size @(FieldDatabase.grid-total-cells db)
-          grid (the (Array Double) (replicate grid-size &default-val))
           ent-cache (the (Array Double) (replicate 128 &default-val))]
       (do
         (Array.push-back! (FieldDatabase.kernels db) kernel-def)
-        (Array.push-back! (FieldDatabase.scalar-fields db) grid)
         (Array.push-back! (FieldDatabase.entity-scalars db) ent-cache)
         (Array.push-back! (FieldDatabase.kernel-updates db) (KernelUpdate.init update-fn))
         slot)))
@@ -322,7 +343,6 @@
           sc (the (Array Double) (replicate n &1.0))
           csg (the (Array Int) (replicate n &-1))
           col (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
-          sc-fields (the (Array (Array Double)) [])
           vec-fields [(the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
           sdfs (the (Array (Maybe SDF)) (replicate n &(Maybe.Nothing)))
           h-to-idx (the (Array Int) (replicate 1024 &-1))
@@ -330,7 +350,11 @@
           influences (the (Array Double) (replicate n &1.0))
           kernel-updates (the (Array KernelUpdate) [])
           entity-scalars (the (Array (Array Double)) [])
-          db (FieldDatabase.init act hnd st pm pos rot sc csg col sc-fields vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates total-cells origin cell-size cols rows layers entity-scalars)]
+          max-grid-dim (let [mx (if (> cols rows) cols rows)] (if (> mx layers) mx layers))
+          svo-sz (* (Double.from-int max-grid-dim) cell-size)
+          svo (Svo.new @&origin svo-sz 3 -1)
+          bricks (the (Array VoxelBrick) [])
+          db (FieldDatabase.init act hnd st pm pos rot sc csg col svo bricks vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates total-cells origin cell-size cols rows layers entity-scalars)]
       (do
         (let [t-slot (the Int (register-kernel! &db @"temperature" 0.0 -120.0 120.0 diffuse-temperature!))
               a-slot (the Int (register-kernel! &db @"age" 0.0 0.0 100.0 tick-age!))
@@ -341,7 +365,7 @@
           db))))
 
 
-  (defn get-index-by-handle [db handle]
+  (defn FieldDatabase.get-index-by-handle [db handle]
     (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
       (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
           @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
@@ -376,53 +400,124 @@
       (for [i 0 len]
         (Array.aset! arr i val))))
 
-  (defn write-entity-to-field-grid! [db slot entity-idx pos radius val]
-    (let [origin (FieldDatabase.grid-origin db)
-          cell-size @(FieldDatabase.grid-cell-size db)
-          cols @(FieldDatabase.grid-cols db)
-          rows @(FieldDatabase.grid-rows db)
-          layers @(FieldDatabase.grid-layers db)
+  (defn FieldDatabase.write-entity-to-field-grid! [db slot entity-idx pos radius val]
+    (let [svo (FieldDatabase.svo db)
+          bricks (FieldDatabase.bricks db)
+          default-values (the (Array Double) [0.0 0.0 0.2 0.0 0.0 1.0])
+          root-ox @(Vector3.x (Svo.origin svo))
+          root-oy @(Vector3.y (Svo.origin svo))
+          root-oz @(Vector3.z (Svo.origin svo))
+          root-sz @(Svo.size svo)
+          max-d @(Svo.max-depth svo)
+          num-leaves (Double.from-int (Int.bit-shift-left 1 max-d))
+          brick-sz (/ root-sz num-leaves)
+          cell-sz (/ brick-sz 8.0)
           shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) entity-idx)
           params (Array.unsafe-nth (FieldDatabase.params db) entity-idx)
           rot (Array.unsafe-nth (FieldDatabase.rotations db) entity-idx)
           scale @(Array.unsafe-nth (FieldDatabase.scales db) entity-idx)
           min-pos (Vector3.sub pos &(Vector3.init radius radius radius))
           max-pos (Vector3.add pos &(Vector3.init radius radius radius))
-          min-cx (let [v (Double.to-int (Double.floor (/ (- @(Vector3.x &min-pos) @(Vector3.x origin)) cell-size)))] (if (< v 0) 0 (if (>= v cols) (dec cols) v)))
-          max-cx (let [v (Double.to-int (Double.floor (/ (- @(Vector3.x &max-pos) @(Vector3.x origin)) cell-size)))] (if (< v 0) 0 (if (>= v cols) (dec cols) v)))
-          min-cy (let [v (Double.to-int (Double.floor (/ (- @(Vector3.y &min-pos) @(Vector3.y origin)) cell-size)))] (if (< v 0) 0 (if (>= v rows) (dec rows) v)))
-          max-cy (let [v (Double.to-int (Double.floor (/ (- @(Vector3.y &max-pos) @(Vector3.y origin)) cell-size)))] (if (< v 0) 0 (if (>= v rows) (dec rows) v)))
-          min-z-raw (Double.to-int (Double.floor (/ (- @(Vector3.z &min-pos) @(Vector3.z origin)) cell-size)))
-          min-cz (if (< min-z-raw 0) 0 (if (>= min-z-raw layers) (dec layers) min-z-raw))
-          max-z-raw (Double.to-int (Double.floor (/ (- @(Vector3.z &max-pos) @(Vector3.z origin)) cell-size)))
-          max-cz (if (< max-z-raw 0) 0 (if (>= max-z-raw layers) (dec layers) max-z-raw))
-          arr (Array.unsafe-nth (FieldDatabase.scalar-fields db) slot)]
+          min-x @(Vector3.x &min-pos)
+          max-x @(Vector3.x &max-pos)
+          min-y @(Vector3.y &min-pos)
+          max-y @(Vector3.y &max-pos)
+          min-z @(Vector3.z &min-pos)
+          max-z @(Vector3.z &max-pos)
+          min-cx (let [v (Double.to-int (Double.floor (/ (- @(Vector3.x &min-pos) root-ox) cell-sz)))] (if (< v 0) 0 v))
+          max-cx (let [v (Double.to-int (Double.floor (/ (- @(Vector3.x &max-pos) root-ox) cell-sz)))] v)
+          min-cy (let [v (Double.to-int (Double.floor (/ (- @(Vector3.y &min-pos) root-oy) cell-sz)))] (if (< v 0) 0 v))
+          max-cy (let [v (Double.to-int (Double.floor (/ (- @(Vector3.y &max-pos) root-oy) cell-sz)))] v)
+          min-cz (let [v (Double.to-int (Double.floor (/ (- @(Vector3.z &min-pos) root-oz) cell-sz)))] (if (< v 0) 0 v))
+          max-cz (let [v (Double.to-int (Double.floor (/ (- @(Vector3.z &max-pos) root-oz) cell-sz)))] v)]
       (do
         (for [z min-cz (inc max-cz)]
           (for [y min-cy (inc max-cy)]
             (for [x min-cx (inc max-cx)]
-              (let [cell-pos (Vector3.init
-                               (+ @(Vector3.x origin) (* (+ (Double.from-int x) 0.5) cell-size))
-                               (+ @(Vector3.y origin) (* (+ (Double.from-int y) 0.5) cell-size))
-                               (+ @(Vector3.z origin) (* (+ (Double.from-int z) 0.5) cell-size)))
-                    to-cell (Vector3.sub &cell-pos pos)
+              (let [cell-center (Vector3.init
+                                   (+ root-ox (* (+ (Double.from-int x) 0.5) cell-sz))
+                                   (+ root-oy (* (+ (Double.from-int y) 0.5) cell-sz))
+                                   (+ root-oz (* (+ (Double.from-int z) 0.5) cell-sz)))
+                    to-cell (Vector3.sub &cell-center pos)
                     inside? (if (and (>= shape-type 1) (<= shape-type 6))
-                                (let [d (evaluate-csg-primitive &cell-pos shape-type pos rot scale params)]
+                                (let [d (evaluate-csg-primitive &cell-center shape-type pos rot scale params)]
                                   (<= d 0.0))
                                 (let [dist (Vector3.mag &to-cell)]
                                   (<= dist radius)))]
                 (when (and inside? (not (= val -999.0)))
-                  (let [cell-idx (+ x (* cols (+ y (* rows z))))]
-                    (Array.aset! arr cell-idx val))))))))))
+                  (let [brick-idx (Svo.sample svo &cell-center)]
+                    (let [target-brick-idx
+                          (if (= brick-idx -1)
+                              (let [new-idx (Array.length bricks)
+                                    new-br (new-brick &default-values)]
+                                (do
+                                  (Array.push-back! bricks new-br)
+                                  (Svo.insert! svo &cell-center new-idx)
+                                  new-idx))
+                              brick-idx)
+                          brick (Array.unsafe-nth bricks target-brick-idx)
+                          brick-data (VoxelBrick.data brick)
+                          dx (Double.clamp 0.0 (- root-sz 0.0001) (- (+ root-ox (* (+ (Double.from-int x) 0.5) cell-sz)) root-ox))
+                          dy (Double.clamp 0.0 (- root-sz 0.0001) (- (+ root-oy (* (+ (Double.from-int y) 0.5) cell-sz)) root-oy))
+                          dz (Double.clamp 0.0 (- root-sz 0.0001) (- (+ root-oz (* (+ (Double.from-int z) 0.5) cell-sz)) root-oz))
+                          bx-off (- dx (* (Double.floor (/ dx brick-sz)) brick-sz))
+                          by-off (- dy (* (Double.floor (/ dy brick-sz)) brick-sz))
+                          bz-off (- dz (* (Double.floor (/ dz brick-sz)) brick-sz))
+                          lx (Double.to-int (Double.floor (* (/ bx-off brick-sz) 8.0)))
+                          ly (Double.to-int (Double.floor (* (/ by-off brick-sz) 8.0)))
+                          lz (Double.to-int (Double.floor (* (/ bz-off brick-sz) 8.0)))
+                          clx (if (< lx 0) 0 (if (>= lx 8) 7 lx))
+                          cly (if (< ly 0) 0 (if (>= ly 8) 7 ly))
+                          clz (if (< lz 0) 0 (if (>= lz 8) 7 lz))
+                          cell-idx (+ clx (+ (* cly 8) (* clz 64)))
+                          data-idx (+ (* slot 512) cell-idx)]
+                      (Array.aset! brick-data data-idx val)))))))))))
+
+  (defn sample-svo-field [db slot pos-ref def-val]
+    (let [svo (FieldDatabase.svo db)
+          brick-idx (Svo.sample svo pos-ref)]
+      (if (= brick-idx -1)
+          def-val
+          (let [bricks (FieldDatabase.bricks db)
+                brick (Array.unsafe-nth bricks brick-idx)
+                brick-data (VoxelBrick.data brick)
+                root-ox @(Vector3.x (Svo.origin svo))
+                root-oy @(Vector3.y (Svo.origin svo))
+                root-oz @(Vector3.z (Svo.origin svo))
+                root-sz @(Svo.size svo)
+                max-d @(Svo.max-depth svo)
+                num-leaves (Double.from-int (Int.bit-shift-left 1 max-d))
+                brick-sz (/ root-sz num-leaves)
+                px @(Vector3.x pos-ref)
+                py @(Vector3.y pos-ref)
+                pz @(Vector3.z pos-ref)
+                dx (Double.clamp 0.0 (- root-sz 0.0001) (- px root-ox))
+                dy (Double.clamp 0.0 (- root-sz 0.0001) (- py root-oy))
+                dz (Double.clamp 0.0 (- root-sz 0.0001) (- pz root-oz))
+                bx-off (- dx (* (Double.floor (/ dx brick-sz)) brick-sz))
+                by-off (- dy (* (Double.floor (/ dy brick-sz)) brick-sz))
+                bz-off (- dz (* (Double.floor (/ dz brick-sz)) brick-sz))
+                lx (Double.to-int (Double.floor (* (/ bx-off brick-sz) 8.0)))
+                ly (Double.to-int (Double.floor (* (/ by-off brick-sz) 8.0)))
+                lz (Double.to-int (Double.floor (* (/ bz-off brick-sz) 8.0)))
+                clx (if (< lx 0) 0 (if (>= lx 8) 7 lx))
+                cly (if (< ly 0) 0 (if (>= ly 8) 7 ly))
+                clz (if (< lz 0) 0 (if (>= lz 8) 7 lz))
+                cell-idx (+ clx (+ (* cly 8) (* clz 64)))
+                data-idx (+ (* slot 512) cell-idx)]
+            @(Array.unsafe-nth brick-data data-idx)))))
 
   (defn get-voxel-val [db slot cx cy cz grid-w grid-h grid-d def-val]
-    (if (and (and (and (>= cx 0) (< cx grid-w))
-                  (and (>= cy 0) (< cy grid-h)))
-             (and (>= cz 0) (< cz grid-d)))
-        (let [idx (+ cx (* grid-w (+ cy (* grid-h cz))))
-              arr (Array.unsafe-nth (FieldDatabase.scalar-fields db) slot)]
-          @(Array.unsafe-nth arr idx))
-        def-val))
+    (let [cs @(FieldDatabase.grid-cell-size db)
+          origin (FieldDatabase.grid-origin db)
+          ox @(Vector3.x origin)
+          oy @(Vector3.y origin)
+          oz @(Vector3.z origin)
+          cell-pos (Vector3.init
+                     (+ ox (* (+ (Double.from-int cx) 0.5) cs))
+                     (+ oy (* (+ (Double.from-int cy) 0.5) cs))
+                     (+ oz (* (+ (Double.from-int cz) 0.5) cs)))]
+      (sample-svo-field db slot &cell-pos def-val)))
 
   (defn sample-kernel-field [db slot pos]
     (let [px @(Vector3.x pos)
@@ -525,22 +620,22 @@
             (let [ms (FieldDatabase.max-scale db)]
               (when (> scale-val @ms)
                 (FieldDatabase.set-max-scale! db scale-val)))
-            found-idx)))))
+            (the Int found-idx))))))
 
   (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val influence-val sdf-val]
     (let [initial-fields (the (Array FieldInitialVal)
-                           [(FieldInitialVal.init 0 temp-val)
-                            (FieldInitialVal.init 1 age-val)
-                            (FieldInitialVal.init 2 hum-val)
-                            (FieldInitialVal.init 3 pres-val)
-                            (FieldInitialVal.init 4 charge-val)
-                            (FieldInitialVal.init 5 gravity-val)])]
+                           [(FieldInitialVal.init 0 (the Double temp-val))
+                            (FieldInitialVal.init 1 (the Double age-val))
+                            (FieldInitialVal.init 2 (the Double hum-val))
+                            (FieldInitialVal.init 3 (the Double pres-val))
+                            (FieldInitialVal.init 4 (the Double charge-val))
+                            (FieldInitialVal.init 5 (the Double gravity-val))])]
       (do
-        (let [idx (register-instance-generic! db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val influence-val &initial-fields sdf-val)]
+        (let [idx (the Int (register-instance-generic! db handle (the Int shape-type-val) (the Vector4 params-val) (the (Vector3 Double) pos-val) (the Quaternion rot-val) (the Double scale-val) (the Int csg-idx-val) (the (Vector3 Double) color-val) (the Double influence-val) &initial-fields (the (Maybe SDF) sdf-val)))]
           (do
             (when (>= idx 0)
-              (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) idx vel-val))
-            idx)))))
+              (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) idx (the (Vector3 Double) vel-val)))
+            (the Int idx))))))
 
   (defn release-instance! [db handle]
     (let [id (get-index-by-handle db handle)
@@ -569,9 +664,12 @@
               (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
                 (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
                   (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
-              (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing)))))
+              (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing))
+              ())))
         (when (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-          (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)))))
+          (do
+            (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)
+            ())))))
 
   (defn set-scale! [db handle val]
     (let [id (get-index-by-handle db handle)]
@@ -580,62 +678,87 @@
           (Array.aset! (FieldDatabase.scales db) id val)
           (let [ms (FieldDatabase.max-scale db)]
             (when (> val @ms)
-              (FieldDatabase.set-max-scale! db val)))))))
+              (do
+                (FieldDatabase.set-max-scale! db val)
+                ())))
+          ()))))
 
   (defn set-velocity! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) id val))))
+        (do
+          (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) id val)
+          ()))))
 
   (defn set-pressure! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (set-scalar-field! db 3 id val))))
+        (do
+          (set-scalar-field! db 3 id val)
+          ()))))
 
   (defn set-gravity! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (set-scalar-field! db 5 id val))))
+        (do
+          (set-scalar-field! db 5 id val)
+          ()))))
 
   (defn set-temperature! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (set-scalar-field! db 0 id val))))
+        (do
+          (set-scalar-field! db 0 id val)
+          ()))))
 
   (defn set-position! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.positions db) id val))))
+        (do
+          (Array.aset! (FieldDatabase.positions db) id val)
+          ()))))
 
   (defn set-rotation! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.rotations db) id val))))
+        (do
+          (Array.aset! (FieldDatabase.rotations db) id val)
+          ()))))
 
   (defn set-age! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (set-scalar-field! db 1 id val))))
+        (do
+          (set-scalar-field! db 1 id val)
+          ()))))
 
   (defn set-humidity! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (set-scalar-field! db 2 id val))))
+        (do
+          (set-scalar-field! db 2 id val)
+          ()))))
 
   (defn set-charge! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (set-scalar-field! db 4 id val))))
+        (do
+          (set-scalar-field! db 4 id val)
+          ()))))
 
   (defn set-influence! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.influences db) id val))))
+        (do
+          (Array.aset! (FieldDatabase.influences db) id val)
+          ()))))
 
   (defn set-root-csg-index! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
-        (Array.aset! (FieldDatabase.root-csg-indices db) id val))))
+        (do
+          (Array.aset! (FieldDatabase.root-csg-indices db) id val)
+          ()))))
 
   (defn sd-sphere [p s]
     (- (Vector3.mag p) s))
@@ -897,7 +1020,7 @@
           initial-fields (the (Array FieldInitialVal) [(FieldInitialVal.init 0 temp) (FieldInitialVal.init 3 pres)])]
       (do
         (FieldDatabase.set-next-virtual-id! db (inc h-id))
-        (let [_ (register-instance-generic! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col 1.0 &initial-fields (the (Maybe SDF) (Maybe.Nothing)))]
+        (let [discard-idx (register-instance-generic! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col 1.0 &initial-fields (the (Maybe SDF) (Maybe.Nothing)))]
           ())
         (let [idx (get-index-by-handle db &handle)]
           (when (>= idx 0)
@@ -923,17 +1046,17 @@
               (do
                 (for [j 0 num-entities]
                   (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [v-j (Array.unsafe-nth vel-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              diff (Vector3.sub v-j v-i)
-                              transfer (Vector3.mul &diff (* factor dt))]
-                          (set! delta-vel (Vector3.add &delta-vel &(Vector3.mul &transfer viscosity))))))))
+                     (let [v-j (Array.unsafe-nth vel-arr j)
+                           pos-j (Array.unsafe-nth positions j)
+                           scale-j @(Array.unsafe-nth scales j)
+                           to-j (Vector3.sub pos-j pos-i)
+                           dist (Vector3.mag &to-j)
+                           max-dist (+ scale-i scale-j)]
+                       (when (< dist max-dist)
+                         (let [factor (- 1.0 (/ dist max-dist))
+                               diff (Vector3.sub v-j v-i)
+                               transfer (Vector3.mul &diff (* factor dt))]
+                           (set! delta-vel (Vector3.add &delta-vel &(Vector3.mul &transfer viscosity))))))))
                 (Array.aset! &new-vels i (Vector3.add v-i &delta-vel))))))
         (for [i 0 num-entities]
           (Array.aset! vel-arr i @(Array.unsafe-nth &new-vels i))))))
@@ -945,16 +1068,15 @@
           keep-ev []]
       (do
         (diffuse-velocity! db dt)
-        ;; 1. Clear all voxel grids in scalar-fields to their default values
-        (let [num-kernels (Array.length (FieldDatabase.kernels db))
+        ;; 1. Clear SVO and bricks
+        (let [svo (FieldDatabase.svo db)
+              br (FieldDatabase.bricks db)
+              num-kernels (Array.length (FieldDatabase.kernels db))
               active-arr (FieldDatabase.active db)
               num-entities (Array.length active-arr)]
           (do
-            (for [slot 0 num-kernels]
-              (let [k (Array.unsafe-nth (FieldDatabase.kernels db) slot)
-                    def-val @(FieldKernelDef.default-val k)
-                    grid (Array.unsafe-nth (FieldDatabase.scalar-fields db) slot)]
-                (clear-grid-to-val! grid def-val)))
+            (Svo.clear! svo)
+            (clear-bricks! br)
 
             ;; 2. Loop over all active entities and splat their current field values
             (for [i 0 num-entities]
@@ -999,5 +1121,5 @@
           (for [u-idx 0 num-updates]
             (let [ku (Array.unsafe-nth updates-arr u-idx)
                   update-fn (KernelUpdate.func ku)]
-              (@update-fn db-ptr dt)))))))
-)
+              (@update-fn db-ptr dt))))))
+))

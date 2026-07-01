@@ -864,23 +864,24 @@
                                           _ (Maybe.Nothing)))
                                     _ (Maybe.Nothing))
                                   (Maybe.Nothing))]
-                (ignore (FieldDatabase.register-instance! db h
-                          @(FieldInstance.shape-type fi)
-                          @(FieldInstance.params fi)
-                          pos
-                          rot
-                          @(FieldInstance.scale fi)
-                          @(FieldInstance.csg-index fi)
-                          col
-                          @(FieldInstance.temperature fi)
-                          @(FieldInstance.age fi)
-                          @(FieldInstance.humidity fi)
-                          @(FieldInstance.pressure fi)
-                          @(FieldInstance.charge fi)
-                          @(FieldInstance.gravity fi)
-                          vel
-                          @(FieldInstance.influence fi)
-                          sdf-maybe)))
+                (let [discard-idx (the Int (FieldDatabase.register-instance! db h
+                                             @(FieldInstance.shape-type fi)
+                                             @(FieldInstance.params fi)
+                                             (the (Vector3 Double) pos)
+                                             (the Quaternion rot)
+                                             @(FieldInstance.scale fi)
+                                             @(FieldInstance.csg-index fi)
+                                             (the (Vector3 Double) col)
+                                             @(FieldInstance.temperature fi)
+                                             @(FieldInstance.age fi)
+                                             @(FieldInstance.humidity fi)
+                                             @(FieldInstance.pressure fi)
+                                             @(FieldInstance.charge fi)
+                                             @(FieldInstance.gravity fi)
+                                             (the (Vector3 Double) vel)
+                                             @(FieldInstance.influence fi)
+                                             (the (Maybe SDF) sdf-maybe)))]
+                  ()))
               ;; Update
               (do
                 (when (ECS.has-component? world &ent RigidBody)
