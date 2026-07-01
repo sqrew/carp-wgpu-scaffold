@@ -98,6 +98,7 @@
   (sig write-entity-to-field-grid! (Fn [(Ref FieldDatabase) Int Int (Ref (Vector3 Double)) Double Double] ()))
   (sig sample-kernel-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double))] Double))
   (sig get-shape-bounding-radius (Fn [Int Double (Ref Vector4)] Double))
+  (sig evaluate-csg-primitive (Fn [(Ref (Vector3 Double)) Int (Ref (Vector3 Double)) (Ref Quaternion) Double (Ref Vector4)] Double))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
   (sig register-instance-generic! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double (Ref (Array FieldInitialVal)) (Maybe SDF)] Int))
   (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double) Double (Maybe SDF)] Int))
@@ -207,6 +208,10 @@
           cols @(FieldDatabase.grid-cols db)
           rows @(FieldDatabase.grid-rows db)
           layers @(FieldDatabase.grid-layers db)
+          shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) entity-idx)
+          params (Array.unsafe-nth (FieldDatabase.params db) entity-idx)
+          rot (Array.unsafe-nth (FieldDatabase.rotations db) entity-idx)
+          scale @(Array.unsafe-nth (FieldDatabase.scales db) entity-idx)
           min-pos (Vector3.sub pos &(Vector3.init radius radius radius))
           max-pos (Vector3.add pos &(Vector3.init radius radius radius))
           min-cx (let [v (Double.to-int (Double.floor (/ (- @(Vector3.x &min-pos) @(Vector3.x origin)) cell-size)))] (if (< v 0) 0 (if (>= v cols) (dec cols) v)))
@@ -227,8 +232,12 @@
                                (+ @(Vector3.y origin) (* (+ (Double.from-int y) 0.5) cell-size))
                                (+ @(Vector3.z origin) (* (+ (Double.from-int z) 0.5) cell-size)))
                     to-cell (Vector3.sub &cell-pos pos)
-                    dist (Vector3.mag &to-cell)]
-                (when (<= dist radius)
+                    inside? (if (and (>= shape-type 1) (<= shape-type 6))
+                                (let [d (evaluate-csg-primitive &cell-pos shape-type pos rot scale params)]
+                                  (<= d 0.0))
+                                (let [dist (Vector3.mag &to-cell)]
+                                  (<= dist radius)))]
+                (when inside?
                   (let [cell-idx (+ x (* cols (+ y (* rows z))))]
                     (Array.aset! arr cell-idx val))))))))))
 
