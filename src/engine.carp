@@ -26,7 +26,7 @@
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)
-          db-ptr (Pointer.address (World.field-db &world-data))
+          db-ptr (FieldDatabase.ptr-cast (Pointer.address (World.field-db &world-data)))
           pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
           vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
           temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
@@ -303,7 +303,7 @@
 (defmodule Engine
 
   (defn init-fields! [e]
-    (let [db-ptr (Pointer.address (World.field-db (Engine.world-data e)))
+    (let [db-ptr (FieldDatabase.ptr-cast (Pointer.address (World.field-db (Engine.world-data e))))
           grid-ptr (Pointer.address (Engine.grid e))
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)
@@ -975,21 +975,17 @@
                           (FieldDatabase.set-root-csg-index! db (ECS.Entity.handle &ent) root-csg-idx)))
                     _ ()))))))
         (let [active-arr (FieldDatabase.active db)
-              len (Array.length active-arr)
-              temps (Array.unsafe-nth (FieldDatabase.scalar-fields db) 0)
-              ages (Array.unsafe-nth (FieldDatabase.scalar-fields db) 1)
-              humidities (Array.unsafe-nth (FieldDatabase.scalar-fields db) 2)
-              pressures (Array.unsafe-nth (FieldDatabase.scalar-fields db) 3)]
+              len (Array.length active-arr)]
           (for [id 0 len]
             (when @(Array.unsafe-nth active-arr id)
               (let [pos (Array.unsafe-nth (FieldDatabase.positions db) id)
                     rot (Array.unsafe-nth (FieldDatabase.rotations db) id)
                     rad-scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
                     c-val (Array.unsafe-nth (FieldDatabase.colors db) id)
-                    temp @(Array.unsafe-nth temps id)
-                    age @(Array.unsafe-nth ages id)
-                    humidity @(Array.unsafe-nth humidities id)
-                    pressure @(Array.unsafe-nth pressures id)
+                    temp (FieldDatabase.sample-kernel-field db 0 pos 20 30 20)
+                    age (FieldDatabase.sample-kernel-field db 1 pos 20 30 20)
+                    humidity (FieldDatabase.sample-kernel-field db 2 pos 20 30 20)
+                    pressure (FieldDatabase.sample-kernel-field db 3 pos 20 30 20)
                     final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
                     base (+ 36 (* id 16))]
                 (do

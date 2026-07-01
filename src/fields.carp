@@ -191,7 +191,7 @@
 
 ;; 4. Field Instance Kernel Scalar Field Storage
 (deftype FieldKernelStorage [
-  db-ptr (Ptr FieldDatabase)
+  db-ptr (Ptr ())
   grid-ptr (Ptr (SpatialGrid Uint32))
   array-idx Int ;; 0=temp, 1=age, 2=hum, 3=pres, 4=charge, 5=gravity
 ])
@@ -200,7 +200,7 @@
   (use SpatialGrid)
 
   (defn sample [storage pos]
-    (let [db (ptr->ref @(FieldKernelStorage.db-ptr storage))
+    (let [db (FieldDatabase.voidptr->db-ref @(FieldKernelStorage.db-ptr storage))
           grid-p @(FieldKernelStorage.grid-ptr storage)
           idx @(FieldKernelStorage.array-idx storage)
           active (FieldDatabase.active db)
@@ -208,7 +208,7 @@
           scales (FieldDatabase.scales db)
           
           values (Array.unsafe-nth (FieldDatabase.scalar-fields db) idx)
-          influences (Array.unsafe-nth (FieldDatabase.scalar-fields db) 6)
+          influences (FieldDatabase.influences db)
           
           sum-val 0.0
           sum-W 0.0
@@ -270,7 +270,7 @@
 
 ;; 5. Field Instance Kernel Vector Field Storage
 (deftype FieldKernelStorageVector [
-  db-ptr (Ptr FieldDatabase)
+  db-ptr (Ptr ())
   grid-ptr (Ptr (SpatialGrid Uint32))
 ])
 
@@ -278,13 +278,13 @@
   (use SpatialGrid)
 
   (defn sample [storage pos]
-    (let [db (ptr->ref @(FieldKernelStorageVector.db-ptr storage))
+    (let [db (FieldDatabase.voidptr->db-ref @(FieldKernelStorageVector.db-ptr storage))
           grid-p @(FieldKernelStorageVector.grid-ptr storage)
           active (FieldDatabase.active db)
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           velocities (Array.unsafe-nth (FieldDatabase.vector-fields db) 0)
-          influences (Array.unsafe-nth (FieldDatabase.scalar-fields db) 6)
+          influences (FieldDatabase.influences db)
           
           sum-vel (Vector3.init 0.0 0.0 0.0)
           sum-W 0.0

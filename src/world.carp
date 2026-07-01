@@ -49,8 +49,9 @@
     (let [cqx (the (Array Int) (replicate 64 &-999))
           cqy (the (Array Int) (replicate 64 &-999))
           cqz (the (Array Int) (replicate 64 &-999))
-          cidx (the (Array Int) (replicate 64 &-1))]
-      (World.init (FieldDatabase.new) origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx [])))
+          cidx (the (Array Int) (replicate 64 &-1))
+          total-cells (* w (* h d))]
+      (World.init (FieldDatabase.new total-cells @&origin cell-size w h d) origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []))))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin

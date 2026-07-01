@@ -29,10 +29,10 @@
                 (Array.aset! geom-map eid i)))))
         (for [i 0 total-cells]
           (let [curr @(Array.unsafe-nth heads i)
-                count 0
+                cnt 0
                 base-idx (* i st)]
             (do
-              (while (and (not (= curr -1)) (< count max-ids))
+              (while (and (not (= curr -1)) (< cnt max-ids))
                 (let [entry (Array.unsafe-nth entries curr)
                       ent-idx-u32 @(GridEntry.id entry)
                       eid-int (Long.to-int (Uint32.to-long ent-idx-u32))
@@ -40,8 +40,8 @@
                                   @(Array.unsafe-nth geom-map eid-int)
                                   -1)]
                   (do
-                    (Array.aset! data (+ base-idx (+ 4 count)) (the Float (Double.to-float (Double.from-int geom-id))))
-                    (set! count (inc count))
+                    (Array.aset! data (+ base-idx (+ 4 cnt)) (the Float (Double.to-float (Double.from-int geom-id))))
+                    (set! cnt (inc cnt))
                     (set! curr @(GridEntry.next entry)))))
-              (Array.aset! data base-idx (the Float (Double.to-float (Double.from-int count))))))))))
+              (Array.aset! data base-idx (the Float (Double.to-float (Double.from-int cnt))))))))))
 )
