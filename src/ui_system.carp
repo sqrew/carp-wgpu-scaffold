@@ -57,23 +57,44 @@
   (defn spawn-ui-panel! [world target-handle target-pos cam-pos]
     (let [panel-ent (GameWorld.create-entity! world)
           dir (Vector3.normalize &(Vector3.sub &cam-pos &target-pos))
-          target-radius 1.0]
+          target-radius 1.0
+          t-scale 4.0
+          t-grav 0.0
+          t-temp 0.0
+          t-chg 0.0
+          t-inf 1.0]
       (do
         (ECS.query world [ent (fi FieldInstance)]
           (when (= (ECS.Entity.id &ent) (Uint32.from-long (Uint64.to-long (Handle.index &target-handle))))
-            (set! target-radius @(FieldInstance.scale fi))))
+            (do
+              (set! target-radius @(FieldInstance.scale fi))
+              (set! t-scale @(FieldInstance.scale fi))
+              (set! t-grav @(FieldInstance.gravity fi))
+              (set! t-temp @(FieldInstance.temperature fi))
+              (set! t-chg @(FieldInstance.charge fi))
+              (set! t-inf @(FieldInstance.influence fi)))))
         (let [panel-pos (Vector3.add &target-pos &(Vector3.mul &dir (+ target-radius 1.5)))
               panel-rb (RigidBody.static panel-pos (Quaternion.identity) 0.0 0.0)
-              ctrl1 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 0.2 0.0) 1.0 0.5 0)  ;; Radius
-              ctrl2 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 -0.2 0.0) 1.0 0.5 1) ;; Gravity
-              panel-comp (UiPanel.init target-handle 2.0 1.2 [ctrl1 ctrl2] true)
+              s1-val (Double.clamp 0.0 1.0 (/ t-scale 8.0))
+              s2-val (Double.clamp 0.0 1.0 (/ (+ t-grav 5.0) 10.0))
+              s3-val (Double.clamp 0.0 1.0 (/ (+ t-temp 100.0) 200.0))
+              s4-val (Double.clamp 0.0 1.0 (/ (+ t-chg 10.0) 20.0))
+              s5-val (Double.clamp 0.0 1.0 (/ t-inf 5.0))
+              ctrl1 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 0.6 0.0) 1.0 s1-val 0)
+              ctrl2 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 0.3 0.0) 1.0 s2-val 1)
+              ctrl3 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 0.0 0.0) 1.0 s3-val 2)
+              ctrl4 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 -0.3 0.0) 1.0 s4-val 3)
+              ctrl5 (UiControl.init (ControlKind.Slider) (Vector3.init -0.5 -0.6 0.0) 1.0 s5-val 4)
+              panel-comp (UiPanel.init target-handle 2.0 2.2 [ctrl1 ctrl2 ctrl3 ctrl4 ctrl5] true)
               bbt (BillboardTag.init)
-              fi-comp (FieldInstance.init 0 (Vector4.init 2.0 1.2 0.5 0.5) 1.0 -5 2.0 1.2 0.5 0.5 0.0 -999.0 1.0)]
+              panel-color (Color.init (Vector3.init s3-val s4-val s5-val))
+              fi-comp (FieldInstance.init 0 (Vector4.init 2.0 2.2 s1-val s2-val) 1.0 -5 2.0 2.2 s1-val s2-val 0.0 -999.0 1.0)]
           (do
             (ECS.add-component! world &panel-ent panel-rb)
             (ECS.add-component! world &panel-ent panel-comp)
             (ECS.add-component! world &panel-ent bbt)
             (ECS.add-component! world &panel-ent fi-comp)
+            (ECS.add-component! world &panel-ent panel-color)
             @(ECS.Entity.handle &panel-ent))))))
 
   (defn spawn-voxel-field-source! [world pos]

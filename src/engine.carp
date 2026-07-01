@@ -466,7 +466,13 @@
                     (ECS.query world [ent2 (gs GravitySource)]
                       (when (= (ECS.Entity.id &ent2) (handle-id &target))
                         (GravitySource.set-strength! gs (- (* val 10.0) 5.0)))))
-                  ()))
+                  (if (= label-id 2)
+                    (FieldInstance.set-temperature! fi (- (* val 200.0) 100.0))
+                    (if (= label-id 3)
+                      (FieldInstance.set-charge! fi (- (* val 20.0) 10.0))
+                      (if (= label-id 4)
+                        (FieldInstance.set-influence! fi (* val 5.0))
+                        ())))))
               (do
                 (Engine.set-grid-dirty! e true)
                 (Engine.set-voxel-dirty! e true))))))))
@@ -515,14 +521,25 @@
                                       (do
                                         (IO.println &(str* "Slider " (Int.str i) " drag match: value=" (Double.str new-val)))
                                         (UiControl.set-value! ctrl new-val)
-                                        (ECS.with-components world @&ent [panel-fi (fi FieldInstance)]
-                                          (do
-                                            (if (= i 0)
-                                              (FieldInstance.set-humidity! fi new-val)
-                                              (if (= i 1)
-                                                (FieldInstance.set-pressure! fi new-val)
-                                                ()))))
-                                        (Engine.apply-control-value! e @(UiPanel.target panel) @(UiControl.label-id ctrl) new-val))))))))))))))))))
+                                         (ECS.with-components world @&ent [panel-fi (fi FieldInstance)]
+                                           (do
+                                             (if (= i 0)
+                                               (FieldInstance.set-humidity! fi new-val)
+                                               (if (= i 1)
+                                                 (FieldInstance.set-pressure! fi new-val)
+                                                 (ECS.with-components world @&ent [panel-ent2 (c Color)]
+                                                   (let [cv @(Color.v c)
+                                                         cx @(Vector3.x &cv)
+                                                         cy @(Vector3.y &cv)
+                                                         cz @(Vector3.z &cv)]
+                                                     (if (= i 2)
+                                                       (Color.set-v! c (Vector3.init new-val cy cz))
+                                                       (if (= i 3)
+                                                         (Color.set-v! c (Vector3.init cx new-val cz))
+                                                         (if (= i 4)
+                                                           (Color.set-v! c (Vector3.init cx cy new-val))
+                                                           ())))))))))
+                                         (Engine.apply-control-value! e @(UiPanel.target panel) @(UiControl.label-id ctrl) new-val))))))))))))))))))
 
   (defn tick-ui! [e dt width height]
     (do

@@ -116,6 +116,12 @@
   (sig set-influence! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-root-csg-index! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int] ()))
   (sig noop-update (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-temperature! (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-humidity! (Fn [(Ptr ()) Double] ()))
+  (sig tick-age! (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-pressure! (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-charge! (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-velocity! (Fn [(Ref FieldDatabase) Double] ()))
   (sig tick! (Fn [(Ref FieldDatabase) Double] ()))
 
   (defn ensure-capacity! [arr size default-val]
@@ -123,6 +129,174 @@
       (Array.push-back! arr default-val)))
 
   (defn noop-update [db-ptr dt] ())
+
+  (defn diffuse-temperature! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          temp-slot 0
+          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          diffusion-rate 0.8
+          new-temps (Array.copy temp-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [t-i @(Array.unsafe-nth temp-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  cooling-rate 0.1
+                  ambient-temp 0.0
+                  delta-temp (* (- ambient-temp t-i) (* cooling-rate dt))]
+              (do
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [t-j @(Array.unsafe-nth temp-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              transfer (* (* (- t-j t-i) factor) dt)]
+                          (set! delta-temp (+ delta-temp (* transfer diffusion-rate))))))))
+                (Array.aset! &new-temps i (+ t-i delta-temp))))))
+        (for [i 0 num-entities]
+          (Array.aset! temp-arr i @(Array.unsafe-nth &new-temps i))))))
+
+  (defn diffuse-humidity! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          hum-slot 2
+          temp-slot 0
+          hum-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) hum-slot)
+          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          diffusion-rate 0.6
+          new-hums (Array.copy hum-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [h-i @(Array.unsafe-nth hum-arr i)
+                  t-i @(Array.unsafe-nth temp-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  ambient-hum 0.2
+                  dissipation-rate 0.05
+                  delta-hum (* (- ambient-hum h-i) (* dissipation-rate dt))
+                  evap-cond (if (> t-i 0.0)
+                                (* (* t-i 0.01) (* (- 1.0 h-i) dt))
+                                (* (* t-i 0.02) (* h-i dt)))]
+              (do
+                (set! delta-hum (+ delta-hum evap-cond))
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [h-j @(Array.unsafe-nth hum-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              transfer (* (* (- h-j h-i) factor) dt)]
+                          (set! delta-hum (+ delta-hum (* transfer diffusion-rate))))))))
+                (Array.aset! &new-hums i (Double.clamp 0.0 1.0 (+ h-i delta-hum)))))))
+        (for [i 0 num-entities]
+          (Array.aset! hum-arr i @(Array.unsafe-nth &new-hums i))))))
+
+  (defn diffuse-pressure! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          pres-slot 3
+          temp-slot 0
+          pres-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) pres-slot)
+          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          diffusion-rate 0.7
+          new-pres (Array.copy pres-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [p-i @(Array.unsafe-nth pres-arr i)
+                  t-i @(Array.unsafe-nth temp-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  ambient-pres 0.0
+                  dissipation-rate 0.15
+                  delta-pres (* (- ambient-pres p-i) (* dissipation-rate dt))
+                  expansion-rate 0.25
+                  thermal-expansion (* (* t-i expansion-rate) dt)]
+              (do
+                (set! delta-pres (+ delta-pres thermal-expansion))
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [p-j @(Array.unsafe-nth pres-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              transfer (* (* (- p-j p-i) factor) dt)]
+                          (set! delta-pres (+ delta-pres (* transfer diffusion-rate))))))))
+                (Array.aset! &new-pres i (Double.clamp 0.0 100.0 (+ p-i delta-pres)))))))
+        (for [i 0 num-entities]
+          (Array.aset! pres-arr i @(Array.unsafe-nth &new-pres i))))))
+
+  (defn diffuse-charge! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          charge-slot 4
+          charge-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) charge-slot)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          diffusion-rate 0.9
+          new-chgs (Array.copy charge-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [c-i @(Array.unsafe-nth charge-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  ambient-chg 0.0
+                  discharge-rate 0.1
+                  delta-charge (* (- ambient-chg c-i) (* discharge-rate dt))]
+              (do
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [c-j @(Array.unsafe-nth charge-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              transfer (* (* (- c-j c-i) factor) dt)]
+                          (set! delta-charge (+ delta-charge (* transfer diffusion-rate))))))))
+                (Array.aset! &new-chgs i (Double.clamp -10.0 10.0 (+ c-i delta-charge)))))))
+        (for [i 0 num-entities]
+          (Array.aset! charge-arr i @(Array.unsafe-nth &new-chgs i))))))
+
+  (defn tick-age! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          age-slot 1
+          age-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) age-slot)]
+      (for [i 0 num-entities]
+        (when @(Array.unsafe-nth active-arr i)
+          (let [curr-age @(Array.unsafe-nth age-arr i)]
+            (Array.aset! age-arr i (+ curr-age dt)))))))
 
   (defn register-kernel! [db name default-val min-val max-val update-fn]
     (let [slot (Array.length (FieldDatabase.kernels db))
@@ -158,11 +332,11 @@
           entity-scalars (the (Array (Array Double)) [])
           db (FieldDatabase.init act hnd st pm pos rot sc csg col sc-fields vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates total-cells origin cell-size cols rows layers entity-scalars)]
       (do
-        (let [t-slot (the Int (register-kernel! &db @"temperature" 0.0 -120.0 120.0 noop-update))
-              a-slot (the Int (register-kernel! &db @"age" 0.0 0.0 100.0 noop-update))
-              h-slot (the Int (register-kernel! &db @"humidity" 0.0 0.0 100.0 noop-update))
-              p-slot (the Int (register-kernel! &db @"pressure" 0.0 0.0 100.0 noop-update))
-              c-slot (the Int (register-kernel! &db @"charge" 0.0 -10.0 10.0 noop-update))
+        (let [t-slot (the Int (register-kernel! &db @"temperature" 0.0 -120.0 120.0 diffuse-temperature!))
+              a-slot (the Int (register-kernel! &db @"age" 0.0 0.0 100.0 tick-age!))
+              h-slot (the Int (register-kernel! &db @"humidity" 0.2 0.0 1.0 diffuse-humidity!))
+              p-slot (the Int (register-kernel! &db @"pressure" 0.0 0.0 100.0 diffuse-pressure!))
+              c-slot (the Int (register-kernel! &db @"charge" 0.0 -10.0 10.0 diffuse-charge!))
               g-slot (the Int (register-kernel! &db @"gravity" 1.0 -50.0 50.0 noop-update))]
           db))))
 
@@ -730,12 +904,47 @@
             (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) idx @vel)))
         (Array.push-back! (FieldDatabase.events db) event))))
 
+  (defn diffuse-velocity! [db dt]
+    (let [active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          vel-arr (Array.unsafe-nth (FieldDatabase.vector-fields db) 0)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          viscosity 0.4
+          new-vels (Array.copy vel-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [v-i (Array.unsafe-nth vel-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  friction 0.1
+                  delta-vel (Vector3.mul v-i (neg (* friction dt)))]
+              (do
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [v-j (Array.unsafe-nth vel-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              diff (Vector3.sub v-j v-i)
+                              transfer (Vector3.mul &diff (* factor dt))]
+                          (set! delta-vel (Vector3.add &delta-vel &(Vector3.mul &transfer viscosity))))))))
+                (Array.aset! &new-vels i (Vector3.add v-i &delta-vel))))))
+        (for [i 0 num-entities]
+          (Array.aset! vel-arr i @(Array.unsafe-nth &new-vels i))))))
+
   (defn tick! [db dt]
     (let [db (the (Ref FieldDatabase) db)
           ev-arr (FieldDatabase.events db)
           len (Array.length ev-arr)
           keep-ev []]
       (do
+        (diffuse-velocity! db dt)
         ;; 1. Clear all voxel grids in scalar-fields to their default values
         (let [num-kernels (Array.length (FieldDatabase.kernels db))
               active-arr (FieldDatabase.active db)

@@ -1357,16 +1357,31 @@
                         let height = s_data.sph_fields.y;
                         let slider1_val = s_data.sph_fields.z;
                         let slider2_val = s_data.sph_fields.w;
+                        let slider3_val = s_data.color_csg.x;
+                        let slider4_val = s_data.color_csg.y;
+                        let slider5_val = s_data.color_csg.z;
 
                         var panel_color = vec3<f32>(0.02, 0.15, 0.35); // base cyber blue
                         
                         let knob1_x = -0.5 + (slider1_val - 0.5) * 1.0;
-                        let knob1_pos = vec3<f32>(knob1_x, 0.2, 0.02);
+                        let knob1_pos = vec3<f32>(knob1_x, 0.6, 0.02);
                         let d_knob1 = length(lp - knob1_pos);
                         
                         let knob2_x = -0.5 + (slider2_val - 0.5) * 1.0;
-                        let knob2_pos = vec3<f32>(knob2_x, -0.2, 0.02);
+                        let knob2_pos = vec3<f32>(knob2_x, 0.3, 0.02);
                         let d_knob2 = length(lp - knob2_pos);
+
+                        let knob3_x = -0.5 + (slider3_val - 0.5) * 1.0;
+                        let knob3_pos = vec3<f32>(knob3_x, 0.0, 0.02);
+                        let d_knob3 = length(lp - knob3_pos);
+
+                        let knob4_x = -0.5 + (slider4_val - 0.5) * 1.0;
+                        let knob4_pos = vec3<f32>(knob4_x, -0.3, 0.02);
+                        let d_knob4 = length(lp - knob4_pos);
+
+                        let knob5_x = -0.5 + (slider5_val - 0.5) * 1.0;
+                        let knob5_pos = vec3<f32>(knob5_x, -0.6, 0.02);
+                        let d_knob5 = length(lp - knob5_pos);
 
                         if (d_knob1 < 0.05) {
                             base_col = vec3<f32>(1.0, 0.5, 0.0);
@@ -1374,13 +1389,28 @@
                         } else if (d_knob2 < 0.05) {
                             base_col = vec3<f32>(0.0, 1.0, 0.5);
                             edge = 1.0;
+                        } else if (d_knob3 < 0.05) {
+                            base_col = vec3<f32>(1.0, 0.2, 0.6);
+                            edge = 1.0;
+                        } else if (d_knob4 < 0.05) {
+                            base_col = vec3<f32>(0.0, 0.7, 1.0);
+                            edge = 1.0;
+                        } else if (d_knob5 < 0.05) {
+                            base_col = vec3<f32>(0.9, 0.9, 0.1);
+                            edge = 1.0;
                         } else {
-                            let slider1_track_pos = vec3<f32>(-0.5, 0.2, 0.0);
+                            let slider1_track_pos = vec3<f32>(-0.5, 0.6, 0.0);
                             let d_track1 = sdBox(lp - slider1_track_pos, vec3<f32>(0.5, 0.02, 0.015));
-                            let slider2_track_pos = vec3<f32>(-0.5, -0.2, 0.0);
+                            let slider2_track_pos = vec3<f32>(-0.5, 0.3, 0.0);
                             let d_track2 = sdBox(lp - slider2_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+                            let slider3_track_pos = vec3<f32>(-0.5, 0.0, 0.0);
+                            let d_track3 = sdBox(lp - slider3_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+                            let slider4_track_pos = vec3<f32>(-0.5, -0.3, 0.0);
+                            let d_track4 = sdBox(lp - slider4_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+                            let slider5_track_pos = vec3<f32>(-0.5, -0.6, 0.0);
+                            let d_track5 = sdBox(lp - slider5_track_pos, vec3<f32>(0.5, 0.02, 0.015));
 
-                            if (d_track1 < 0.005 || d_track2 < 0.005) {
+                            if (d_track1 < 0.005 || d_track2 < 0.005 || d_track3 < 0.005 || d_track4 < 0.005 || d_track5 < 0.005) {
                                 base_col = vec3<f32>(0.01, 0.02, 0.05);
                                 edge = 0.0;
                             } else {
