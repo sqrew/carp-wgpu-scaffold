@@ -47,6 +47,7 @@
       @group(0) @binding(5) var<storage, read> chunk_lookup: ChunkLookup;
       @group(0) @binding(6) var noise_texture: texture_3d<f32>;
       @group(0) @binding(7) var noise_sampler: sampler;
+      @group(0) @binding(8) var fields_texture: texture_3d<f32>;
 
       fn positive_mod(n: i32, m: i32) -> i32 {
           let r = n % m;
@@ -1034,6 +1035,8 @@
 
        @fragment
         fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
+            let dummy_fields = textureSampleLevel(fields_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
+            if (dummy_fields.w > 9999.0) { return vec4<f32>(dummy_fields.xyz, 1.0); }
             let aspect = u.width / u.height;
             let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
             let ro = u.cam_pos.xyz;

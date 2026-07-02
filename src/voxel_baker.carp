@@ -69,36 +69,38 @@
       (< dist-sq (* r-padded r-padded))))
 
   (defn run-voxel-action-gpu! [ctx ren chunk center radius op-type]
-    (let [cx @(Vector3.x center)
-          cy @(Vector3.y center)
-          cz @(Vector3.z center)
-          qx @(Chunk.coord-x chunk)
-          qy @(Chunk.coord-y chunk)
-          qz @(Chunk.coord-z chunk)
-          ox (* (Double.from-int qx) 32.0)
-          oy (* (Double.from-int qy) 32.0)
-          oz (* (Double.from-int qz) 32.0)
-          cell-size 1.0
-          params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
-                       (Double.to-float cell-size)
-                       (Double.to-float cx) (Double.to-float cy) (Double.to-float cz)
-                       (Double.to-float radius)
-                       (Double.to-float op-type)
-                       0.0f 0.0f 0.0f]
-          v-gpu-b @(Chunk.gpu-buffer chunk)
-          c-params-b @(WGPURenderer.carve-params-buffer ren)
-          pipe @(WGPURenderer.carve-pipeline ren)]
-      (do
-        (WGPU.write-floats ctx c-params-b &params-data)
-        (let [bufs [v-gpu-b c-params-b]]
-          (match (WGPU.create-bind-group ctx pipe &bufs)
-            (Result.Error e) (IO.println &(format "Voxel action Bind Group error: %s" &e))
-            (Result.Success bg)
-              (do
-                (WGPU.dispatch ctx pipe bg 512)
-                (WGPU.free-bind-group bg))))
-        (pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk))
-        )))
+    (let [v-gpu-b @(Chunk.gpu-buffer chunk)]
+      (if (WGPU.buffer-null?- v-gpu-b)
+        ()
+        (let [cx @(Vector3.x center)
+              cy @(Vector3.y center)
+              cz @(Vector3.z center)
+              qx @(Chunk.coord-x chunk)
+              qy @(Chunk.coord-y chunk)
+              qz @(Chunk.coord-z chunk)
+              ox (* (Double.from-int qx) 32.0)
+              oy (* (Double.from-int qy) 32.0)
+              oz (* (Double.from-int qz) 32.0)
+              cell-size 1.0
+              params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
+                           (Double.to-float cell-size)
+                           (Double.to-float cx) (Double.to-float cy) (Double.to-float cz)
+                           (Double.to-float radius)
+                           (Double.to-float op-type)
+                           0.0f 0.0f 0.0f]
+              c-params-b @(WGPURenderer.carve-params-buffer ren)
+              pipe @(WGPURenderer.carve-pipeline ren)]
+          (do
+            (WGPU.write-floats ctx c-params-b &params-data)
+            (let [bufs [v-gpu-b c-params-b]]
+              (match (WGPU.create-bind-group ctx pipe &bufs)
+                (Result.Error e) (IO.println &(format "Voxel action Bind Group error: %s" &e))
+                (Result.Success bg)
+                  (do
+                    (WGPU.dispatch ctx pipe bg 512)
+                    (WGPU.free-bind-group bg))))
+            (pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk))
+            )))))
 
   (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
     (run-voxel-action-gpu! ctx ren chunk center radius 0.0))
