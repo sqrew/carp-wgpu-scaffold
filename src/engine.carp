@@ -1255,10 +1255,27 @@
           db (World.field-db world-data)
           chunks (World.chunks world-data)
           num-chunks (Array.length chunks)
-          num-instances (Double.from-int (Array.length (FieldDatabase.active db)))]
+          num-instances (Double.from-int (Array.length (FieldDatabase.active db)))
+          active-arr (FieldDatabase.active db)
+          num-active (Array.length active-arr)]
       (for [i 0 num-chunks]
-        (let [chunk (Array.unsafe-nth chunks i)]
-          (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances)))))
+        (let [chunk (Array.unsafe-nth chunks i)
+              slot @(Chunk.atlas-slot chunk)
+              overlaps false]
+          (do
+            (for [k 0 num-active]
+              (when @(Array.unsafe-nth active-arr k)
+                (let [scale @(Array.unsafe-nth (FieldDatabase.scales db) k)]
+                  (when (> scale 0.0)
+                    (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) k)]
+                      (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
+                        (set! overlaps true)))))))
+            (let [active-slots (WGPURenderer.fields-active-slots ren)
+                  had-fields @(Array.unsafe-nth active-slots slot)]
+              (when (or overlaps had-fields)
+                (do
+                  (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances)
+                  (Array.aset! active-slots slot overlaps)))))))))
 
   (defn sync-render-db! [e ctx ren]
     (let [r-db (Engine.render-db e)

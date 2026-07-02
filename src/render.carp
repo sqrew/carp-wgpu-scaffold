@@ -61,6 +61,7 @@
   noise-texture (Ptr WGPURenderTexture)
   noise-sampler WGPUSampler
   pack-bind-group WGPUBindGroup
+  fields-active-slots (Array Bool)
 ])
 
 (defmodule VoxelBaker
@@ -287,7 +288,7 @@
                                                                     (match (WGPU.create-bind-group ctx p-pipe &pack-bufs)
                                                                       (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline f-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer f-params-b) (WGPU.free-buffer f-half-b) (WGPU.free-buffer f-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack bind group failed: " e)))
                                                                       (Result.Success p-bg)
-                                                                        (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex fields-tex voxel-samp [] true c-pipe p-pipe f-splat-pipe v-gpu-b v-half-b c-params-b f-scratch-b f-half-b f-params-b chunk-lookup-b noise-tex noise-samp p-bg))))))))))))))))))))))))))))))
+                                                                        (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex fields-tex voxel-samp [] true c-pipe p-pipe f-splat-pipe v-gpu-b v-half-b c-params-b f-scratch-b f-half-b f-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false)))))))))))))))))))))))))))))))
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]
