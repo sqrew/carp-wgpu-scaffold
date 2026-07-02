@@ -201,8 +201,11 @@
 
   (defn sample [storage pos]
     (let [db (FieldDatabase.voidptr->db-ref @(FieldKernelStorage.db-ptr storage))
-          idx @(FieldKernelStorage.array-idx storage)]
-      (FieldDatabase.sample-kernel-field db idx pos)))
+          idx @(FieldKernelStorage.array-idx storage)
+          kernels-arr (FieldDatabase.kernels db)
+          kernel (Array.unsafe-nth kernels-arr idx)
+          def-val @(FieldKernelDef.default-val kernel)]
+      (FieldDatabase.sample-analytical-field db idx pos def-val)))
 
   (defn update [storage dt]
     ())
