@@ -1250,6 +1250,16 @@
                           (set! overlapped true))))))))))
         (Engine.set-voxel-dirty! e false))))
 
+  (defn bake-all-fields-gpu! [e ctx ren]
+    (let [world-data (Engine.world-data e)
+          db (World.field-db world-data)
+          chunks (World.chunks world-data)
+          num-chunks (Array.length chunks)
+          num-instances (Double.from-int (Array.length (FieldDatabase.active db)))]
+      (for [i 0 num-chunks]
+        (let [chunk (Array.unsafe-nth chunks i)]
+          (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances)))))
+
   (defn sync-render-db! [e ctx ren]
     (let [r-db (Engine.render-db e)
           u-data (RenderDatabase.u-data r-db)
@@ -1324,6 +1334,11 @@
         (Diagnostics.start-zone! diag "Sync: Bake Voxels")
         (Engine.bake-voxels-if-dirty! e ctx ren grid world world-data craters voxel-dirty)
         (Diagnostics.end-zone! diag "Sync: Bake Voxels")
+
+        ;; 5.5 Bake dynamic fields on the GPU
+        (Diagnostics.start-zone! diag "Sync: Bake Fields GPU")
+        (Engine.bake-all-fields-gpu! e ctx ren)
+        (Diagnostics.end-zone! diag "Sync: Bake Fields GPU")
 
         ;; 6. Flatten Spatial Grid (if dirty)
         (Diagnostics.start-zone! diag "Sync: Flatten Spatial Grid")

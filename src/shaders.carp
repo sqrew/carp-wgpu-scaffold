@@ -351,6 +351,125 @@
           return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
       }
 
+      fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> 5u;
+          let qy = gy >> 5u;
+          let qz = gz >> 5u;
+          
+          let lx = i32(u32(gx) & 31u);
+          let ly = i32(u32(gy) & 31u);
+          let lz = i32(u32(gz) & 31u);
+          
+          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+          var is_loaded = false;
+          var slot = -1;
+          
+          if (!(any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32)))) {
+              let mx = u32(local_q.x) >> 2u;
+              let my = u32(local_q.y) >> 2u;
+              let mz = u32(local_q.z) >> 2u;
+              let skip_idx = mx + (my << 3u) + (mz << 6u);
+              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+              if (skip_val != 0) {
+                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                  if (slot >= 0) {
+                      is_loaded = true;
+                  }
+              }
+          }
+          
+          if (is_loaded) {
+              let slot_x = slot % 12;
+              let slot_y = (slot / 12) % 12;
+              let slot_z = slot / 144;
+              let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
+              return textureLoad(fields_texture, atlas_coord, 0);
+          } else {
+              return vec4<f32>(0.0);
+          }
+      }
+
+      fn sampleFieldsGrid(p: vec3<f32>) -> vec4<f32> {
+          let tx = p / 1.0 - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(tx));
+          let f = fract(tx);
+          
+          let lx = i32(u32(c0.x) & 31u);
+          let ly = i32(u32(c0.y) & 31u);
+          let lz = i32(u32(c0.z) & 31u);
+          
+          let qx = c0.x >> 5u;
+          let qy = c0.y >> 5u;
+          let qz = c0.z >> 5u;
+          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+          var chunk_is_loaded = false;
+          var slot = -1;
+          if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
+              let mx = u32(local_q.x) >> 2u;
+              let my = u32(local_q.y) >> 2u;
+              let mz = u32(local_q.z) >> 2u;
+              let skip_idx = mx + (my << 3u) + (mz << 6u);
+              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+              if (skip_val != 0) {
+                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                  if (slot >= 0) {
+                      chunk_is_loaded = true;
+                  }
+              }
+          }
+          
+          if (!chunk_is_loaded) {
+              return vec4<f32>(0.0);
+          }
+          
+          var v0 = vec4<f32>(0.0);
+          var v1 = vec4<f32>(0.0);
+          var v2 = vec4<f32>(0.0);
+          var v3 = vec4<f32>(0.0);
+          var v4 = vec4<f32>(0.0);
+          var v5 = vec4<f32>(0.0);
+          var v6 = vec4<f32>(0.0);
+          var v7 = vec4<f32>(0.0);
+          
+          if (lx < 31 && ly < 31 && lz < 31) {
+              let slot_x = slot % 12;
+              let slot_y = (slot / 12) % 12;
+              let slot_z = slot / 144;
+              let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
+              
+              v0 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly,     lz),     0);
+              v1 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
+              v2 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
+              v3 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
+              v4 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
+              v5 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
+              v6 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
+              v7 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
+          } else {
+              v0 = getFieldsAt(c0.x,     c0.y,     c0.z);
+              v1 = getFieldsAt(c0.x + 1, c0.y,     c0.z);
+              v2 = getFieldsAt(c0.x,     c0.y + 1, c0.z);
+              v3 = getFieldsAt(c0.x + 1, c0.y + 1, c0.z);
+              v4 = getFieldsAt(c0.x,     c0.y,     c0.z + 1);
+              v5 = getFieldsAt(c0.x + 1, c0.y,     c0.z + 1);
+              v6 = getFieldsAt(c0.x,     c0.y + 1, c0.z + 1);
+              v7 = getFieldsAt(c0.x + 1, c0.y + 1, c0.z + 1);
+          }
+          
+          let sf = f * f * (3.0 - 2.0 * f);
+          let v_01 = mix(v0, v1, sf.x);
+          let v_23 = mix(v2, v3, sf.x);
+          let v_45 = mix(v4, v5, sf.x);
+          let v_67 = mix(v6, v7, sf.x);
+          
+          let v_y0 = mix(v_01, v_23, sf.y);
+          let v_y1 = mix(v_45, v_67, sf.y);
+          
+          return mix(v_y0, v_y1, sf.z);
+      }
+
        fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
            let tx = p / 1.0;
            let c0 = vec3<i32>(floor(tx));
@@ -438,11 +557,7 @@
                 }
             }
             var out: InterpolatedData;
-            if (sum_fields_w > 0.0) {
-                out.fields = sum_fields / sum_fields_w;
-            } else {
-                out.fields = vec4<f32>(0.0);
-            }
+            out.fields = sampleFieldsGrid(p);
             if (sum_color_w > 0.0) {
                 out.color = sum_color / sum_color_w;
             } else {
@@ -1598,6 +1713,79 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     }
 
     voxel_gpu_buffer[idx] = val;
+}")
+
+  (def field-splat-shader
+    "struct PointInstance {
+    pos_scale: vec4<f32>,
+    rot: vec4<f32>,
+    color_csg: vec4<f32>,
+    sph_fields: vec4<f32>,
+}
+
+struct Uniforms {
+    time: f32,
+    width: f32,
+    height: f32,
+    cell_size: f32,
+    cam_pos: vec4<f32>,
+    cam_dir: vec4<f32>,
+    cam_right: vec4<f32>,
+    cam_up: vec4<f32>,
+    bg_color: vec4<f32>,
+    grid_dims: vec4<f32>,
+    grid_origin: vec4<f32>,
+    shadow_ao_quality: vec4<f32>,
+    instances: array<PointInstance, 512>,
+}
+
+@group(0) @binding(0) var<storage, read_write> fields_gpu_buffer: array<vec4<f32>>;
+@group(0) @binding(1) var<uniform>             u: Uniforms;
+@group(0) @binding(2) var<storage, read>       params: array<f32>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+    let idx = global_id.x;
+    if (idx >= 32768u) { return; }
+
+    let ox = params[0];
+    let oy = params[1];
+    let oz = params[2];
+    let cell_size = params[3];
+    let num_instances = u32(round(params[4]));
+
+    let sx = f32(idx % 32u);
+    let sy = f32((idx / 32u) % 32u);
+    let sz = f32(idx / (32u * 32u));
+
+    let p = vec3<f32>(
+        ox + (sx + 0.5) * cell_size,
+        oy + (sy + 0.5) * cell_size,
+        oz + (sz + 0.5) * cell_size
+    );
+
+    var accumulated_fields = vec4<f32>(0.0);
+    var total_weight = 0.0;
+
+    for (var i = 0u; i < num_instances; i = i + 1u) {
+        let inst = u.instances[i];
+        let radius = inst.pos_scale.w;
+        if (radius <= 0.0) { continue; }
+
+        let dist = length(p - inst.pos_scale.xyz);
+        if (dist < radius) {
+            let weight = 1.0 - (dist / radius);
+            
+            accumulated_fields += inst.sph_fields * weight;
+            total_weight += weight;
+        }
+    }
+
+    if (total_weight > 0.0) {
+        fields_gpu_buffer[idx] = accumulated_fields / total_weight;
+    } else {
+        fields_gpu_buffer[idx] = vec4<f32>(0.0);
+    }
 }")
 
   (def pack-shader

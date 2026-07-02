@@ -357,4 +357,55 @@
                           (Array.aset! voxel-data idx-full (Double.to-float new-dist))
                           (when (< sphere-dist 0.0)
                             (Array.aset! voxel-data (+ idx-full 1) 2.0f))))))))))))))
+
+  (defn pack-and-copy-fields-chunk! [ctx ren slot]
+    (let [f-scratch-b @(WGPURenderer.fields-scratch-buffer ren)
+          f-half-b @(WGPURenderer.fields-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          slot-x (Int.mod slot 12)
+          slot-y (Int.mod (/ slot 12) 12)
+          slot-z (/ slot 144)
+          ox (* slot-x 32)
+          oy (* slot-y 32)
+          oz (* slot-z 32)
+          pack-bufs [f-scratch-b f-half-b]]
+      (match (WGPU.create-bind-group ctx pipe &pack-bufs)
+        (Result.Error e) (IO.println &(format "Pack Fields Bind Group error: %s" &e))
+        (Result.Success bg)
+          (do
+            (WGPU.dispatch ctx pipe bg 512)
+            (WGPU.free-bind-group bg)
+            (WGPURender.copy-buffer-to-3d-texture-offset 
+              ctx 
+              f-half-b 
+              @(WGPURenderer.fields-texture ren) 
+              ox oy oz 32 32 32)))))
+
+  (defn bake-fields-gpu! [ctx ren chunk num-instances]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
+                       (Double.to-float cell-size)
+                       (Double.to-float num-instances)
+                       0.0f 0.0f 0.0f]
+          f-scratch-b @(WGPURenderer.fields-scratch-buffer ren)
+          f-params-b @(WGPURenderer.fields-params-buffer ren)
+          pipe @(WGPURenderer.fields-splat-pipeline ren)
+          u-b @(WGPURenderer.u-buffer ren)
+          raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
+          bufs [f-scratch-b raw-u-b f-params-b]]
+      (do
+        (WGPU.write-floats ctx f-params-b &params-data)
+        (match (WGPU.create-bind-group ctx pipe &bufs)
+          (Result.Error e) (IO.println &(format "Fields Bake Bind Group error: %s" &e))
+          (Result.Success bg)
+            (do
+              (WGPU.dispatch ctx pipe bg 512)
+              (WGPU.free-bind-group bg)
+              (pack-and-copy-fields-chunk! ctx ren @(Chunk.atlas-slot chunk)))))))
 )
