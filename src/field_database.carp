@@ -455,7 +455,7 @@
   (defn FieldDatabase.write-entity-to-field-grid! [db slot entity-idx pos radius val]
     (let [svo (FieldDatabase.svo db)
           bricks (FieldDatabase.bricks db)
-          default-values (the (Array Double) [0.0 0.0 0.2 0.0 0.0 1.0])
+          default-values (the (Array Double) [0.0 0.0 0.2 0.0 0.0 1.0 1.0 1.0])
           root-ox @(Vector3.x (Svo.origin svo))
           root-oy @(Vector3.y (Svo.origin svo))
           root-oz @(Vector3.z (Svo.origin svo))
