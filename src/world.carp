@@ -53,8 +53,18 @@
           cqy (the (Array Int) (replicate 64 &-999))
           cqz (the (Array Int) (replicate 64 &-999))
           cidx (the (Array Int) (replicate 64 &-1))
-          total-cells (* w (* h d))]
-      (World.init (FieldDatabase.new total-cells @&origin cell-size w h d) origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []))))
+          total-cells (* w (* h d))
+          db (FieldDatabase.new)]
+      (do
+        (ignore (FieldDatabase.register-kernel! &db @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!))
+        (ignore (FieldDatabase.register-kernel! &db @"age" 0.0 0.0 100.0 FieldDatabase.tick-age!))
+        (ignore (FieldDatabase.register-kernel! &db @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!))
+        (ignore (FieldDatabase.register-kernel! &db @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!))
+        (ignore (FieldDatabase.register-kernel! &db @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!))
+        (ignore (FieldDatabase.register-kernel! &db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update))
+        (ignore (FieldDatabase.register-kernel! &db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!))
+        (ignore (FieldDatabase.register-kernel! &db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!))
+        (World.init db origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) [])))))
 
   (defn init-gpu-buffers! [ctx world-data]
     (let [chunks (World.chunks world-data)

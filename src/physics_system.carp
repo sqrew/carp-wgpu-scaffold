@@ -100,38 +100,37 @@
               _ ())))
         (Vector2.init min-d mat-id))))
 
+  (defn apply-atmospheric-forces! [world db grid vel-field gravity-field]
+    (let [coeff -30.0
+          drag-coeff 0.15]
+      (ECS.query world [ent (rb RigidBody)]
+        (let [pos (RigidBody.position rb)
+              vel (Body.velocity (RigidBody.body rb))
+              grad (FieldDatabase.calculate-pressure-gradient-grid db pos (Pointer.address grid))
+              p-force (let [f (Vector3.mul &grad coeff)]
+                        (PhysicsSystem.clamp-vector3 &f 300.0))
+              ind-vel (Field.sample vel-field pos)
+              rel-vel (Vector3.sub &ind-vel vel)
+              drag-force (Vector3.mul &rel-vel drag-coeff)
+              g-scale (Field.sample gravity-field pos)
+              local-gravity (Vector3.mul &PhysicsSystem.gravity g-scale)
+              temp-sum (Vector3.add &local-gravity &p-force)
+              total-force (let [tf (Vector3.add &temp-sum &drag-force)]
+                            (PhysicsSystem.clamp-vector3 &tf 1000.0))]
+          (RigidBody.apply-force! rb &total-force)))))
+
   (defn step-ecs! [e world grid metaball-k]
     (let [world-data (Engine.world-data e)
           coord (Engine.coordinator e)
-          pres-field (Engine.pressure-field e)
-          vel-field (Engine.velocity-field e)
           diag (Engine.diagnostics e)
           collision-occurred false
           manifolds []]
       (do
         
-        ;; 1. Apply Gravity, SPH Pressure, Aerodynamic Wake/Drag Forces, and Step Bodies
+        ;; 1. Step Bodies (Integrate forces and advance state)
         (Diagnostics.start-zone! diag "Phys: Forces & Integrator")
-        (let [coeff -30.0
-              drag-coeff 0.15]
-          (ECS.query world [ent (rb RigidBody)]
-            (let [pos (RigidBody.position rb)
-                  vel (Body.velocity (RigidBody.body rb))
-                  db (World.field-db (Engine.world-data e))
-                  grad (FieldDatabase.calculate-pressure-gradient-grid db pos (Pointer.address grid))
-                  p-force (let [f (Vector3.mul &grad coeff)]
-                            (PhysicsSystem.clamp-vector3 &f 300.0))
-                  ind-vel (Field.sample vel-field pos)
-                  rel-vel (Vector3.sub &ind-vel vel)
-                  drag-force (Vector3.mul &rel-vel drag-coeff)
-                  g-scale (Field.sample (Engine.gravity-field e) pos)
-                  local-gravity (Vector3.mul &PhysicsSystem.gravity g-scale)
-                  temp-sum (Vector3.add &local-gravity &p-force)
-                  total-force (let [tf (Vector3.add &temp-sum &drag-force)]
-                                (PhysicsSystem.clamp-vector3 &tf 1000.0))]
-              (do
-                (RigidBody.apply-force! rb &total-force)
-                (RigidBody.step-custom! rb fixed-dt fixed-dt)))))
+        (ECS.query world [ent (rb RigidBody)]
+          (RigidBody.step-custom! rb fixed-dt fixed-dt))
         (Diagnostics.end-zone! diag "Phys: Forces & Integrator")
  
         ;; 2. Rebuild Spatial Grid

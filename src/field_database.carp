@@ -25,8 +25,7 @@
   growth-speed Double
   lifetime Double
   max-lifetime Double
-  temperature Double
-  pressure Double
+  fields (Array FieldInitialVal)
   color (Vector3 Double)
   handle-id Int
   update-fn (Fn [(Ptr ()) (Ref (Handle ())) (Ref FieldEvent) Double] ())
@@ -69,12 +68,6 @@
   kernels (Array FieldKernelDef)
   influences (Array Double)
   kernel-updates (Array KernelUpdate)
-  grid-total-cells Int
-  grid-origin (Vector3 Double)
-  grid-cell-size Double
-  grid-cols Int
-  grid-rows Int
-  grid-layers Int
   entity-scalars (Array (Array Double))
 ])
 
@@ -88,7 +81,7 @@
     "FieldDatabase* $NAME(void* p)"
     "$DECL { return p; }")
 
-  (sig new (Fn [Int (Vector3 Double) Double Int Int Int] FieldDatabase))
+  (sig new (Fn [] FieldDatabase))
   (sig register-kernel! (Fn [(Ref FieldDatabase) String Double Double Double (Fn [(Ptr ()) Double] ())] Int))
   (sig get-kernel-slot (Fn [(Ref FieldDatabase) (Ref String)] Int))
   (sig set-scalar-field! (Fn [(Ref FieldDatabase) Int Int Double] ()))
@@ -101,14 +94,9 @@
   (sig release-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ()))] ()))
   (sig set-scale! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-velocity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
-  (sig set-pressure! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-gravity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-temperature! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-scalar-by-name! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Ref String) Double] ()))
   (sig set-position! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
   (sig set-rotation! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Quaternion] ()))
-  (sig set-age! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-humidity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-charge! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-influence! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-root-csg-index! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int] ()))
   (sig noop-update (Fn [(Ptr ()) Double] ()))
@@ -119,8 +107,6 @@
   (sig diffuse-charge! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-density! (Fn [(Ptr ()) Double] ()))
   (sig tick-lifetime! (Fn [(Ptr ()) Double] ()))
-  (sig set-density! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-lifetime! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig diffuse-velocity! (Fn [(Ref FieldDatabase) Double] ()))
   (sig tick! (Fn [(Ref FieldDatabase) Double] ()))
   (sig sample-analytical-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double)) Double] Double))
@@ -357,7 +343,7 @@
         (Array.push-back! (FieldDatabase.kernel-updates db) (KernelUpdate.init update-fn))
         slot)))
 
-  (defn new [total-cells origin cell-size cols rows layers]
+  (defn new []
     (let [n 128
           act (the (Array Bool) (replicate n &false))
           hnd (the (Array (Handle ())) (replicate n &(Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l))))
@@ -374,18 +360,8 @@
           kernels (the (Array FieldKernelDef) [])
           influences (the (Array Double) (replicate n &1.0))
           kernel-updates (the (Array KernelUpdate) [])
-          entity-scalars (the (Array (Array Double)) [])
-          db (FieldDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates total-cells origin cell-size cols rows layers entity-scalars)]
-      (do
-        (let [t-slot (the Int (register-kernel! &db @"temperature" 0.0 -120.0 120.0 diffuse-temperature!))
-              a-slot (the Int (register-kernel! &db @"age" 0.0 0.0 100.0 tick-age!))
-              h-slot (the Int (register-kernel! &db @"humidity" 0.2 0.0 1.0 diffuse-humidity!))
-              p-slot (the Int (register-kernel! &db @"pressure" 0.0 0.0 100.0 diffuse-pressure!))
-              c-slot (the Int (register-kernel! &db @"charge" 0.0 -10.0 10.0 diffuse-charge!))
-              g-slot (the Int (register-kernel! &db @"gravity" 1.0 -50.0 50.0 noop-update))
-              d-slot (the Int (register-kernel! &db @"density" 1.0 0.0 100.0 diffuse-density!))
-              l-slot (the Int (register-kernel! &db @"lifetime" 1.0 0.0 100.0 tick-lifetime!))]
-          db))))
+          entity-scalars (the (Array (Array Double)) [])]
+      (FieldDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates entity-scalars)))
 
 
   (defn FieldDatabase.get-index-by-handle [db handle]
@@ -579,41 +555,6 @@
           (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) id val)
           ()))))
 
-  (defn set-pressure! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 3 id val)
-          ()))))
-
-  (defn set-gravity! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 5 id val)
-          ()))))
-
-  (defn set-density! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 6 id val)
-          ()))))
-
-  (defn set-lifetime! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 7 id val)
-          ()))))
-
-  (defn set-temperature! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 0 id val)
-          ()))))
-
   (defn set-position! [db handle val]
     (let [id (get-index-by-handle db handle)]
       (when (>= id 0)
@@ -628,25 +569,13 @@
           (Array.aset! (FieldDatabase.rotations db) id val)
           ()))))
 
-  (defn set-age! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 1 id val)
-          ()))))
 
-  (defn set-humidity! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
+  (defn set-scalar-by-name! [db handle name val]
+    (let [slot (get-kernel-slot db name)
+          id (get-index-by-handle db handle)]
+      (when (and (>= slot 0) (>= id 0))
         (do
-          (set-scalar-field! db 2 id val)
-          ()))))
-
-  (defn set-charge! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (set-scalar-field! db 4 id val)
+          (set-scalar-field! db slot id val)
           ()))))
 
   (defn set-influence! [db handle val]
@@ -906,24 +835,28 @@
           max-life @(FieldEvent.max-lifetime ev)
           decay-factor (/ life max-life)
           pos (FieldEvent.pos ev)
-          scale @(FieldEvent.scale ev)
-          temp (* @(FieldEvent.temperature ev) decay-factor)
-          pres (* @(FieldEvent.pressure ev) decay-factor)]
+          scale @(FieldEvent.scale ev)]
       (do
         (FieldDatabase.set-position! db handle @pos)
         (FieldDatabase.set-scale! db handle scale)
-        (FieldDatabase.set-temperature! db handle temp)
-        (FieldDatabase.set-pressure! db handle pres))))
+        (let [fields-arr (FieldEvent.fields ev)
+              len (Array.length fields-arr)
+              ent-idx (get-index-by-handle db handle)]
+          (when (>= ent-idx 0)
+            (for [i 0 len]
+              (let [f (Array.unsafe-nth fields-arr i)
+                    slot @(FieldInitialVal.slot f)
+                    val (* @(FieldInitialVal.val f) decay-factor)]
+                (set-scalar-field! db slot ent-idx val))))))))
 
-  (defn dispatch-event! [db pos vel shape-type params start-scale max-scale growth-speed max-lifetime temp pres col update-fn]
+  (defn dispatch-event! [db pos vel shape-type params start-scale max-scale growth-speed max-lifetime fields col update-fn]
     (let [curr-id @(FieldDatabase.next-virtual-id db)
           h-id (if (>= curr-id 1020) 512 curr-id)
           handle (Handle.init (Uint64.from-long (Long.from-int h-id)) (Uint32.from-long 1l))
-          event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime temp pres @col h-id update-fn)
-          initial-fields (the (Array FieldInitialVal) [(FieldInitialVal.init 0 temp) (FieldInitialVal.init 3 pres)])]
+          event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime @fields @col h-id update-fn)]
       (do
         (FieldDatabase.set-next-virtual-id! db (inc h-id))
-        (let [discard-idx (register-instance-generic! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col 1.0 &initial-fields (the (Maybe SDF) (Maybe.Nothing)))]
+        (let [discard-idx (register-instance-generic! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col 1.0 fields (the (Maybe SDF) (Maybe.Nothing)))]
           ())
         (let [idx (get-index-by-handle db &handle)]
           (when (>= idx 0)
@@ -987,7 +920,7 @@
                 new-scale (let [s (+ scale (* grow dt))]
                             (if (> s max-sc) max-sc s))]
             (if (> life 0.0)
-                (let [updated-ev (FieldEvent.init @&new-pos @vel @(FieldEvent.shape-type &ev) @(FieldEvent.params &ev) new-scale max-sc grow life max-life @(FieldEvent.temperature &ev) @(FieldEvent.pressure &ev) @(FieldEvent.color &ev) h-id @(FieldEvent.update-fn &ev))]
+                (let [updated-ev (FieldEvent.init @&new-pos @vel @(FieldEvent.shape-type &ev) @(FieldEvent.params &ev) new-scale max-sc grow life max-life @(FieldEvent.fields &ev) @(FieldEvent.color &ev) h-id @(FieldEvent.update-fn &ev))]
                   (do
                     ;; Execute the custom callback function
                     (let [db-ptr (ptr-cast (Pointer.address db))]
