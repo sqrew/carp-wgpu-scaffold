@@ -124,12 +124,6 @@
   (sig diffuse-velocity! (Fn [(Ref FieldDatabase) Double] ()))
   (sig tick! (Fn [(Ref FieldDatabase) Double] ()))
   (sig sample-analytical-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double)) Double] Double))
-  (sig sample-kernel-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double))] Double))
-  (sig sample-field-at-cell (Fn [(Ref FieldDatabase) Int Int Int Int Double] Double))
-  (sig get-voxel-val (Fn [(Ref FieldDatabase) Int Int Int Int Int Int Int Double] Double))
-  (sig get-voxel-vector-val (Fn [(Ref FieldDatabase) Int Int Int Int Int Int Int] (Vector3 Double)))
-  (sig sample-vector-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double))] (Vector3 Double)))
-  (sig sample-vector-field-at-cell (Fn [(Ref FieldDatabase) Int Int Int Int] (Vector3 Double)))
 
   (defn ensure-capacity! [arr size default-val]
     (while (< (Array.length arr) size)
@@ -456,57 +450,6 @@
         (if (> total-weight 0.0)
             (/ accumulated-val total-weight)
             def-val))))
-
-  (defn get-voxel-val [db slot cx cy cz grid-w grid-h grid-d def-val]
-    (let [cs @(FieldDatabase.grid-cell-size db)
-          origin (FieldDatabase.grid-origin db)
-          ox @(Vector3.x origin)
-          oy @(Vector3.y origin)
-          oz @(Vector3.z origin)
-          cell-pos (Vector3.init
-                     (+ ox (* (+ (Double.from-int cx) 0.5) cs))
-                     (+ oy (* (+ (Double.from-int cy) 0.5) cs))
-                     (+ oz (* (+ (Double.from-int cz) 0.5) cs)))]
-      (sample-analytical-field db slot &cell-pos def-val)))
-
-  (defn sample-kernel-field [db slot pos]
-    (let [px @(Vector3.x pos)
-          py @(Vector3.y pos)
-          pz @(Vector3.z pos)
-          cs @(FieldDatabase.grid-cell-size db)
-          ox @(Vector3.x (FieldDatabase.grid-origin db))
-          oy @(Vector3.y (FieldDatabase.grid-origin db))
-          oz @(Vector3.z (FieldDatabase.grid-origin db))
-          grid-w @(FieldDatabase.grid-cols db)
-          grid-h @(FieldDatabase.grid-rows db)
-          grid-d @(FieldDatabase.grid-layers db)
-          tx (- (/ (- px ox) cs) 0.5)
-          ty (- (/ (- py oy) cs) 0.5)
-          tz (- (/ (- pz oz) cs) 0.5)
-          c0-x (Double.to-int (Double.floor tx))
-          c0-y (Double.to-int (Double.floor ty))
-          c0-z (Double.to-int (Double.floor tz))
-          fx (- tx (Double.from-int c0-x))
-          fy (- ty (Double.from-int c0-y))
-          fz (- tz (Double.from-int c0-z))
-          kernels-arr (FieldDatabase.kernels db)
-          kernel (Array.unsafe-nth kernels-arr slot)
-          def-val @(FieldKernelDef.default-val kernel)
-          v0 (get-voxel-val db slot c0-x c0-y c0-z grid-w grid-h grid-d def-val)
-          v1 (get-voxel-val db slot (inc c0-x) c0-y c0-z grid-w grid-h grid-d def-val)
-          v2 (get-voxel-val db slot c0-x (inc c0-y) c0-z grid-w grid-h grid-d def-val)
-          v3 (get-voxel-val db slot (inc c0-x) (inc c0-y) c0-z grid-w grid-h grid-d def-val)
-          v4 (get-voxel-val db slot c0-x c0-y (inc c0-z) grid-w grid-h grid-d def-val)
-          v5 (get-voxel-val db slot (inc c0-x) c0-y (inc c0-z) grid-w grid-h grid-d def-val)
-          v6 (get-voxel-val db slot c0-x (inc c0-y) (inc c0-z) grid-w grid-h grid-d def-val)
-          v7 (get-voxel-val db slot (inc c0-x) (inc c0-y) (inc c0-z) grid-w grid-h grid-d def-val)
-          v-01 (+ v0 (* fx (- v1 v0)))
-          v-23 (+ v2 (* fx (- v3 v2)))
-          v-45 (+ v4 (* fx (- v5 v4)))
-          v-67 (+ v6 (* fx (- v7 v6)))
-          v-y0 (+ v-01 (* fy (- v-23 v-01)))
-          v-y1 (+ v-45 (* fy (- v-67 v-45)))]
-      (+ v-y0 (* fz (- v-y1 v-y0)))))
 
   (defn register-instance-generic! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val influence-val initial-fields sdf-val]
     (let [found-idx -1
