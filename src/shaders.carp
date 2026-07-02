@@ -929,159 +929,159 @@
                   voxel_dist = voxel_tri.x;
               }
 
-              // Apply dynamic seismic wave deformation to terrain from shockwaves
-              var wave_deformation = 0.0;
-              if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
+              var d = vec2<f32>(voxel_dist, -1.0);
+              var metaball_d = 10000.0;
+              var has_metaballs = false;
+              var metaball_idx = -1.0;
+
+              let inside_grid = (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z));
+              if (inside_grid) {
                   let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                   let cell = grid[idx];
                   let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
+
+                  // 1. Shockwave wave deformations
+                  var wave_deformation = 0.0;
+                  for(var i = 0; i < count; i = i + 1) {
+                      let s_idx = i32(round(cell.ids[i]));
+                      if (s_idx >= 0 && s_idx < 1024) {
+                        let s_data = u.instances[s_idx];
+                        let raw_w = s_data.pos_scale.w;
+                        if (raw_w != 0.0 && s_data.sph_fields.w != 0.0) {
+                          let dist_to_center = length(p - s_data.pos_scale.xyz);
+                          let d_front = dist_to_center - raw_w;
+                          if (dist_to_center < 16.0 && abs(d_front) < 4.0) {
+                            let wave_phase = d_front * 3.0;
+                            let envelope = exp(-pow(d_front / 2.0, 2.0));
+                            let amp = sin(wave_phase) * envelope * 0.35 * (s_data.sph_fields.w / 30.0);
+                            wave_deformation += amp;
+                          }
+                        }
+                      }
+                  }
+                  d.x += wave_deformation;
+
+                  // 2. Metaballs & CSG objects
                   for(var i = 0; i < count; i = i + 1) {
                       let s_idx = i32(round(cell.ids[i]));
                       if (s_idx >= 0 && s_idx < 1024) {
                         let s_data = u.instances[s_idx];
                         let raw_w = s_data.pos_scale.w;
                         if (raw_w != 0.0) {
-                          if (s_data.sph_fields.w != 0.0) {
-                            let dist_to_center = length(p - s_data.pos_scale.xyz);
-                            let d_front = dist_to_center - raw_w;
-                            if (dist_to_center < 16.0 && abs(d_front) < 4.0) {
-                              let wave_phase = d_front * 3.0;
-                              let envelope = exp(-pow(d_front / 2.0, 2.0));
-                              let amp = sin(wave_phase) * envelope * 0.35 * (s_data.sph_fields.w / 30.0);
-                              wave_deformation += amp;
-                            }
+                          var local_dist = 10000.0;
+                          let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                          let csg_root_idx = i32(round(s_data.color_csg.w));
+                          if (csg_root_idx == -5) {
+                               let width = s_data.sph_fields.x;
+                               let height = s_data.sph_fields.y;
+                               let slider1_val = s_data.sph_fields.z;
+                               let slider2_val = s_data.sph_fields.w;
+
+                               let board_half = vec3<f32>(width * 0.5, height * 0.5, 0.015);
+                               let board_d = sdBox(local_p, board_half) - 0.005;
+
+                               let slider1_track_pos = vec3<f32>(-0.5, 0.2, 0.0);
+                               let slider1_track_d = sdBox(local_p - slider1_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+
+                               let knob1_x = -0.5 + (slider1_val - 0.5) * 1.0;
+                               let knob1_pos = vec3<f32>(knob1_x, 0.2, 0.02);
+                               let knob1_d = sdSphere(local_p - knob1_pos, 0.045);
+
+                               let slider2_track_pos = vec3<f32>(-0.5, -0.2, 0.0);
+                               let slider2_track_d = sdBox(local_p - slider2_track_pos, vec3<f32>(0.5, 0.02, 0.015));
+
+                               let knob2_x = -0.5 + (slider2_val - 0.5) * 1.0;
+                               let knob2_pos = vec3<f32>(knob2_x, -0.2, 0.02);
+                               let knob2_d = sdSphere(local_p - knob2_pos, 0.045);
+
+                               var final_d = max(board_d, -slider1_track_d);
+                               final_d = max(final_d, -slider2_track_d);
+                               final_d = min(final_d, knob1_d);
+                               final_d = min(final_d, knob2_d);
+
+                               local_dist = final_d;
+
+                               if (local_dist < metaball_d) {
+                                   metaball_d = local_dist;
+                                   has_metaballs = true;
+                                   metaball_idx = f32(s_idx);
+                               }
+                               continue;
+                          }
+                          if (csg_root_idx <= -99) {
+                              if (!eval_metaballs) { continue; }
+                              var s = f32(-99 - csg_root_idx) / 100.0;
+                              if (s < 0.05) { s = 0.6; }
+                              let wave_phase = (local_p.x + local_p.z) * 8.0 - u.time * 12.0;
+                              let wave = 0.05 * sin(wave_phase) * exp(-length(local_p) * 0.15);
+                              let wavy_p = vec3<f32>(local_p.x, local_p.y + wave, local_p.z);
+                              let squashed_p = vec3<f32>(wavy_p.x, wavy_p.y / s, wavy_p.z);
+                              local_dist = (length(squashed_p) - raw_w) * min(1.0, s) * 0.85;
+                              metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
+                              has_metaballs = true;
+                              metaball_idx = f32(s_idx);
+                          } else {
+                              if (csg_root_idx >= 0) {
+                                  local_dist = evaluateCsgTree(local_p, csg_root_idx);
+                              } else {
+                                  if (raw_w > 0.0 && raw_w < 500.0) {
+                                    if (s_data.sph_fields.x != 0.0) {
+                                        continue;
+                                    }
+                                    local_dist = sdSphere(local_p, raw_w);
+                                  } else if (raw_w < 0.0 && raw_w > -1000.0) {
+                                    let size = -raw_w;
+                                    local_dist = sdBox(local_p, vec3<f32>(size));
+                                  } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
+                                    let size = -raw_w - 1000.0;
+                                    local_dist = sdCapsule(local_p, size, size);
+                                  } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
+                                    let size = raw_w - 1000.0;
+                                    local_dist = sdCylinder(local_p, size, size);
+                                  } else if (raw_w >= 2000.0) {
+                                    let size = raw_w - 2000.0;
+                                    local_dist = sdTorus(local_p, vec2<f32>(size, 0.25 * size));
+                                  } else {
+                                    let size = -raw_w - 2000.0;
+                                    local_dist = sdOctahedron(local_p, size);
+                                  }
+                              }
+                              if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
                           }
                         }
                       }
                   }
-              }
-              voxel_dist += wave_deformation;
 
-             var d = vec2<f32>(voxel_dist, -1.0);
-             var metaball_d = 10000.0;
-
-            if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
-                let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
-                let cell_max = cell_min + vec3<f32>(u.cell_size);
-                var t_exit = 100.0;
-                if (rd.x > 0.0001) { t_exit = min(t_exit, (cell_max.x - p_local.x) / rd.x); }
-                else if (rd.x < -0.0001) { t_exit = min(t_exit, (cell_min.x - p_local.x) / rd.x); }
-                if (rd.y > 0.0001) { t_exit = min(t_exit, (cell_max.y - p_local.y) / rd.y); }
-                else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p_local.y) / rd.y); }
-                if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p_local.z) / rd.z); }
-                else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p_local.z) / rd.z); }
-
-                let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
-                let cell = grid[idx];
-                let count = min(i32(round(cell.header.x)), " (Int.str max-ids) ");
-                var has_metaballs = false;
-                var metaball_idx = -1.0;
-                for(var i = 0; i < count; i = i + 1) {
-                    let s_idx = i32(round(cell.ids[i]));
-                    if (s_idx >= 0 && s_idx < 1024) {
-                      let s_data = u.instances[s_idx];
-                      let raw_w = s_data.pos_scale.w;
-                      if (raw_w != 0.0) {
-                       var local_dist = 10000.0;
-                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                        let csg_root_idx = i32(round(s_data.color_csg.w));
-                        if (csg_root_idx == -5) {
-                             let width = s_data.sph_fields.x;
-                             let height = s_data.sph_fields.y;
-                             let slider1_val = s_data.sph_fields.z;
-                             let slider2_val = s_data.sph_fields.w;
-
-                             let board_half = vec3<f32>(width * 0.5, height * 0.5, 0.015);
-                             let board_d = sdBox(local_p, board_half) - 0.005;
-
-                             let slider1_track_pos = vec3<f32>(-0.5, 0.2, 0.0);
-                             let slider1_track_d = sdBox(local_p - slider1_track_pos, vec3<f32>(0.5, 0.02, 0.015));
-
-                             let knob1_x = -0.5 + (slider1_val - 0.5) * 1.0;
-                             let knob1_pos = vec3<f32>(knob1_x, 0.2, 0.02);
-                             let knob1_d = sdSphere(local_p - knob1_pos, 0.045);
-
-                             let slider2_track_pos = vec3<f32>(-0.5, -0.2, 0.0);
-                             let slider2_track_d = sdBox(local_p - slider2_track_pos, vec3<f32>(0.5, 0.02, 0.015));
-
-                             let knob2_x = -0.5 + (slider2_val - 0.5) * 1.0;
-                             let knob2_pos = vec3<f32>(knob2_x, -0.2, 0.02);
-                             let knob2_d = sdSphere(local_p - knob2_pos, 0.045);
-
-                             var final_d = max(board_d, -slider1_track_d);
-                             final_d = max(final_d, -slider2_track_d);
-                             final_d = min(final_d, knob1_d);
-                             final_d = min(final_d, knob2_d);
-
-                             local_dist = final_d;
-
-                             if (local_dist < metaball_d) {
-                                 metaball_d = local_dist;
-                                 has_metaballs = true;
-                                 metaball_idx = f32(s_idx);
-                             }
-                             continue;
-                         }
-                        if (csg_root_idx <= -99) {
-                            if (!eval_metaballs) { continue; }
-                             var s = f32(-99 - csg_root_idx) / 100.0;
-                             if (s < 0.05) { s = 0.6; }
-                             let wave_phase = (local_p.x + local_p.z) * 8.0 - u.time * 12.0;
-                             let wave = 0.05 * sin(wave_phase) * exp(-length(local_p) * 0.15);
-                             let wavy_p = vec3<f32>(local_p.x, local_p.y + wave, local_p.z);
-                             let squashed_p = vec3<f32>(wavy_p.x, wavy_p.y / s, wavy_p.z);
-                             local_dist = (length(squashed_p) - raw_w) * min(1.0, s) * 0.85;
-                             metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
-                            has_metaballs = true;
-                            metaball_idx = f32(s_idx);
-                        } else {
-                            if (csg_root_idx >= 0) {
-                                local_dist = evaluateCsgTree(local_p, csg_root_idx);
-                            } else {
-                                if (raw_w > 0.0 && raw_w < 500.0) {
-                                  if (s_data.sph_fields.x != 0.0) {
-                                      continue;
-                                  }
-                                  local_dist = sdSphere(local_p, raw_w);
-                                } else if (raw_w < 0.0 && raw_w > -1000.0) {
-                                  let size = -raw_w;
-                                  local_dist = sdBox(local_p, vec3<f32>(size));
-                                } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
-                                  let size = -raw_w - 1000.0;
-                                  local_dist = sdCapsule(local_p, size, size);
-                                } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
-                                  let size = raw_w - 1000.0;
-                                  local_dist = sdCylinder(local_p, size, size);
-                                } else if (raw_w >= 2000.0) {
-                                  let size = raw_w - 2000.0;
-                                  local_dist = sdTorus(local_p, vec2<f32>(size, 0.25 * size));
-                                } else {
-                                  let size = -raw_w - 2000.0;
-                                  local_dist = sdOctahedron(local_p, size);
-                                }
-                            }
-                            if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
-                        }
+                  if (has_metaballs && eval_metaballs) {
+                      let blended_d = smin(d.x, metaball_d, u.grid_dims.w);
+                      var idx = d.y;
+                      if (metaball_d < d.x) {
+                          idx = metaball_idx;
                       }
-                    }
-                }
-                if (has_metaballs && eval_metaballs) {
-                    let blended_d = smin(d.x, metaball_d, u.grid_dims.w);
-                    var idx = d.y;
-                    if (metaball_d < d.x) {
-                        idx = metaball_idx;
-                    }
-                    d = vec2<f32>(blended_d, idx);
-                }
-                var h_step = min(d.x, max(t_exit + 0.01, 0.05));
-                if (u.shadow_ao_quality.z > 0.5) {
-                    h_step = d.x;
-                }
-                return vec4<f32>(h_step, d.x, d.y, metaball_d);
-            } else {
-                return vec4<f32>(d.x, d.x, d.y, 10000.0);
-            }
-         }
+                      d = vec2<f32>(blended_d, idx);
+                  }
+
+                  var t_exit = 100.0;
+                  if (u.shadow_ao_quality.z <= 0.5) {
+                      let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
+                      let cell_max = cell_min + vec3<f32>(u.cell_size);
+                      if (rd.x > 0.0001) { t_exit = min(t_exit, (cell_max.x - p_local.x) / rd.x); }
+                      else if (rd.x < -0.0001) { t_exit = min(t_exit, (cell_min.x - p_local.x) / rd.x); }
+                      if (rd.y > 0.0001) { t_exit = min(t_exit, (cell_max.y - p_local.y) / rd.y); }
+                      else if (rd.y < -0.0001) { t_exit = min(t_exit, (cell_min.y - p_local.y) / rd.y); }
+                      if (rd.z > 0.0001) { t_exit = min(t_exit, (cell_max.z - p_local.z) / rd.z); }
+                      else if (rd.z < -0.0001) { t_exit = min(t_exit, (cell_min.z - p_local.z) / rd.z); }
+                  }
+
+                  var h_step = min(d.x, max(t_exit + 0.01, 0.05));
+                  if (u.shadow_ao_quality.z > 0.5) {
+                      h_step = d.x;
+                  }
+                  return vec4<f32>(h_step, d.x, d.y, metaball_d);
+              } else {
+                  return vec4<f32>(d.x, d.x, d.y, 10000.0);
+              }
+          }
 
         fn getShadow(ro: vec3<f32>, rd: vec3<f32>, mint: f32, maxt: f32, k: f32, dither_threshold: f32, max_steps: i32) -> f32 {
             var res = 1.0;
@@ -1197,13 +1197,6 @@
                     final_metaball_d = res.w;
                     if (res.y < 0.001) { break; }
                     
-                    var dt = res.x;
-                    if (res.y < 1.0) {
-                        dt = 0.4;
-                    } else {
-                        dt = min(min(res.x, res.y * 0.5), 1.2);
-                    }
-                    
                     let view_mode = u.grid_origin.w;
                     var sdf_density = 0.0;
                     if (view_mode == 0.0) {
@@ -1234,6 +1227,16 @@
                          local_fog_col = mix(local_fog_col, inst_col, color_weight);
                     }
                     local_fog_col += interp_data.emissive * 0.12;
+                    
+                    var dt = res.x;
+                    if (res.y < 1.0) {
+                        dt = 0.4;
+                    } else {
+                        dt = min(min(res.x, res.y * 0.5), 1.2);
+                        let density_factor = clamp(1.0 - density * 20.0, 0.0, 1.0);
+                        let step_scale = 1.0 + clamp((t - 15.0) * 0.08, 0.0, 6.0) * density_factor;
+                        dt *= step_scale;
+                    }
                     
                     fog_color_accum += local_fog_col * density * dt;
                     fog_optical_depth += density * dt;
