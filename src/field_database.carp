@@ -111,7 +111,7 @@
   (sig evaluate-csg-primitive (Fn [(Ref (Vector3 Double)) Int (Ref (Vector3 Double)) (Ref Quaternion) Double (Ref Vector4)] Double))
   (sig get-index-by-handle (Fn [(Ref FieldDatabase) (Ref (Handle ()))] Int))
   (sig register-instance-generic! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double (Ref (Array FieldInitialVal)) (Maybe SDF)] Int))
-  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double (Vector3 Double) Double (Maybe SDF)] Int))
+  (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double Double Double (Vector3 Double) Double (Maybe SDF)] Int))
   (sig release-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ()))] ()))
   (sig set-scale! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig set-velocity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
@@ -131,6 +131,10 @@
   (sig tick-age! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-pressure! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-charge! (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-density! (Fn [(Ptr ()) Double] ()))
+  (sig tick-lifetime! (Fn [(Ptr ()) Double] ()))
+  (sig set-density! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
+  (sig set-lifetime! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
   (sig diffuse-velocity! (Fn [(Ref FieldDatabase) Double] ()))
   (sig tick! (Fn [(Ref FieldDatabase) Double] ()))
 
@@ -308,10 +312,56 @@
           (let [curr-age @(Array.unsafe-nth age-arr i)]
             (Array.aset! age-arr i (+ curr-age dt)))))))
 
+  (defn diffuse-density! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          density-slot 6
+          density-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) density-slot)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          diffusion-rate 0.5
+          new-dens (Array.copy density-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [d-i @(Array.unsafe-nth density-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  decay-rate 0.05
+                  delta-density (* (- 1.0 d-i) (* decay-rate dt))]
+              (do
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [d-j @(Array.unsafe-nth density-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              transfer (* (* (- d-j d-i) factor) dt)]
+                          (set! delta-density (+ delta-density (* transfer diffusion-rate))))))))
+                (Array.aset! &new-dens i (+ d-i delta-density))))))
+        (for [i 0 num-entities]
+          (Array.aset! density-arr i @(Array.unsafe-nth &new-dens i))))))
+
+  (defn tick-lifetime! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          lifetime-slot 7
+          lifetime-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) lifetime-slot)]
+      (for [i 0 num-entities]
+        (when @(Array.unsafe-nth active-arr i)
+          (let [curr-life @(Array.unsafe-nth lifetime-arr i)]
+            (Array.aset! lifetime-arr i (- curr-life dt)))))))
+
   (defn new-brick [default-values-ref]
     (let [data (the (Array Double) [])]
       (do
-        (for [slot 0 6]
+        (for [slot 0 8]
           (let [def-val @(Array.unsafe-nth default-values-ref slot)]
             (for [cell 0 512]
               (Array.push-back! &data def-val))))
@@ -361,7 +411,9 @@
               h-slot (the Int (register-kernel! &db @"humidity" 0.2 0.0 1.0 diffuse-humidity!))
               p-slot (the Int (register-kernel! &db @"pressure" 0.0 0.0 100.0 diffuse-pressure!))
               c-slot (the Int (register-kernel! &db @"charge" 0.0 -10.0 10.0 diffuse-charge!))
-              g-slot (the Int (register-kernel! &db @"gravity" 1.0 -50.0 50.0 noop-update))]
+              g-slot (the Int (register-kernel! &db @"gravity" 1.0 -50.0 50.0 noop-update))
+              d-slot (the Int (register-kernel! &db @"density" 1.0 0.0 100.0 diffuse-density!))
+              l-slot (the Int (register-kernel! &db @"lifetime" 1.0 0.0 100.0 tick-lifetime!))]
           db))))
 
 
@@ -622,14 +674,16 @@
                 (FieldDatabase.set-max-scale! db scale-val)))
             (the Int found-idx))))))
 
-  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val vel-val influence-val sdf-val]
+  (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val density-val lifetime-val vel-val influence-val sdf-val]
     (let [initial-fields (the (Array FieldInitialVal)
                            [(FieldInitialVal.init 0 (the Double temp-val))
                             (FieldInitialVal.init 1 (the Double age-val))
                             (FieldInitialVal.init 2 (the Double hum-val))
                             (FieldInitialVal.init 3 (the Double pres-val))
                             (FieldInitialVal.init 4 (the Double charge-val))
-                            (FieldInitialVal.init 5 (the Double gravity-val))])]
+                            (FieldInitialVal.init 5 (the Double gravity-val))
+                            (FieldInitialVal.init 6 (the Double density-val))
+                            (FieldInitialVal.init 7 (the Double lifetime-val))])]
       (do
         (let [idx (the Int (register-instance-generic! db handle (the Int shape-type-val) (the Vector4 params-val) (the (Vector3 Double) pos-val) (the Quaternion rot-val) (the Double scale-val) (the Int csg-idx-val) (the (Vector3 Double) color-val) (the Double influence-val) &initial-fields (the (Maybe SDF) sdf-val)))]
           (do
@@ -702,6 +756,20 @@
       (when (>= id 0)
         (do
           (set-scalar-field! db 5 id val)
+          ()))))
+
+  (defn set-density! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (do
+          (set-scalar-field! db 6 id val)
+          ()))))
+
+  (defn set-lifetime! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (do
+          (set-scalar-field! db 7 id val)
           ()))))
 
   (defn set-temperature! [db handle val]

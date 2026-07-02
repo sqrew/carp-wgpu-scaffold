@@ -74,7 +74,7 @@
               root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
               root-color (Color.init (Vector3.init 0.2 0.8 0.2))
               params (Vector4.init 1.5 1.5 1.5 0.0)
-              root-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0)
+              root-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
               child-ent (GameWorld.create-entity! &world)
               child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
               child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -117,7 +117,7 @@
               zero-g-color-v (Vector3.init 0.6 0.1 0.8)
               zero-g-color (Color.init @&zero-g-color-v)
               params (Vector4.init 1.0 0.0 0.0 0.0)
-              zero-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 0.0 1.0)
+              zero-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
               gs (GravitySource.init 0.0)]
           (do
             (ECS.add-component! &world &zero-g-ent zero-g-rb)
@@ -135,7 +135,7 @@
                 c-val (Vector3.init 0.6 0.1 0.8)
                 color (Color.init @&c-val)
                 params (Vector4.init 0.5 0.5 0.5 0.0)
-                box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0)]
+                box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
             (do
               (ECS.add-component! &world &box-ent rb)
               (ECS.add-component! &world &box-ent col)
@@ -149,7 +149,7 @@
               inv-g-color-v (Vector3.init 0.9 0.2 0.1)
               inv-g-color (Color.init @&inv-g-color-v)
               params (Vector4.init 1.0 0.0 0.0 0.0)
-              inv-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 -1.0 1.0)
+              inv-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
               gs (GravitySource.init -1.0)]
           (do
             (ECS.add-component! &world &inv-g-ent inv-g-rb)
@@ -167,7 +167,7 @@
                 c-val (Vector3.init 0.9 0.2 0.1)
                 color (Color.init @&c-val)
                 params (Vector4.init 0.5 0.5 0.5 0.0)
-                box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0)]
+                box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
             (do
               (ECS.add-component! &world &box-ent rb)
               (ECS.add-component! &world &box-ent col)
@@ -194,7 +194,7 @@
                                     (Vector3.init 1.0 1.0 0.0))))
                   color (Color.init @&c-val)
                   params (Vector4.init 0.5 0.5 0.5 0.0)
-                  fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0)]
+                  fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
               (do
                 (ECS.add-component! &world &ent rb)
                 (ECS.add-component! &world &ent col)
@@ -878,6 +878,8 @@
                                              @(FieldInstance.pressure fi)
                                              @(FieldInstance.charge fi)
                                              @(FieldInstance.gravity fi)
+                                             @(FieldInstance.density fi)
+                                             @(FieldInstance.lifetime fi)
                                              (the (Vector3 Double) vel)
                                              @(FieldInstance.influence fi)
                                              (the (Maybe SDF) sdf-maybe)))]
@@ -896,7 +898,7 @@
                             (let [dir (Vector3.mul vel (/ 1.0 speed))
                                   up-axis (Vector3.init 0.0 1.0 0.0)
                                   rot-val (Engine.rotation-between &up-axis &dir)]
-                              (FieldDatabase.set-rotation! db h rot-val))
+                               (FieldDatabase.set-rotation! db h rot-val))
                             (FieldDatabase.set-rotation! db h (Quaternion.identity))))
                         (FieldDatabase.set-rotation! db h @(RigidBody.rotation rb)))
                       (let [db-idx (FieldDatabase.get-index-by-handle db h)]
@@ -919,6 +921,8 @@
                 (FieldDatabase.set-pressure! db h @(FieldInstance.pressure fi))
                 (FieldDatabase.set-charge! db h @(FieldInstance.charge fi))
                 (FieldDatabase.set-gravity! db h @(FieldInstance.gravity fi))
+                (FieldDatabase.set-density! db h @(FieldInstance.density fi))
+                (FieldDatabase.set-lifetime! db h @(FieldInstance.lifetime fi))
                 (FieldDatabase.set-influence! db h @(FieldInstance.influence fi))
                 (FieldDatabase.set-root-csg-index! db h @(FieldInstance.csg-index fi)))))))))
 
@@ -1103,8 +1107,18 @@
                       (when (= next-prog 32)
                         (do
                           (VoxelBaker.compute-chunk-lighting! chunk-ref)
-                          (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk-ref))
-                          (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk-ref))
+                          (let [b @(Chunk.gpu-buffer chunk-ref)]
+                            (if (WGPU.buffer-null?- b)
+                                (match (WGPU.create-buffer ctx 131072)
+                                  (Result.Error err) (IO.println &(format "Error creating buffer for baked chunk: %s" &err))
+                                  (Result.Success new-b)
+                                    (do
+                                      (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk-ref))
+                                      (Chunk.set-gpu-buffer! chunk-ref new-b)
+                                      (VoxelBaker.pack-and-copy-chunk! ctx ren new-b @(Chunk.atlas-slot chunk-ref))))
+                                (do
+                                  (WGPU.write-floats ctx b (Chunk.voxel-data chunk-ref))
+                                  (VoxelBaker.pack-and-copy-chunk! ctx ren b @(Chunk.atlas-slot chunk-ref)))))
                           (Engine.set-need-chunk-scan! e true)))
                       (set! loaded-any true)))
                   
@@ -1161,16 +1175,19 @@
                                                                 (set! found-idx i))))
                                                           (if (= found-idx -1)
                                                               (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
-                                                                    chunk (Chunk.init qx yq qz voxel-data slot false 0)]
+                                                                    chunk (Chunk.init qx yq qz voxel-data slot false 0 (null-buffer))]
                                                                 (do
                                                                   (Array.push-back! (World.chunks world-data) chunk)))
                                                               (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
                                                                     voxel-data @(Chunk.voxel-data saved-chunk)]
-                                                                (do
-                                                                  (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) &voxel-data)
-                                                                  (VoxelBaker.pack-and-copy-chunk! ctx ren slot)
-                                                                  (let [chunk (Chunk.init qx yq qz voxel-data slot true 32)]
-                                                                    (Array.push-back! (World.chunks world-data) chunk)))))
+                                                                (match (WGPU.create-buffer ctx 131072)
+                                                                  (Result.Error err) (IO.println &(format "Error creating buffer for loaded chunk: %s" &err))
+                                                                  (Result.Success b)
+                                                                    (do
+                                                                      (WGPU.write-floats ctx b &voxel-data)
+                                                                      (VoxelBaker.pack-and-copy-chunk! ctx ren b slot)
+                                                                      (let [chunk (Chunk.init qx yq qz voxel-data slot true 32 b)]
+                                                                        (Array.push-back! (World.chunks world-data) chunk))))))
                                                           (set! loaded-any true))))))
                                                 (set! i-dy (inc i-dy)))))
                                           (set! dx (inc dx)))))
@@ -1224,19 +1241,13 @@
                               (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad)
                               (VoxelBaker.build-voxel-grid-cpu! chunk pos rad))
                           (Diagnostics.end-zone! diag "Bake: Carve CPU")
-                          (set! overlapped true)))))
-                  (when overlapped
-                    (do
-                      (Diagnostics.start-zone! diag "Bake: Compute Lighting")
-                      (VoxelBaker.compute-chunk-lighting! chunk)
-                      (Diagnostics.end-zone! diag "Bake: Compute Lighting")
-                      (Chunk.set-modified! chunk true)
-                      (Diagnostics.start-zone! diag "Bake: GPU Upload")
-                      (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
-                      (Diagnostics.end-zone! diag "Bake: GPU Upload")
-                      (Diagnostics.start-zone! diag "Bake: Pack & Copy")
-                      (VoxelBaker.pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
-                      (Diagnostics.end-zone! diag "Bake: Pack & Copy"))))))))
+                          (Diagnostics.start-zone! diag "Bake: Carve GPU")
+                          (if (< op 0.5)
+                              (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad)
+                              (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad))
+                          (Diagnostics.end-zone! diag "Bake: Carve GPU")
+                          (Chunk.set-modified! chunk true)
+                          (set! overlapped true))))))))))
         (Engine.set-voxel-dirty! e false))))
 
   (defn sync-render-db! [e ctx ren]

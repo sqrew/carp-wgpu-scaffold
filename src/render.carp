@@ -67,7 +67,7 @@
   (sig build-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double] ()))
   (sig carve-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
   (sig build-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] ()))
-  (sig pack-and-copy-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) Int] ()))
+  (sig pack-and-copy-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) WGPUBuffer Int] ()))
 )
 
 (defmodule WGPURenderer

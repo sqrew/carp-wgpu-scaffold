@@ -88,7 +88,7 @@
               panel-comp (UiPanel.init target-handle 2.0 2.2 [ctrl1 ctrl2 ctrl3 ctrl4 ctrl5] true)
               bbt (BillboardTag.init)
               panel-color (Color.init (Vector3.init s3-val s4-val s5-val))
-              fi-comp (FieldInstance.init 0 (Vector4.init 2.0 2.2 s1-val s2-val) 1.0 -5 2.0 2.2 s1-val s2-val 0.0 -999.0 1.0)]
+              fi-comp (FieldInstance.init 0 (Vector4.init 2.0 2.2 s1-val s2-val) 1.0 -5 2.0 2.2 s1-val s2-val 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
           (do
             (ECS.add-component! world &panel-ent panel-rb)
             (ECS.add-component! world &panel-ent panel-comp)
@@ -103,7 +103,7 @@
           vol (Volume.Sdf (SDF.init-sphere 4.0 @&pos (Quaternion.identity)))
           col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
           color (Color.init (Vector3.init 0.8 0.2 0.8))
-          fi (FieldInstance.init 1 (Vector4.init 1.0 1.0 1.0 0.0) 4.0 -2 0.5 0.5 0.0 0.5 0.0 0.0 1.0)
+          fi (FieldInstance.init 1 (Vector4.init 1.0 1.0 1.0 0.0) 4.0 -2 0.5 0.5 0.0 0.5 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
           csg (CsgNode.init (Box.init (SDF.init-sphere 4.0 pos (Quaternion.identity))) 1)
           gs (GravitySource.init 0.0)]
       (do

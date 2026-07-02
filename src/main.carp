@@ -86,6 +86,7 @@
               (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))              (Result.Error e) (do (println* "Renderer Error: " &e) -2)
               (Result.Success ren)
                 (do
+                  (World.init-gpu-buffers! ctx (Engine.world-data &eng))
                   (println* "Engine started.")
                   (let [frame-count 0
                         current-width width

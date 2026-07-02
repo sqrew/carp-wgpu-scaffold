@@ -23,23 +23,27 @@
       (let [max-val (if (> a b) a b)]
         (+ max-val (* (* (* h h) h) (* k (/ 1.0 6.0)))))))
 
-  (defn pack-and-copy-chunk! [ctx ren slot]
+  (defn pack-and-copy-chunk! [ctx ren v-gpu-b slot]
     (let [v-half-b @(WGPURenderer.voxel-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
-          bg @(WGPURenderer.pack-bind-group ren)
           slot-x (Int.mod slot 12)
           slot-y (Int.mod (/ slot 12) 12)
           slot-z (/ slot 144)
           ox (* slot-x 32)
           oy (* slot-y 32)
-          oz (* slot-z 32)]
-      (do
-        (WGPU.dispatch ctx pipe bg 512)
-        (WGPURender.copy-buffer-to-3d-texture-offset 
-          ctx 
-          v-half-b 
-          @(WGPURenderer.voxel-texture ren) 
-          ox oy oz 32 32 32))))
+          oz (* slot-z 32)
+          pack-bufs [v-gpu-b v-half-b]]
+      (match (WGPU.create-bind-group ctx pipe &pack-bufs)
+        (Result.Error e) (IO.println &(format "Pack Bind Group error: %s" &e))
+        (Result.Success bg)
+          (do
+            (WGPU.dispatch ctx pipe bg 512)
+            (WGPU.free-bind-group bg)
+            (WGPURender.copy-buffer-to-3d-texture-offset 
+              ctx 
+              v-half-b 
+              @(WGPURenderer.voxel-texture ren) 
+              ox oy oz 32 32 32)))))
 
   (defn chunk-overlaps-sphere? [chunk center radius]
     (let [qx @(Chunk.coord-x chunk)
@@ -65,27 +69,26 @@
       (< dist-sq (* r-padded r-padded))))
 
   (defn run-voxel-action-gpu! [ctx ren chunk center radius op-type]
-    (let [qx @(Chunk.coord-x chunk)
+    (let [cx @(Vector3.x center)
+          cy @(Vector3.y center)
+          cz @(Vector3.z center)
+          qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
           ox (* (Double.from-int qx) 32.0)
           oy (* (Double.from-int qy) 32.0)
           oz (* (Double.from-int qz) 32.0)
           cell-size 1.0
-          cx @(Vector3.x center)
-          cy @(Vector3.y center)
-          cz @(Vector3.z center)
           params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
                        (Double.to-float cell-size)
                        (Double.to-float cx) (Double.to-float cy) (Double.to-float cz)
                        (Double.to-float radius)
                        (Double.to-float op-type)
                        0.0f 0.0f 0.0f]
-          v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+          v-gpu-b @(Chunk.gpu-buffer chunk)
           c-params-b @(WGPURenderer.carve-params-buffer ren)
           pipe @(WGPURenderer.carve-pipeline ren)]
       (do
-        (WGPU.write-floats ctx v-gpu-b (Chunk.voxel-data chunk))
         (WGPU.write-floats ctx c-params-b &params-data)
         (let [bufs [v-gpu-b c-params-b]]
           (match (WGPU.create-bind-group ctx pipe &bufs)
@@ -94,7 +97,7 @@
               (do
                 (WGPU.dispatch ctx pipe bg 512)
                 (WGPU.free-bind-group bg))))
-        (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))
+        (pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk))
         )))
 
   (defn carve-voxel-grid-gpu! [ctx ren chunk center radius]
@@ -221,8 +224,18 @@
     (do
       (bake-chunk-slices! ctx ren chunk world-data 0 32)
       (VoxelBaker.compute-chunk-lighting! chunk)
-      (WGPU.write-floats ctx @(WGPURenderer.voxel-gpu-buffer ren) (Chunk.voxel-data chunk))
-      (pack-and-copy-chunk! ctx ren @(Chunk.atlas-slot chunk))))
+      (let [b @(Chunk.gpu-buffer chunk)]
+        (if (WGPU.buffer-null?- b)
+            (match (WGPU.create-buffer ctx 131072)
+              (Result.Error e) (IO.println &(format "Error creating dynamic GPU buffer in bake-chunk!: %s" &e))
+              (Result.Success new-b)
+                (do
+                  (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk))
+                  (Chunk.set-gpu-buffer! chunk new-b)
+                  (pack-and-copy-chunk! ctx ren new-b @(Chunk.atlas-slot chunk))))
+            (do
+              (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
+              (pack-and-copy-chunk! ctx ren b @(Chunk.atlas-slot chunk)))))))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
     (let [chunks (World.chunks world-data)]

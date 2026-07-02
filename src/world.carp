@@ -1,4 +1,6 @@
-;; src/world.carp
+(deftemplate null-buffer (Fn [] WGPUBuffer)
+  "WGPUBuffer $NAME()"
+  "$DECL { return NULL; }")
 
 (deftype Chunk [
   coord-x Int
@@ -8,6 +10,7 @@
   atlas-slot Int
   modified Bool
   bake-progress Int
+  gpu-buffer WGPUBuffer
 ])
 
 (deftype World [
@@ -41,7 +44,7 @@
             (for [x -1 2]
               (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
                     slot (+ (+ (+ x 1) (* (+ y 1) 3)) (* (+ z 1) 9))
-                    chunk (Chunk.init x y z voxel-data slot false 32)]
+                    chunk (Chunk.init x y z voxel-data slot false 32 (null-buffer))]
                 (Array.push-back! &arr chunk)))))
         arr)))
 
@@ -52,6 +55,19 @@
           cidx (the (Array Int) (replicate 64 &-1))
           total-cells (* w (* h d))]
       (World.init (FieldDatabase.new total-cells @&origin cell-size w h d) origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []))))
+
+  (defn init-gpu-buffers! [ctx world-data]
+    (let [chunks (World.chunks world-data)
+          num-chunks (Array.length chunks)]
+      (for [i 0 num-chunks]
+        (let [chunk (Array.unsafe-nth chunks i)
+              buf (WGPU.create-buffer ctx 131072)]
+          (match buf
+            (Result.Error e) (IO.println &(format "Error creating GPU buffer for chunk %d" i))
+            (Result.Success b)
+              (do
+                (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
+                (Chunk.set-gpu-buffer! chunk b)))))))
 
   (defn create-spatial-grid [w]
     (SpatialGrid.new-with-origin
@@ -249,7 +265,7 @@
               (set! found-idx i))))
         (if (= found-idx -1)
             (let [saved-voxel @(Chunk.voxel-data chunk)
-                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true 32)]
+                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true 32 (null-buffer))]
               (Array.push-back! saved-list saved-chunk))
             (let [target-chunk (Array.unsafe-nth saved-list found-idx)]
                (Chunk.set-voxel-data! target-chunk @(Chunk.voxel-data chunk)))))))
