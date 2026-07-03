@@ -131,18 +131,14 @@
   (implements zero UiControl.zero)
 )
 
-(definterface node-type-id (Fn [(Ref a)] Int))
-(definterface wgsl-interaction-snippet (Fn [] String))
-(definterface pack-field-data (Fn [(Ref a)] (Array Float)))
+(defprotocol (GPUFieldNode a)
+  [(node-type-id (Fn [(Ref a)] Int))
+   (wgsl-interaction-snippet (Fn [] String))
+   (pack-field-data (Fn [(Ref a)] (Array Float)))])
 
-(deftype GravityWell [pull-force Double])
-(defmodule GravityWell
-  (defn zero [] (GravityWell.init 1.0))
-  (implements zero GravityWell.zero)
-
-  (sig node-type-id (Fn [(Ref GravityWell)] Int))
-  (defn node-type-id [gw] 1)
-  (implements node-type-id GravityWell.node-type-id)
+(impl-for GravitySource GPUFieldNode
+  (sig node-type-id (Fn [(Ref GravitySource)] Int))
+  (defn node-type-id [gs] 1)
 
   (defn wgsl-interaction-snippet []
     @"
@@ -153,12 +149,10 @@
           cell_velocity += normalize(to_node) * force * dt;
       }
     ")
-  (implements wgsl-interaction-snippet GravityWell.wgsl-interaction-snippet)
 
-  (defn pack-field-data [gw]
-    [ (Double.to-float @(GravityWell.pull-force gw))
+  (defn pack-field-data [gs]
+    [ (Double.to-float @(GravitySource.strength gs))
       0.0f 0.0f 0.0f ])
-  (implements pack-field-data GravityWell.pack-field-data)
 )
 
 (deftype UiPanel [
@@ -173,5 +167,5 @@
   (implements zero UiPanel.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel GravityWell)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel)
 

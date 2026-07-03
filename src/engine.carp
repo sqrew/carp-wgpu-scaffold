@@ -173,19 +173,7 @@
               (ECS.add-component! &world &box-ent col)
               (ECS.add-component! &world &box-ent color)
               (ECS.add-component! &world &box-ent box-fi))))
-        ;; Spawn dynamic JIT GravityWell Field (Cyan Sphere, scale 6.0, pull-force 80.0)
-        (let [gw-ent (GameWorld.create-entity! &world)
-              gw-pos (Vector3.init 0.0 15.0 0.0)
-              gw-rb (RigidBody.static @&gw-pos (Quaternion.identity) 0.5 0.5)
-              gw-color (Color.init (Vector3.init 0.0 0.8 1.0))
-              params (Vector4.init 1.0 0.0 0.0 0.0)
-              gw-fi (FieldInstance.init 1 params 6.0 -1 80.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
-              gw-comp (GravityWell.init 80.0)]
-          (do
-            (ECS.add-component! &world &gw-ent gw-rb)
-            (ECS.add-component! &world &gw-ent gw-color)
-            (ECS.add-component! &world &gw-ent gw-fi)
-            (ECS.add-component! &world &gw-ent gw-comp)))
+
 
         (for [y 0 5]
           (for [x 0 2]
@@ -1453,10 +1441,10 @@
             }"
           injection-accum @""]
       (do
-        (ECS.query world [ent (gw GravityWell)]
+        (ECS.query world [ent (gs GravitySource)]
           (let [inst-idx (FieldDatabase.get-index-by-handle db (ECS.Entity.handle &ent))]
             (when (>= inst-idx 0)
-              (set! injection-accum (str* injection-accum "\n  let instance = u.instances[" (Int.str inst-idx) "];\n" (GravityWell.wgsl-interaction-snippet))))))
+              (set! injection-accum (str* injection-accum "\n{\n  let instance = u.instances[" (Int.str inst-idx) "];\n" (GravitySource.wgsl-interaction-snippet) "\n}")))))
         (if (String.empty? &injection-accum)
             @""
             (str* header-block injection-accum footer-block)))))
