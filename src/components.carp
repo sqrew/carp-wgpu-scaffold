@@ -131,6 +131,36 @@
   (implements zero UiControl.zero)
 )
 
+(definterface node-type-id (Fn [(Ref a)] Int))
+(definterface wgsl-interaction-snippet (Fn [] String))
+(definterface pack-field-data (Fn [(Ref a)] (Array Float)))
+
+(deftype GravityWell [pull-force Double])
+(defmodule GravityWell
+  (defn zero [] (GravityWell.init 1.0))
+  (implements zero GravityWell.zero)
+
+  (sig node-type-id (Fn [(Ref GravityWell)] Int))
+  (defn node-type-id [gw] 1)
+  (implements node-type-id GravityWell.node-type-id)
+
+  (defn wgsl-interaction-snippet []
+    @"
+      let to_node = instance.pos_scale.xyz - voxel_pos;
+      let dist = length(to_node);
+      if (dist < instance.pos_scale.w) {
+          let force = (1.0 - (dist / instance.pos_scale.w)) * instance.sph_fields.x;
+          cell_velocity += normalize(to_node) * force * dt;
+      }
+    ")
+  (implements wgsl-interaction-snippet GravityWell.wgsl-interaction-snippet)
+
+  (defn pack-field-data [gw]
+    [ (Double.to-float @(GravityWell.pull-force gw))
+      0.0f 0.0f 0.0f ])
+  (implements pack-field-data GravityWell.pack-field-data)
+)
+
 (deftype UiPanel [
   target (Handle ())
   width Double
@@ -143,5 +173,5 @@
   (implements zero UiPanel.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel GravityWell)
 

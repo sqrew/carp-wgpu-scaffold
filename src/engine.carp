@@ -173,6 +173,19 @@
               (ECS.add-component! &world &box-ent col)
               (ECS.add-component! &world &box-ent color)
               (ECS.add-component! &world &box-ent box-fi))))
+        ;; Spawn dynamic JIT GravityWell Field (Cyan Sphere, scale 6.0, pull-force 80.0)
+        (let [gw-ent (GameWorld.create-entity! &world)
+              gw-pos (Vector3.init 0.0 15.0 0.0)
+              gw-rb (RigidBody.static @&gw-pos (Quaternion.identity) 0.5 0.5)
+              gw-color (Color.init (Vector3.init 0.0 0.8 1.0))
+              params (Vector4.init 1.0 0.0 0.0 0.0)
+              gw-fi (FieldInstance.init 1 params 6.0 -1 80.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+              gw-comp (GravityWell.init 80.0)]
+          (do
+            (ECS.add-component! &world &gw-ent gw-rb)
+            (ECS.add-component! &world &gw-ent gw-color)
+            (ECS.add-component! &world &gw-ent gw-fi)
+            (ECS.add-component! &world &gw-ent gw-comp)))
 
         (for [y 0 5]
           (for [x 0 2]
@@ -233,7 +246,9 @@
               false
               true
               diag
-              (Maybe.Nothing))))))
+              (Maybe.Nothing)
+              (Map.create)
+              (the String @""))))))
 
   (defn db [e]
     (World.field-db (Engine.world-data e)))
@@ -1364,7 +1379,134 @@
           (GPUSpatial.flatten-in-place! db world grid 64 flat-grid geom-map))
         (Diagnostics.end-zone! diag "Sync: Flatten Spatial Grid"))))
 
+  (deftemplate null-pipeline (Fn [] WGPUComputePipeline)
+    "WGPUComputePipeline $NAME()"
+    "$DECL { return NULL; }")
 
+  (sig get-or-compile-jit-pipeline! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) String] WGPUComputePipeline))
+  (defn get-or-compile-jit-pipeline! [e ctx master-wgsl-source]
+    (let [cache (Engine.jit-cache e)
+          cached-pipeline (Map.get-maybe cache &master-wgsl-source)]
+      (match cached-pipeline
+        (Maybe.Just pipe) pipe
+        (Maybe.Nothing)
+          (match (WGPU.create-pipeline ctx &master-wgsl-source "main")
+            (Result.Error err)
+              (do
+                (Diagnostics.log! (Engine.diagnostics e) (LogLevel.Error)
+                  &(str* "Una Driver Compiler Error: " &err))
+                (null-pipeline))
+            (Result.Success native-pipe)
+              (do
+                (Diagnostics.log! (Engine.diagnostics e) (LogLevel.Info)
+                  &@"Baking fresh physical system pipeline directly to GPU hardware.")
+                (Map.put! cache &master-wgsl-source &native-pipe)
+                native-pipe)))))
+
+  (sig assemble-dynamic-ecs-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-dynamic-ecs-shader [e world]
+    (let [db (Engine.db e)
+          header-block 
+          (str*
+            "struct PointInstance {
+                pos_scale: vec4<f32>,
+                rot: vec4<f32>,
+                color_csg: vec4<f32>,
+                sph_fields: vec4<f32>,
+            }
+
+            struct Uniforms {
+                time: f32, 
+                width: f32, 
+                height: f32, 
+                cell_size: f32,
+                cam_pos: vec4<f32>, 
+                cam_dir: vec4<f32>,
+                cam_right: vec4<f32>,
+                cam_up: vec4<f32>,
+                bg_color: vec4<f32>,
+                grid_dims: vec4<f32>,
+                grid_origin: vec4<f32>,
+                shadow_ao_quality: vec4<f32>,
+                instances: array<PointInstance, 512>,
+            }
+
+            @group(0) @binding(0) var<storage, read_write> voxel_grid: array<vec4<f32>>;
+            @group(0) @binding(1) var<uniform> u: Uniforms;
+
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let idx = global_id.x;
+                if (idx >= 32768u) { return; }
+                var cell = voxel_grid[idx];
+                let voxel_pos = vec3<f32>(f32(idx % 32u), f32((idx / 32u) % 32u), f32(idx / 1024u));
+                let dt = 0.00833;
+                let dummy_use = u.time * 0.0;
+                cell.x += dummy_use;
+                var cell_velocity = vec3<f32>(0.0);
+                // --- DYNAMIC INJECTIONS LOOP ---")
+          footer-block 
+          "
+                // Apply velocity displacement to Signed Distance Field
+                cell.x += length(cell_velocity) * 0.01;
+                voxel_grid[idx] = cell;
+            }"
+          injection-accum @""]
+      (do
+        (ECS.query world [ent (gw GravityWell)]
+          (let [inst-idx (FieldDatabase.get-index-by-handle db (ECS.Entity.handle &ent))]
+            (when (>= inst-idx 0)
+              (set! injection-accum (str* injection-accum "\n  let instance = u.instances[" (Int.str inst-idx) "];\n" (GravityWell.wgsl-interaction-snippet))))))
+        (if (String.empty? &injection-accum)
+            @""
+            (str* header-block injection-accum footer-block)))))
+
+  (sig evaluate-jit-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-jit-hot-reload! [e ctx ren]
+    (let [world (Engine.world e)
+          new-source (Engine.assemble-dynamic-ecs-shader e world)]
+      (if (String.empty? &new-source)
+          (when (not (= (Engine.last-known-script e) &new-source))
+            (do
+              (Engine.set-last-known-script! e @&new-source)
+              (IO.println "Physical system cleared (no active dynamic fields).")
+              (VoxelBaker.bake-voxel-grid! ctx ren (Engine.grid e) (Engine.world e) (Engine.world-data e))))
+          (when (not (= (Engine.last-known-script e) &new-source))
+            (do
+              (Engine.set-last-known-script! e @&new-source)
+              (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
+                (if (WGPU.pipeline-null?- pipe)
+                    ()
+                    (IO.println "Physical system reloaded and active."))))))))
+
+  (sig run-jit-physics-loop! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn run-jit-physics-loop! [e ctx ren]
+    (let [world-data (Engine.world-data e)
+          chunks (World.chunks world-data)
+          num-chunks (Array.length chunks)
+          script (Engine.last-known-script e)]
+      (if (String.empty? script)
+          ()
+          (let [cache (Engine.jit-cache e)
+                pipe-maybe (Map.get-maybe cache script)]
+            (match pipe-maybe
+              (Maybe.Just pipe)
+                (let [u-b (WGPURender.uniform-buffer-get-buffer @(WGPURenderer.u-buffer ren))]
+                  (for [i 0 num-chunks]
+                    (let [chunk (Array.unsafe-nth chunks i)
+                          v-gpu-b @(Chunk.gpu-buffer chunk)]
+                      (if (WGPU.buffer-null?- v-gpu-b)
+                          ()
+                          (let [bufs [v-gpu-b u-b]]
+                            (match (WGPU.create-bind-group ctx @&pipe &bufs)
+                              (Result.Error err)
+                                (IO.println &(str* "JIT Bind Group error: " &err))
+                              (Result.Success bg)
+                                (do
+                                  (WGPU.dispatch ctx @&pipe bg 512)
+                                  (WGPU.free-bind-group bg)
+                                  (VoxelBaker.pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk)))))))))
+              _ ())))))
 
   (defn tick! [e ctx ren width height]
     (let [dt (Clock.unscaled-dt (Engine.clock e))
@@ -1391,6 +1533,8 @@
           (Engine.set-grid-dirty! e true))
         (Diagnostics.end-zone! diag "Field DB Sync")
         (Diagnostics.start-zone! diag "Render Submit & Sync")
+        (Engine.evaluate-jit-hot-reload! e ctx ren)
+        (Engine.run-jit-physics-loop! e ctx ren)
         (Engine.submit-render-commands! e)
         (Engine.sync-render-db! e ctx ren)
         (Diagnostics.end-zone! diag "Render Submit & Sync")

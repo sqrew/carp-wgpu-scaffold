@@ -1817,4 +1817,53 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     voxel_half_buffer[idx] = vec2<u32>(p1, p2);
 }")
+
+  (defn build-master-jit-template [user-code-snippet]
+    (str*
+      "struct PointInstance {
+          pos_scale: vec4<f32>,
+          rot: vec4<f32>,
+          color_csg: vec4<f32>,
+          sph_fields: vec4<f32>,
+      }
+      struct Uniforms { 
+          time: f32, 
+          width: f32, 
+          height: f32, 
+          cell_size: f32,
+          cam_pos: vec4<f32>, 
+          cam_dir: vec4<f32>,
+          cam_right: vec4<f32>,
+          cam_up: vec4<f32>,
+          bg_color: vec4<f32>,
+          grid_dims: vec4<f32>,
+          grid_origin: vec4<f32>,
+          shadow_ao_quality: vec4<f32>,
+          instances: array<PointInstance, 512>,
+      }
+      
+      @group(0) @binding(0) var<storage, read_write> voxel_grid: array<vec4<f32>>;
+      @group(0) @binding(1) var<uniform> u: Uniforms;
+
+      @compute @workgroup_size(64)
+      fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+          let idx = global_id.x;
+          if (idx >= 32768u) { return; } // Match exact voxel array limit parameters
+          
+          var cell = voxel_grid[idx];
+          let dt = 0.00833; // Synced simulation timestep constant
+          let dummy_use = u.time * 0.0;
+          cell.x += dummy_use;
+          
+          // ============================================
+          // --- RUNTIME INJECTED SCRIPT BEGINS HERE ---
+"
+      @user-code-snippet
+      "
+          // --- RUNTIME INJECTED SCRIPT ENDS HERE ---
+          // ============================================
+          
+          voxel_grid[idx] = cell;
+      }"
+    ))
 )
