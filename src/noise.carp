@@ -1,19 +1,10 @@
 ;; src/noise.carp
 
 (defmodule WGPURenderer
-  (defn frac [v]
-    (- v (Double.floor v)))
-
   (defn hash2d [x z]
-    (let [p3-x (frac (* x 0.1031))
-          p3-y (frac (* z 0.1031))
-          p3-z (frac (* x 0.1031))
-          dot-val (+ (* p3-x (+ p3-y 33.33)) (+ (* p3-y (+ p3-z 33.33)) (* p3-z (+ p3-x 33.33))))
-          p3-x-new (+ p3-x dot-val)
-          p3-y-new (+ p3-y dot-val)
-          p3-z-new (+ p3-z dot-val)
-          res-val (* (+ p3-x-new p3-y-new) p3-z-new)]
-      (frac res-val)))
+    (let [s (Double.sin (+ (* x 12.9898) (* z 78.233)))
+          mult (* s 43758.5453123)]
+      (- mult (Double.floor mult))))
 
 
   (defn lerp [a b t]
@@ -75,15 +66,9 @@
       (+ (* W1 h-plains) (+ (* W2 h-canyons) (* W3 h-mountains)))))
 
   (defn hash3d [x y z]
-    (let [p3-x (frac (* x 0.1031))
-          p3-y (frac (* y 0.1031))
-          p3-z (frac (* z 0.1031))
-          dot-val (+ (* p3-x (+ p3-z 31.32)) (+ (* p3-y (+ p3-y 31.32)) (* p3-z (+ p3-x 31.32))))
-          p3-x-new (+ p3-x dot-val)
-          p3-y-new (+ p3-y dot-val)
-          p3-z-new (+ p3-z dot-val)
-          res-val (* (+ p3-x-new p3-y-new) p3-z-new)]
-      (frac res-val)))
+    (let [s (Double.sin (+ (+ (* x 12.9898) (* y 78.233)) (* z 144.7272)))
+          mult (* s 43758.5453123)]
+      (- mult (Double.floor mult))))
 
   (defn noise3d [x y z]
     (let [fx (Double.floor x)
