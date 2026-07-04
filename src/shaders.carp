@@ -1,8 +1,10 @@
 ;; src/shaders.carp
 
 (defmodule Shaders
-  (defn shader-wgsl [limit max-ids]
+  (defn shader-wgsl [limit max-ids ray-steps shadow-steps]
     (str*
+      "const MAX_RAY_STEPS: i32 = " (Int.str ray-steps) ";\n"
+      "const SHADOW_STEPS: i32 = " (Int.str shadow-steps) ";\n"
       "struct PointInstance {
           pos_scale: vec4<f32>,
           rot: vec4<f32>,
@@ -1157,7 +1159,7 @@
             let ro = u.cam_pos.xyz;
             let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
             let dither_threshold = getDitherThreshold(frag_in.position.xy);
-            let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, 16);
+            let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, SHADOW_STEPS);
            
            var t = 0.0;
             var hitId = -1.0;
@@ -1168,7 +1170,7 @@
 
             if (!is_volumetric) {
                 // Fast non-volumetric raymarching path
-                for(var i = 0; i < 80; i = i + 1) {
+                for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
                     let p = ro + rd * t;
                     let res = worldSDF(p, rd, dither_threshold, true);
                     hitId = res.z;
@@ -1190,7 +1192,7 @@
                 fog_color_accum = getSkyColor(rd) * fog_optical_depth;
             } else {
                 // Volumetric raymarching path
-                for(var i = 0; i < 80; i = i + 1) {
+                for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
                     let p = ro + rd * t;
                     let res = worldSDF(p, rd, dither_threshold, true);
                     hitId = res.z;
@@ -1359,7 +1361,7 @@
                         if (diffuse <= 0.0) {
                             shadow = 0.0;
                         } else {
-                            let max_steps = select(20, 12, u.shadow_ao_quality.x == 1.0);
+                            let max_steps = select(SHADOW_STEPS, SHADOW_STEPS * 3 / 5, u.shadow_ao_quality.x == 1.0);
                             let shadow_dist = select(120.0, 250.0, t > 200.0);
                             shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
                         }

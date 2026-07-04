@@ -13,6 +13,8 @@
   fixed-dt Double
   physics-iterations Int
   gravity (Vector3 Double)
+  ray-steps Int
+  shadow-steps Int
 ])
 
 (defmodule Settings
@@ -27,7 +29,9 @@
       true
       0.00833
       8
-      (Vector3.init 0.0 -9.81 0.0)))
+      (Vector3.init 0.0 -9.81 0.0)
+      80
+      16))
 
   (defn parse-bool [s]
     (or (= s "true") (= s "1")))
@@ -79,10 +83,18 @@
                         (when (= &key "gravity_y")
                           (match (Double.from-string &val)
                             (Maybe.Just gy) (Settings.set-gravity! &cfg (Vector3.init 0.0 gy 0.0))
+                            _ ()))
+                        (when (= &key "ray_steps")
+                          (match (Int.from-string &val)
+                            (Maybe.Just rs) (Settings.set-ray-steps! &cfg rs)
+                            _ ()))
+                        (when (= &key "shadow_steps")
+                          (match (Int.from-string &val)
+                            (Maybe.Just ss) (Settings.set-shadow-steps! &cfg ss)
                             _ ())))))))
               cfg))
         (Result.Error _)
-          (let [default-content @"width=1280\nheight=720\nshadow_quality=2\nao_quality=2\nvolumetric_sdf=false\nshow_debug_lines=true\nchunk_loading_enabled=true\nfixed_dt=0.00833\nphysics_iterations=8\ngravity_y=-9.81\n"
+          (let [default-content @"width=1280\nheight=720\nshadow_quality=2\nao_quality=2\nvolumetric_sdf=false\nshow_debug_lines=true\nchunk_loading_enabled=true\nfixed_dt=0.00833\nphysics_iterations=8\ngravity_y=-9.81\nray_steps=80\nshadow_steps=16\n"
                 _ (IO.write-file filepath &default-content)]
             cfg))))
 )

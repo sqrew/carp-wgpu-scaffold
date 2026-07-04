@@ -81,11 +81,12 @@
               surf @(App.surf &app)
               _ (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)
               backend (GLFWBackend.init)
-              eng (Engine.new (glfw-window->voidptr win) aspect backend cfg)]
+              eng (Engine.new (glfw-window->voidptr win) aspect backend @&cfg)]
               (do
               (let [_ (Engine.register-internal-handlers! &eng)] ())
               (let [_ (Engine.init-fields! &eng)] ())
-              (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng))              (Result.Error e) (do (println* "Renderer Error: " &e) -2)
+              (match (WGPURenderer.create ctx (WGPURender.surface-format surf) width height (Engine.grid &eng) &cfg)
+              (Result.Error e) (do (println* "Renderer Error: " &e) -2)
               (Result.Success ren)
                 (do
                   (World.init-gpu-buffers! ctx (Engine.world-data &eng))
@@ -133,6 +134,8 @@
                                 dt-frame (/ (Double.from-long (Uint64.to-long (Uint64.- t-end t-start))) 1000000.0)]
                             (do
                               (set! frame-count (inc frame-count))
+                              (when (= (Int.mod frame-count 120) 0)
+                                (Engine.reload-settings! &eng ctx &ren))
                               (when (= (Int.mod frame-count 60) 0)
                                 (do
                                   (println* "Frame " frame-count " | Pos: (" @(Vector3.x (Camera.pos cam)) ", " @(Vector3.y (Camera.pos cam)) ", " @(Vector3.z (Camera.pos cam)) ") | Tick: " dt-tick "ms | Proc: " dt-proc "ms | Draw: " dt-draw "ms")

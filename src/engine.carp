@@ -1564,4 +1564,41 @@
         (Engine.sync-render-db! e ctx ren)
         (Diagnostics.end-zone! diag "Render Submit & Sync")
         (Diagnostics.end-zone! diag "Total Frame Time"))))
+
+  (sig reload-settings! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn reload-settings! [e ctx ren]
+    (let [new-cfg (Settings.load-from-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/settings.cfg")
+          old-cfg (Engine.settings e)
+          steps-changed (or (not (= @(Settings.ray-steps &new-cfg) @(Settings.ray-steps old-cfg)))
+                            (not (= @(Settings.shadow-steps &new-cfg) @(Settings.shadow-steps old-cfg))))
+          qual-changed (or (not (= @(Settings.shadow-quality &new-cfg) @(Settings.shadow-quality old-cfg)))
+                           (or (not (= @(Settings.volumetric-sdf &new-cfg) @(Settings.volumetric-sdf old-cfg)))
+                               (not (= @(Settings.chunk-loading-enabled &new-cfg) @(Settings.chunk-loading-enabled old-cfg)))))
+          show-debug-changed (not (= @(Settings.show-debug-lines &new-cfg) @(Settings.show-debug-lines old-cfg)))]
+      (do
+        (when (or (or steps-changed qual-changed) show-debug-changed)
+          (do
+            (IO.println "Settings configuration changed, reloading...")
+            (Engine.set-shadow-quality! e @(Settings.shadow-quality &new-cfg))
+            (Engine.set-volumetric-sdf! e @(Settings.volumetric-sdf &new-cfg))
+            (Engine.set-chunk-loading-enabled! e @(Settings.chunk-loading-enabled &new-cfg))
+            (Engine.set-show-debug-lines! e @(Settings.show-debug-lines &new-cfg))
+            
+            (when steps-changed
+              (let [ray-steps @(Settings.ray-steps &new-cfg)
+                    shadow-steps @(Settings.shadow-steps &new-cfg)
+                    new-shader (Shaders.shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell ray-steps shadow-steps)
+                    format (WGPURenderer.format ren)
+                    pipe-res (WGPURender.create-pipeline ctx &new-shader "vs_main" "fs_main" format)]
+                (match pipe-res
+                  (Result.Success new-pipe)
+                    (let [old-pipe @(WGPURenderer.pipeline ren)]
+                      (do
+                        (WGPURender.free-pipeline old-pipe)
+                        (WGPURenderer.set-pipeline! ren new-pipe)
+                        (IO.println "GPU raymarching pipelines recompiled successfully!")))
+                  (Result.Error err)
+                    (println* "Failed to recompile render pipeline: " &err))))
+            
+            (Engine.set-settings! e new-cfg))))))
 )

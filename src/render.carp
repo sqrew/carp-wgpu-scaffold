@@ -62,6 +62,7 @@
   noise-sampler WGPUSampler
   pack-bind-group WGPUBindGroup
   fields-active-slots (Array Bool)
+  format String
 ])
 
 (defmodule VoxelBaker
@@ -207,9 +208,12 @@
           (Array.aset! &noise-data i (Float.random-between 0.0f 1.0f)))
         (WGPURender.update-3d-texture-subregion-floats ctx noise-tex 0 0 0 32 32 32 &noise-data))))
 
-  (defn create [ctx format width height grid]
+  (sig create (Fn [(Ptr WGPUContext) String Int Int (Ref (SpatialGrid Uint32)) (Ref Settings)] (Result WGPURenderer String)))
+  (defn create [ctx format width height grid settings]
     (let [u-size (+ WGPURenderer.header-size (* WGPURenderer.max-spheres WGPURenderer.sphere-data-size))
-          shader (Shaders.shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell)
+          ray-steps @(Settings.ray-steps settings)
+          shadow-steps @(Settings.shadow-steps settings)
+          shader (Shaders.shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell ray-steps shadow-steps)
           s-size (* (GPUSpatial.required-floats grid WGPURenderer.max-ids-per-cell) 4)
           csg-size (* WGPURenderer.max-csg-nodes WGPURenderer.csg-node-size)
           u-data (the (Array Float) (replicate (/ u-size 4) &0.0f))
@@ -254,7 +258,7 @@
                                                       (match (WGPURender.create-depth-texture ctx width height)
                                                         (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
                                                         (Result.Success dt)
-                                                          (match (LinePass.create ctx format 10000)
+                                                          (match (LinePass.create ctx @&format 10000)
                                                             (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
                                                             (Result.Success lp)
                                                               (match (WGPU.create-buffer ctx 524288)
@@ -288,7 +292,7 @@
                                                                     (match (WGPU.create-bind-group ctx p-pipe &pack-bufs)
                                                                       (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline f-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer f-params-b) (WGPU.free-buffer f-half-b) (WGPU.free-buffer f-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack bind group failed: " e)))
                                                                       (Result.Success p-bg)
-                                                                        (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex fields-tex voxel-samp [] true c-pipe p-pipe f-splat-pipe v-gpu-b v-half-b c-params-b f-scratch-b f-half-b f-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false)))))))))))))))))))))))))))))))
+                                                                        (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex fields-tex voxel-samp [] true c-pipe p-pipe f-splat-pipe v-gpu-b v-half-b c-params-b f-scratch-b f-half-b f-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) @&format))))))))))))))))))))))))))))))
 
   (defn clear! [ren]
     (let [cmds (WGPURenderer.commands ren)]
