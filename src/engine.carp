@@ -1233,7 +1233,7 @@
                       (let [chunk (Array.unsafe-nth chunks j)]
                         (when (VoxelBaker.chunk-overlaps-sphere? chunk &target-pos (+ target-scale 4.0))
                           (VoxelBaker.bake-chunk! ctx ren chunk world-data)))))))
-            _ (VoxelBaker.bake-voxel-grid! ctx ren grid world world-data))
+            _ (World.dirty-all-chunks! world-data))
           (let [chunks (World.chunks world-data)
                 num-chunks (Array.length chunks)
                 num-craters (Array.length craters)
@@ -1507,7 +1507,7 @@
             (do
               (Engine.set-last-known-script! e @&new-source)
               (IO.println "Physical system cleared (no active dynamic fields).")
-              (VoxelBaker.bake-voxel-grid! ctx ren (Engine.grid e) (Engine.world e) (Engine.world-data e))))
+              (World.dirty-all-chunks! (Engine.world-data e))))
           (when (not (= (Engine.last-known-script e) &new-source))
             (do
               (Engine.set-last-known-script! e @&new-source)
@@ -1516,7 +1516,7 @@
                     ()
                     (do
                       (IO.println "Physical system reloaded and active.")
-                      (VoxelBaker.bake-voxel-grid! ctx ren (Engine.grid e) (Engine.world e) (Engine.world-data e))))))))))
+                      (World.dirty-all-chunks! (Engine.world-data e))))))))))
 
   (sig run-jit-physics-loop! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn run-jit-physics-loop! [e ctx ren]

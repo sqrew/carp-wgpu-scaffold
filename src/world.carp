@@ -37,15 +37,16 @@
   (use FieldDatabase)
   (use SpatialGrid)
 
-  (defn create-initial-chunks []
-    (let [arr (the (Array Chunk) [])]
+  (defn create-initial-chunks [voxel-res]
+    (let [arr (the (Array Chunk) [])
+          size-floats (* voxel-res (* voxel-res (* voxel-res 4)))]
       (do
         (for [z -1 2]
           (for [y -1 2]
             (for [x -1 2]
-              (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+              (let [voxel-data (the (Array Float) (replicate size-floats &1000.0f))
                     slot (+ (+ (+ x 1) (* (+ y 1) 3)) (* (+ z 1) 9))
-                    chunk (Chunk.init x y z voxel-data slot false 32 (null-buffer))]
+                    chunk (Chunk.init x y z voxel-data slot false 0 (null-buffer))]
                 (Array.push-back! &arr chunk)))))
         arr)))
 
@@ -65,7 +66,7 @@
         (ignore (FieldDatabase.register-kernel! &db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update))
         (ignore (FieldDatabase.register-kernel! &db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!))
         (ignore (FieldDatabase.register-kernel! &db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!))
-        (World.init db origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res))))
+        (World.init db origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res))))
 
   (defn init-gpu-buffers! [ctx world-data]
     (let [chunks (World.chunks world-data)
@@ -229,17 +230,20 @@
 
   (defn find-unused-atlas-slot [world]
     (let [chunks (World.chunks world)
-          used-slots (the (Array Bool) (replicate 1728 &false))]
+          res @(World.voxel-resolution world)
+          slots-per-dim (/ 384 res)
+          total-slots (* slots-per-dim (* slots-per-dim slots-per-dim))
+          used-slots (the (Array Bool) (replicate total-slots &false))]
       (do
         (for [i 0 (Array.length chunks)]
           (let [chunk (Array.unsafe-nth chunks i)
                 slot @(Chunk.atlas-slot chunk)]
-            (when (and (>= slot 0) (< slot 1728))
+            (when (and (>= slot 0) (< slot total-slots))
               (Array.aset! &used-slots slot true))))
         (let [found-slot -1
               s 0]
           (do
-            (while (and (< s 1728) (= found-slot -1))
+            (while (and (< s total-slots) (= found-slot -1))
               (do
                 (when (not @(Array.unsafe-nth &used-slots s))
                   (set! found-slot s))
@@ -279,10 +283,17 @@
               (set! found-idx i))))
         (if (= found-idx -1)
             (let [saved-voxel @(Chunk.voxel-data chunk)
-                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true 32 (null-buffer))]
+                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true @(World.voxel-resolution world) (null-buffer))]
               (Array.push-back! saved-list saved-chunk))
             (let [target-chunk (Array.unsafe-nth saved-list found-idx)]
                (Chunk.set-voxel-data! target-chunk @(Chunk.voxel-data chunk)))))))
+
+  (defn dirty-all-chunks! [world]
+    (let [chunks (World.chunks world)
+          len (Array.length chunks)]
+      (for [i 0 len]
+        (let [chunk (Array.unsafe-nth chunks i)]
+          (Chunk.set-bake-progress! chunk 0)))))
 
   (defn clear-cache! [world]
     (let [cqx (World.cache-qx world)

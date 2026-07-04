@@ -306,7 +306,7 @@
                let slot_x = slot % " @&slots-per-dim ";
                let slot_y = (slot / " @&slots-per-dim ") % " @&slots-per-dim ";
                let slot_z = slot / " @&slots-per-dim-sq ";
-               let base_uv3d = vec3<f32>(f32(slot_x * " @&voxel-res-str "u), f32(slot_y * " @&voxel-res-str "u), f32(slot_z * " @&voxel-res-str "u));
+               let base_uv3d = vec3<f32>(f32(slot_x * " @&voxel-res-str "i), f32(slot_y * " @&voxel-res-str "i), f32(slot_z * " @&voxel-res-str "i));
                let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
                tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
                tex_val.r = min(tex_val.r, 1.5);
@@ -446,7 +446,7 @@
               let slot_x = slot % " @&slots-per-dim ";
               let slot_y = (slot / " @&slots-per-dim ") % " @&slots-per-dim ";
               let slot_z = slot / " @&slots-per-dim-sq ";
-              let base_uv3d = vec3<f32>(f32(slot_x * " @&voxel-res-str "u), f32(slot_y * " @&voxel-res-str "u), f32(slot_z * " @&voxel-res-str "u));
+              let base_uv3d = vec3<f32>(f32(slot_x * " @&voxel-res-str "i), f32(slot_y * " @&voxel-res-str "i), f32(slot_z * " @&voxel-res-str "i));
               let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
               tex_val = textureSampleLevel(fields_texture, voxel_sampler, sample_coords, 0.0);
           } else {
