@@ -1106,7 +1106,8 @@
                   (let [chunk-ref (Array.unsafe-nth chunks baking-idx)
                         current-prog @(Chunk.bake-progress chunk-ref)
                         res @(World.voxel-resolution world-data)
-                        next-prog (+ current-prog 4)
+                        step (let [s (/ 65536 (* res res))] (if (< s 1) 1 s))
+                        next-prog (let [sum (+ current-prog step)] (if (< res sum) res sum))
                         qx @(Chunk.coord-x chunk-ref)
                         qy @(Chunk.coord-y chunk-ref)
                         qz @(Chunk.coord-z chunk-ref)]

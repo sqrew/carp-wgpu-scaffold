@@ -120,7 +120,7 @@
                 lx (- qx origin-x)
                 ly (- qy origin-y)
                 lz (- qz origin-z)]
-            (when (and (= @(Chunk.bake-progress chunk) res)
+            (when (and (>= @(Chunk.bake-progress chunk) res)
                        (and (and (>= lx 0) (< lx 32))
                             (and (and (>= ly 0) (< ly 32))
                                  (and (>= lz 0) (< lz 32)))))
