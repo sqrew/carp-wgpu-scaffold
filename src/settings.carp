@@ -15,6 +15,8 @@
   gravity (Vector3 Double)
   ray-steps Int
   shadow-steps Int
+  voxel-resolution Int
+  step-density-multiplier Double
 ])
 
 (defmodule Settings
@@ -31,7 +33,9 @@
       8
       (Vector3.init 0.0 -9.81 0.0)
       80
-      16))
+      16
+      64
+      1.25))
 
   (defn parse-bool [s]
     (or (= s "true") (= s "1")))
@@ -84,17 +88,24 @@
                           (match (Double.from-string &val)
                             (Maybe.Just gy) (Settings.set-gravity! &cfg (Vector3.init 0.0 gy 0.0))
                             _ ()))
-                        (when (= &key "ray_steps")
+                        (when (= &key "voxel_resolution")
                           (match (Int.from-string &val)
-                            (Maybe.Just rs) (Settings.set-ray-steps! &cfg rs)
+                            (Maybe.Just vr) (Settings.set-voxel-resolution! &cfg vr)
                             _ ()))
-                        (when (= &key "shadow_steps")
-                          (match (Int.from-string &val)
-                            (Maybe.Just ss) (Settings.set-shadow-steps! &cfg ss)
+                        (when (= &key "step_density_multiplier")
+                          (match (Double.from-string &val)
+                            (Maybe.Just sdm) (Settings.set-step-density-multiplier! &cfg sdm)
                             _ ())))))))
-              cfg))
+              (let [res @(Settings.voxel-resolution &cfg)
+                    mult @(Settings.step-density-multiplier &cfg)
+                    computed-ray (Double.to-int (* (Double.from-int res) mult))
+                    computed-shadow (Double.to-int (* (Double.from-int computed-ray) 0.2))]
+                (do
+                  (Settings.set-ray-steps! &cfg computed-ray)
+                  (Settings.set-shadow-steps! &cfg computed-shadow)
+                  cfg))))
         (Result.Error _)
-          (let [default-content @"width=1280\nheight=720\nshadow_quality=2\nao_quality=2\nvolumetric_sdf=false\nshow_debug_lines=true\nchunk_loading_enabled=true\nfixed_dt=0.00833\nphysics_iterations=8\ngravity_y=-9.81\nray_steps=80\nshadow_steps=16\n"
+          (let [default-content @"width=1280\nheight=720\nshadow_quality=2\nao_quality=2\nvolumetric_sdf=false\nshow_debug_lines=true\nchunk_loading_enabled=true\nfixed_dt=0.00833\nphysics_iterations=8\ngravity_y=-9.81\nvoxel_resolution=64\nstep_density_multiplier=1.25\n"
                 _ (IO.write-file filepath &default-content)]
             cfg))))
 )

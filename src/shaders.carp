@@ -292,20 +292,17 @@
           var v6 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
           
+          var tex_val = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+          var best_mat = 0.0;
           if (lx < 31 && ly < 31 && lz < 31) {
               let slot_x = slot % 12;
               let slot_y = (slot / 12) % 12;
               let slot_z = slot / 144;
-              let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
-              
-              v0 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz),     0);
-              v1 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
-              v2 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
-              v3 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
-              v4 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
-              v5 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
-              v6 = textureLoad(voxel_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
-              v7 = textureLoad(voxel_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
+              let base_uv3d = vec3<f32>(f32(slot_x << 5u), f32(slot_y << 5u), f32(slot_z << 5u));
+              let sample_coords = (base_uv3d + vec3<f32>(f32(lx), f32(ly), f32(lz)) + vec3<f32>(0.5) + f) / 384.0;
+              tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
+              tex_val.r = min(tex_val.r, 1.5);
+              best_mat = round(tex_val.g);
           } else {
               v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
               v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);
@@ -315,37 +312,37 @@
               v5 = getVoxelAt(c0.x + 1, c0.y,     c0.z + 1, only_dist);
               v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1, only_dist);
               v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1, only_dist);
+              
+              v0.x = min(v0.x, 1.5);
+              v1.x = min(v1.x, 1.5);
+              v2.x = min(v2.x, 1.5);
+              v3.x = min(v3.x, 1.5);
+              v4.x = min(v4.x, 1.5);
+              v5.x = min(v5.x, 1.5);
+              v6.x = min(v6.x, 1.5);
+              v7.x = min(v7.x, 1.5);
+              
+              best_mat = v0.y;
+              var min_d_corner = v0.x;
+              if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
+              if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
+              if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
+              if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
+              if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
+              if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
+              if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
+              
+              let sf = f * f * (3.0 - 2.0 * f);
+              let v_01 = mix(v0, v1, sf.x);
+              let v_23 = mix(v2, v3, sf.x);
+              let v_45 = mix(v4, v5, sf.x);
+              let v_67 = mix(v6, v7, sf.x);
+              
+              let v_y0 = mix(v_01, v_23, sf.y);
+              let v_y1 = mix(v_45, v_67, sf.y);
+              
+              tex_val = mix(v_y0, v_y1, sf.z);
           }
-          
-          v0.x = min(v0.x, 1.5);
-          v1.x = min(v1.x, 1.5);
-          v2.x = min(v2.x, 1.5);
-          v3.x = min(v3.x, 1.5);
-          v4.x = min(v4.x, 1.5);
-          v5.x = min(v5.x, 1.5);
-          v6.x = min(v6.x, 1.5);
-          v7.x = min(v7.x, 1.5);
-          
-          var best_mat = v0.y;
-          var min_d_corner = v0.x;
-          if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
-          if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
-          if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
-          if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
-          if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
-          if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
-          if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
-          
-          let sf = f * f * (3.0 - 2.0 * f);
-          let v_01 = mix(v0, v1, sf.x);
-          let v_23 = mix(v2, v3, sf.x);
-          let v_45 = mix(v4, v5, sf.x);
-          let v_67 = mix(v6, v7, sf.x);
-          
-          let v_y0 = mix(v_01, v_23, sf.y);
-          let v_y1 = mix(v_45, v_67, sf.y);
-          
-          let tex_val = mix(v_y0, v_y1, sf.z);
           
           let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
           let dummy = dummy_sample.r * 1e-10;
@@ -435,20 +432,14 @@
           var v6 = vec4<f32>(0.0);
           var v7 = vec4<f32>(0.0);
           
+          var tex_val = vec4<f32>(0.0);
           if (lx < 31 && ly < 31 && lz < 31) {
               let slot_x = slot % 12;
               let slot_y = (slot / 12) % 12;
               let slot_z = slot / 144;
-              let base = vec3<i32>(slot_x << 5, slot_y << 5, slot_z << 5);
-              
-              v0 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly,     lz),     0);
-              v1 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly,     lz),     0);
-              v2 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly + 1, lz),     0);
-              v3 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly + 1, lz),     0);
-              v4 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly,     lz + 1), 0);
-              v5 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly,     lz + 1), 0);
-              v6 = textureLoad(fields_texture, base + vec3<i32>(lx,     ly + 1, lz + 1), 0);
-              v7 = textureLoad(fields_texture, base + vec3<i32>(lx + 1, ly + 1, lz + 1), 0);
+              let base_uv3d = vec3<f32>(f32(slot_x << 5u), f32(slot_y << 5u), f32(slot_z << 5u));
+              let sample_coords = (base_uv3d + vec3<f32>(f32(lx), f32(ly), f32(lz)) + vec3<f32>(0.5) + f) / 384.0;
+              tex_val = textureSampleLevel(fields_texture, voxel_sampler, sample_coords, 0.0);
           } else {
               v0 = getFieldsAt(c0.x,     c0.y,     c0.z);
               v1 = getFieldsAt(c0.x + 1, c0.y,     c0.z);
@@ -458,18 +449,19 @@
               v5 = getFieldsAt(c0.x + 1, c0.y,     c0.z + 1);
               v6 = getFieldsAt(c0.x,     c0.y + 1, c0.z + 1);
               v7 = getFieldsAt(c0.x + 1, c0.y + 1, c0.z + 1);
+              
+              let sf = f * f * (3.0 - 2.0 * f);
+              let v_01 = mix(v0, v1, sf.x);
+              let v_23 = mix(v2, v3, sf.x);
+              let v_45 = mix(v4, v5, sf.x);
+              let v_67 = mix(v6, v7, sf.x);
+              
+              let v_y0 = mix(v_01, v_23, sf.y);
+              let v_y1 = mix(v_45, v_67, sf.y);
+              
+              tex_val = mix(v_y0, v_y1, sf.z);
           }
-          
-          let sf = f * f * (3.0 - 2.0 * f);
-          let v_01 = mix(v0, v1, sf.x);
-          let v_23 = mix(v2, v3, sf.x);
-          let v_45 = mix(v4, v5, sf.x);
-          let v_67 = mix(v6, v7, sf.x);
-          
-          let v_y0 = mix(v_01, v_23, sf.y);
-          let v_y1 = mix(v_45, v_67, sf.y);
-          
-          return mix(v_y0, v_y1, sf.z);
+          return tex_val;
       }
 
        fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
