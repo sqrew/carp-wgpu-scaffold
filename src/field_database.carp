@@ -420,9 +420,10 @@
                     (let [influence @(Array.unsafe-nth influences i)
                           weight (* (- 1.0 (/ dist scale-i)) influence)
                           val @(Array.unsafe-nth scalars-arr i)]
-                      (do
-                        (set! accumulated-val (+ accumulated-val (* val weight)))
-                        (set! total-weight (+ total-weight weight))))))))))
+                      (when (not (and (= slot 5) (= val -999.0)))
+                        (do
+                          (set! accumulated-val (+ accumulated-val (* val weight)))
+                          (set! total-weight (+ total-weight weight)))))))))))
         (if (> total-weight 0.0)
             (/ accumulated-val total-weight)
             def-val))))

@@ -1112,6 +1112,7 @@
                         qy @(Chunk.coord-y chunk-ref)
                         qz @(Chunk.coord-z chunk-ref)]
                     (do
+                      (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Slice Baking")
                       (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref world-data current-prog next-prog)
                       (Chunk.set-bake-progress! chunk-ref next-prog)
                       (when (= next-prog res)
@@ -1130,12 +1131,14 @@
                                   (WGPU.write-floats ctx b (Chunk.voxel-data chunk-ref))
                                   (VoxelBaker.pack-and-copy-chunk! ctx ren b @(Chunk.atlas-slot chunk-ref) res))))
                           (Engine.set-need-chunk-scan! e true)))
-                      (set! loaded-any true)))
+                      (set! loaded-any true)
+                      (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Slice Baking")))
                   
                   ;; If no chunk is baking, check if we need to load a new missing chunk
                   (when @(Engine.need-chunk-scan e)
                     (let [r 0]
                       (do
+                        (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Scan and Load")
                         (while (and (< r 15) (not loaded-any))
                           (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))
                                 offsets (if (= limit-r 0)
@@ -1208,7 +1211,8 @@
                                     (set! dz (inc dz)))))
                               (set! r (inc r)))))
                         (when (not loaded-any)
-                          (Engine.set-need-chunk-scan! e false))))))))))))
+                          (Engine.set-need-chunk-scan! e false))
+                        (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))
 
   (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
@@ -1390,18 +1394,24 @@
       (match cached-pipeline
         (Maybe.Just pipe) pipe
         (Maybe.Nothing)
-          (match (WGPU.create-pipeline ctx &master-wgsl-source "main")
-            (Result.Error err)
-              (do
-                (Diagnostics.log! (Engine.diagnostics e) (LogLevel.Error)
-                  &(str* "Una Driver Compiler Error: " &err))
-                (null-pipeline))
-            (Result.Success native-pipe)
-              (do
-                (Diagnostics.log! (Engine.diagnostics e) (LogLevel.Info)
-                  &@"Baking fresh physical system pipeline directly to GPU hardware.")
-                (Map.put! cache &master-wgsl-source &native-pipe)
-                native-pipe)))))
+          (let [diag (Engine.diagnostics e)]
+            (do
+              (Diagnostics.start-zone! diag "Sync: Compile JIT Shader")
+              (let [res (WGPU.create-pipeline ctx &master-wgsl-source "main")]
+                (do
+                  (Diagnostics.end-zone! diag "Sync: Compile JIT Shader")
+                  (match res
+                    (Result.Error err)
+                      (do
+                        (Diagnostics.log! diag (LogLevel.Error)
+                          &(str* "Una Driver Compiler Error: " &err))
+                        (null-pipeline))
+                    (Result.Success native-pipe)
+                      (do
+                        (Diagnostics.log! diag (LogLevel.Info)
+                          &@"Baking fresh physical system pipeline directly to GPU hardware.")
+                        (Map.put! cache &master-wgsl-source &native-pipe)
+                        native-pipe)))))))))
 
   (sig has-active-code? (Fn [&String] Bool))
   (defn has-active-code? [content]
@@ -1575,10 +1585,18 @@
           (Engine.set-grid-dirty! e true))
         (Diagnostics.end-zone! diag "Field DB Sync")
         (Diagnostics.start-zone! diag "Render Submit & Sync")
+        (Diagnostics.start-zone! diag "Sync: JIT Hot Reload")
         (Engine.evaluate-jit-hot-reload! e ctx ren)
+        (Diagnostics.end-zone! diag "Sync: JIT Hot Reload")
+        (Diagnostics.start-zone! diag "Sync: JIT Physics Loop")
         (Engine.run-jit-physics-loop! e ctx ren)
+        (Diagnostics.end-zone! diag "Sync: JIT Physics Loop")
+        (Diagnostics.start-zone! diag "Sync: Submit Render Cmds")
         (Engine.submit-render-commands! e)
+        (Diagnostics.end-zone! diag "Sync: Submit Render Cmds")
+        (Diagnostics.start-zone! diag "Sync: Render DB Update")
         (Engine.sync-render-db! e ctx ren)
+        (Diagnostics.end-zone! diag "Sync: Render DB Update")
         (Diagnostics.end-zone! diag "Render Submit & Sync")
         (Diagnostics.end-zone! diag "Total Frame Time"))))
 
