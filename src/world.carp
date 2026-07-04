@@ -29,6 +29,7 @@
   cache-qz (Array Int)
   cache-idx (Array Int)
   modified-chunks (Array Chunk)
+  voxel-resolution Int
 ])
 
 (defmodule World
@@ -48,7 +49,7 @@
                 (Array.push-back! &arr chunk)))))
         arr)))
 
-  (defn new [origin cell-size w h d]
+  (defn new [origin cell-size w h d voxel-res]
     (let [cqx (the (Array Int) (replicate 64 &-999))
           cqy (the (Array Int) (replicate 64 &-999))
           cqz (the (Array Int) (replicate 64 &-999))
@@ -64,14 +65,16 @@
         (ignore (FieldDatabase.register-kernel! &db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update))
         (ignore (FieldDatabase.register-kernel! &db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!))
         (ignore (FieldDatabase.register-kernel! &db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!))
-        (World.init db origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) [])))))
+        (World.init db origin cell-size w h d (create-initial-chunks) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res))))
 
   (defn init-gpu-buffers! [ctx world-data]
     (let [chunks (World.chunks world-data)
-          num-chunks (Array.length chunks)]
+          num-chunks (Array.length chunks)
+          res @(World.voxel-resolution world-data)
+          buf-size (* res (* res (* res 16)))]
       (for [i 0 num-chunks]
         (let [chunk (Array.unsafe-nth chunks i)
-              buf (WGPU.create-buffer ctx 131072)]
+              buf (WGPU.create-buffer ctx buf-size)]
           (match buf
             (Result.Error e) (IO.println &(format "Error creating GPU buffer for chunk %d" i))
             (Result.Success b)
@@ -87,8 +90,7 @@
       @(World.grid-depth w)
       @(World.grid-origin w)))
 
-  (defn voxel-resolution [] 32)
-  (defn voxel-cell-size [] 1.0)
+  (defn voxel-cell-size [world] (/ 32.0 (Double.from-int @(World.voxel-resolution world))))
   (defn chunk-size [] 32.0)
 
   (defn camera-chunk-qx [cam-pos]
@@ -100,7 +102,8 @@
 
   (defn build-chunk-lookup-data [world origin-x origin-y origin-z]
     (let [arr (the (Array Int) (replicate 33284 &0))
-          chunks (World.chunks world)]
+          chunks (World.chunks world)
+          res @(World.voxel-resolution world)]
       (do
         (Array.aset! &arr 0 origin-x)
         (Array.aset! &arr 1 origin-y)
@@ -116,7 +119,7 @@
                 lx (- qx origin-x)
                 ly (- qy origin-y)
                 lz (- qz origin-z)]
-            (when (and (= @(Chunk.bake-progress chunk) 32)
+            (when (and (= @(Chunk.bake-progress chunk) res)
                        (and (and (>= lx 0) (< lx 32))
                             (and (and (>= ly 0) (< ly 32))
                                  (and (>= lz 0) (< lz 32)))))
@@ -145,13 +148,14 @@
         found)))
 
   (defn get-voxel-at-world-grid [world gx gy gz]
-    (let [qx (Int.bit-shift-right gx 5)
-          qy (Int.bit-shift-right gy 5)
-          qz (Int.bit-shift-right gz 5)
-          lx (Int.bit-and gx 31)
-          ly (Int.bit-and gy 31)
-          lz (Int.bit-and gz 31)
-          res 32
+    (let [res @(World.voxel-resolution world)
+          res-d (Double.from-int res)
+          qx (Double.to-int (Double.floor (/ (Double.from-int gx) res-d)))
+          qy (Double.to-int (Double.floor (/ (Double.from-int gy) res-d)))
+          qz (Double.to-int (Double.floor (/ (Double.from-int gz) res-d)))
+          lx (- gx (* qx res))
+          ly (- gy (* qy res))
+          lz (- gz (* qz res))
           chunks (World.chunks world)
           found-idx -1
           hash-idx (Int.mod (Int.abs (+ qx (+ (* qy 3) (* qz 9)))) 64)]
@@ -162,8 +166,8 @@
           (if (and (= qx cached-qx)
                    (and (= qy cached-qy)
                         (= qz cached-qz)))
-              (set! found-idx @(Array.unsafe-nth (World.cache-idx world) hash-idx))
-              ()))
+               (set! found-idx @(Array.unsafe-nth (World.cache-idx world) hash-idx))
+               ()))
         (when (= found-idx -1)
           (let [len (Array.length chunks)
                 i 0]
@@ -191,7 +195,7 @@
     (let [px @(Vector3.x p)
           py @(Vector3.y p)
           pz @(Vector3.z p)
-          v-size (World.voxel-cell-size)
+          v-size (World.voxel-cell-size world)
           
           tx (- (/ px v-size) 0.5)
           ty (- (/ py v-size) 0.5)

@@ -1,10 +1,17 @@
 ;; src/shaders.carp
 
 (defmodule Shaders
-  (defn shader-wgsl [limit max-ids ray-steps shadow-steps]
-    (str*
-      "const MAX_RAY_STEPS: i32 = " (Int.str ray-steps) ";\n"
-      "const SHADOW_STEPS: i32 = " (Int.str shadow-steps) ";\n"
+  (defn shader-wgsl [limit max-ids ray-steps shadow-steps voxel-res]
+    (let [log-res (Double.to-int (/ (Double.log (Double.from-int voxel-res)) (Double.log 2.0)))
+          log-res-str (Int.str log-res)
+          slots-per-dim (Int.str (/ 384 voxel-res))
+          slots-per-dim-sq (Int.str (* (/ 384 voxel-res) (/ 384 voxel-res)))
+          voxel-res-str (Int.str voxel-res)
+          voxel-res-sub-1-str (Int.str (- voxel-res 1))
+          voxel-cell-size-str (Double.str (/ 32.0 (Double.from-int voxel-res)))]
+      (str*
+        "const MAX_RAY_STEPS: i32 = " (Int.str ray-steps) ";\n"
+        "const SHADOW_STEPS: i32 = " (Int.str shadow-steps) ";\n"
       "struct PointInstance {
           pos_scale: vec4<f32>,
           rot: vec4<f32>,
@@ -167,13 +174,13 @@
       }
 
       fn getVoxelAt(gx: i32, gy: i32, gz: i32, only_dist: bool) -> vec4<f32> {
-          let qx = gx >> 5u;
-          let qy = gy >> 5u;
-          let qz = gz >> 5u;
+          let qx = gx >> " @&log-res-str "u;
+          let qy = gy >> " @&log-res-str "u;
+          let qz = gz >> " @&log-res-str "u;
           
-          let lx = i32(u32(gx) & 31u);
-          let ly = i32(u32(gy) & 31u);
-          let lz = i32(u32(gz) & 31u);
+          let lx = i32(u32(gx) & " @&voxel-res-sub-1-str "u);
+          let ly = i32(u32(gy) & " @&voxel-res-sub-1-str "u);
+          let lz = i32(u32(gz) & " @&voxel-res-sub-1-str "u);
           
           let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
           var is_loaded = false;
@@ -195,11 +202,11 @@
           }
           
           if (is_loaded) {
-              let slot_x = slot % 12;
-              let slot_y = (slot / 12) % 12;
-              let slot_z = slot / 144;
+              let slot_x = slot % " @&slots-per-dim ";
+              let slot_y = (slot / " @&slots-per-dim ") % " @&slots-per-dim ";
+              let slot_z = slot / " @&slots-per-dim-sq ";
               
-              let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
+              let atlas_coord = vec3<i32>((slot_x * " @&voxel-res-str "i) + lx, (slot_y * " @&voxel-res-str "i) + ly, (slot_z * " @&voxel-res-str "i) + lz);
               return textureLoad(voxel_texture, atlas_coord, 0);
           } else {
               let px = f32(gx) + 0.5;
@@ -241,69 +248,70 @@
           }
       }
 
-      fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
-          let tx = p / 1.0 - vec3<f32>(0.5);
-          let c0 = vec3<i32>(floor(tx));
-          let f = fract(tx);
-          
-          let lx = i32(u32(c0.x) & 31u);
-          let ly = i32(u32(c0.y) & 31u);
-          let lz = i32(u32(c0.z) & 31u);
-          
-          let qx = c0.x >> 5u;
-          let qy = c0.y >> 5u;
-          let qz = c0.z >> 5u;
-          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-          var chunk_is_loaded = false;
-          var slot = -1;
-          if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
-              let mx = u32(local_q.x) >> 2u;
-              let my = u32(local_q.y) >> 2u;
-              let mz = u32(local_q.z) >> 2u;
-              let skip_idx = mx + (my << 3u) + (mz << 6u);
-              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-              if (skip_val != 0) {
-                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                  if (slot >= 0) {
-                      chunk_is_loaded = true;
-                  }
-              }
-          }
-          
-          if (!chunk_is_loaded) {
-              let final_h = get_terrain_height(p.x, p.z);
-              
-              let dist_xz = length(p.xz - u.cam_pos.xz);
-              let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
-              let detail_h = fbm2d(p.x * 0.07, p.z * 0.07) * 4.5 * detail_fade;
-              
-              let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
-              let mat_id = 1.0;
-              return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
-          }
-          
-          var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v2 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v3 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v4 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v5 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v6 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          
-          var tex_val = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-          var best_mat = 0.0;
-          if (lx < 31 && ly < 31 && lz < 31) {
-              let slot_x = slot % 12;
-              let slot_y = (slot / 12) % 12;
-              let slot_z = slot / 144;
-              let base_uv3d = vec3<f32>(f32(slot_x << 5u), f32(slot_y << 5u), f32(slot_z << 5u));
-              let sample_coords = (base_uv3d + vec3<f32>(f32(lx), f32(ly), f32(lz)) + vec3<f32>(0.5) + f) / 384.0;
-              tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
-              tex_val.r = min(tex_val.r, 1.5);
-              best_mat = round(tex_val.g);
-          } else {
+       fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
+           let tx = p / " @&voxel-cell-size-str " - vec3<f32>(0.5);
+           let c0 = vec3<i32>(floor(tx));
+           let f = fract(tx);
+           
+           let lx = i32(u32(c0.x) & " @&voxel-res-sub-1-str "u);
+           let ly = i32(u32(c0.y) & " @&voxel-res-sub-1-str "u);
+           let lz = i32(u32(c0.z) & " @&voxel-res-sub-1-str "u);
+           
+           let qx = c0.x >> " @&log-res-str "u;
+           let qy = c0.y >> " @&log-res-str "u;
+           let qz = c0.z >> " @&log-res-str "u;
+           let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+           var chunk_is_loaded = false;
+           var slot = -1;
+           if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
+               let mx = u32(local_q.x) >> 2u;
+               let my = u32(local_q.y) >> 2u;
+               let mz = u32(local_q.z) >> 2u;
+               let skip_idx = mx + (my << 3u) + (mz << 6u);
+               let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+               if (skip_val != 0) {
+                   let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                   slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                   if (slot >= 0) {
+                       chunk_is_loaded = true;
+                   }
+               }
+           }
+           
+           if (!chunk_is_loaded) {
+               let final_h = get_terrain_height(p.x, p.z);
+               
+               let dist_xz = length(p.xz - u.cam_pos.xz);
+               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
+               let detail_h = fbm2d(p.x * 0.07, p.z * 0.07) * 4.5 * detail_fade;
+               
+               let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
+               let mat_id = 1.0;
+               return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
+           }
+           
+           var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v2 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v3 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v4 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v5 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v6 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           
+           var tex_val = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+           var best_mat = 0.0;
+           let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+           if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>(" @&voxel-res-sub-1-str ".0))) {
+               let slot_x = slot % " @&slots-per-dim ";
+               let slot_y = (slot / " @&slots-per-dim ") % " @&slots-per-dim ";
+               let slot_z = slot / " @&slots-per-dim-sq ";
+               let base_uv3d = vec3<f32>(f32(slot_x * " @&voxel-res-str "u), f32(slot_y * " @&voxel-res-str "u), f32(slot_z * " @&voxel-res-str "u));
+               let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+               tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
+               tex_val.r = min(tex_val.r, 1.5);
+               best_mat = round(tex_val.g);
+           } else {
               v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
               v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);
               v2 = getVoxelAt(c0.x,     c0.y + 1, c0.z,     only_dist);
@@ -332,7 +340,7 @@
               if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
               if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
               
-              let sf = f * f * (3.0 - 2.0 * f);
+              let sf = f;
               let v_01 = mix(v0, v1, sf.x);
               let v_23 = mix(v2, v3, sf.x);
               let v_45 = mix(v4, v5, sf.x);
@@ -350,14 +358,14 @@
           return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
       }
 
-      fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
-          let qx = gx >> 5u;
-          let qy = gy >> 5u;
-          let qz = gz >> 5u;
+       fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> " @&log-res-str "u;
+          let qy = gy >> " @&log-res-str "u;
+          let qz = gz >> " @&log-res-str "u;
           
-          let lx = i32(u32(gx) & 31u);
-          let ly = i32(u32(gy) & 31u);
-          let lz = i32(u32(gz) & 31u);
+          let lx = i32(u32(gx) & " @&voxel-res-sub-1-str "u);
+          let ly = i32(u32(gy) & " @&voxel-res-sub-1-str "u);
+          let lz = i32(u32(gz) & " @&voxel-res-sub-1-str "u);
           
           let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
           var is_loaded = false;
@@ -379,28 +387,28 @@
           }
           
           if (is_loaded) {
-              let slot_x = slot % 12;
-              let slot_y = (slot / 12) % 12;
-              let slot_z = slot / 144;
-              let atlas_coord = vec3<i32>((slot_x << 5u) + lx, (slot_y << 5u) + ly, (slot_z << 5u) + lz);
+              let slot_x = slot % " @&slots-per-dim ";
+              let slot_y = (slot / " @&slots-per-dim ") % " @&slots-per-dim ";
+              let slot_z = slot / " @&slots-per-dim-sq ";
+              let atlas_coord = vec3<i32>((slot_x * " @&voxel-res-str "i) + lx, (slot_y * " @&voxel-res-str "i) + ly, (slot_z * " @&voxel-res-str "i) + lz);
               return textureLoad(fields_texture, atlas_coord, 0);
           } else {
               return vec4<f32>(0.0);
           }
       }
 
-      fn sampleFieldsGrid(p: vec3<f32>) -> vec4<f32> {
-          let tx = p / 1.0 - vec3<f32>(0.5);
+       fn sampleFieldsGrid(p: vec3<f32>) -> vec4<f32> {
+          let tx = p / " @&voxel-cell-size-str " - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
           
-          let lx = i32(u32(c0.x) & 31u);
-          let ly = i32(u32(c0.y) & 31u);
-          let lz = i32(u32(c0.z) & 31u);
+          let lx = i32(u32(c0.x) & " @&voxel-res-sub-1-str "u);
+          let ly = i32(u32(c0.y) & " @&voxel-res-sub-1-str "u);
+          let lz = i32(u32(c0.z) & " @&voxel-res-sub-1-str "u);
           
-          let qx = c0.x >> 5u;
-          let qy = c0.y >> 5u;
-          let qz = c0.z >> 5u;
+          let qx = c0.x >> " @&log-res-str "u;
+          let qy = c0.y >> " @&log-res-str "u;
+          let qz = c0.z >> " @&log-res-str "u;
           let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
           var chunk_is_loaded = false;
           var slot = -1;
@@ -433,12 +441,13 @@
           var v7 = vec4<f32>(0.0);
           
           var tex_val = vec4<f32>(0.0);
-          if (lx < 31 && ly < 31 && lz < 31) {
-              let slot_x = slot % 12;
-              let slot_y = (slot / 12) % 12;
-              let slot_z = slot / 144;
-              let base_uv3d = vec3<f32>(f32(slot_x << 5u), f32(slot_y << 5u), f32(slot_z << 5u));
-              let sample_coords = (base_uv3d + vec3<f32>(f32(lx), f32(ly), f32(lz)) + vec3<f32>(0.5) + f) / 384.0;
+          let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>(" @&voxel-res-sub-1-str ".0))) {
+              let slot_x = slot % " @&slots-per-dim ";
+              let slot_y = (slot / " @&slots-per-dim ") % " @&slots-per-dim ";
+              let slot_z = slot / " @&slots-per-dim-sq ";
+              let base_uv3d = vec3<f32>(f32(slot_x * " @&voxel-res-str "u), f32(slot_y * " @&voxel-res-str "u), f32(slot_z * " @&voxel-res-str "u));
+              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
               tex_val = textureSampleLevel(fields_texture, voxel_sampler, sample_coords, 0.0);
           } else {
               v0 = getFieldsAt(c0.x,     c0.y,     c0.z);
@@ -450,7 +459,7 @@
               v6 = getFieldsAt(c0.x,     c0.y + 1, c0.z + 1);
               v7 = getFieldsAt(c0.x + 1, c0.y + 1, c0.z + 1);
               
-              let sf = f * f * (3.0 - 2.0 * f);
+              let sf = f;
               let v_01 = mix(v0, v1, sf.x);
               let v_23 = mix(v2, v3, sf.x);
               let v_45 = mix(v4, v5, sf.x);
@@ -1657,207 +1666,184 @@
           }
           return vec4<f32>(color, 1.0);
       }
-    "))
+    ")))
 
-  (def carve-shader
-    "@group(0) @binding(0) var<storage, read_write> voxel_gpu_buffer: array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read>       params: array<f32>;
+  (defn carve-shader [voxel-res]
+    (let [res-str (Int.str voxel-res)
+          total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
+      (str*
+        "@group(0) @binding(0) var<storage, read_write> voxel_gpu_buffer: array<vec4<f32>>;\n"
+        "@group(0) @binding(1) var<storage, read>       params: array<f32>;\n\n"
+        "fn smin(a: f32, b: f32, k: f32) -> f32 {\n"
+        "    let h = max(k - abs(a - b), 0.0) / k;\n"
+        "    return min(a, b) - h * h * h * k * (1.0 / 6.0);\n"
+        "}\n\n"
+        "fn smax(a: f32, b: f32, k: f32) -> f32 {\n"
+        "    let h = max(k - abs(a - b), 0.0) / k;\n"
+        "    return max(a, b) + h * h * h * k * (1.0 / 6.0);\n"
+        "}\n\n"
+        "@compute @workgroup_size(64)\n"
+        "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n"
+        "    let idx = global_id.x;\n"
+        "    if (idx >= " &total-str "u) { return; }\n\n"
+        "    let ox = params[0];\n"
+        "    let oy = params[1];\n"
+        "    let oz = params[2];\n"
+        "    let cell_size = params[3];\n"
+        "    let cx = params[4];\n"
+        "    let cy = params[5];\n"
+        "    let cz = params[6];\n"
+        "    let radius = params[7];\n"
+        "    let op = params[8];\n\n"
+        "    let sx = f32(idx % " &res-str "u);\n"
+        "    let sy = f32((idx / " &res-str "u) % " &res-str "u);\n"
+        "    let sz = f32(idx / (" &res-str "u * " &res-str "u));\n\n"
+        "    let px = ox + (sx + 0.5) * cell_size;\n"
+        "    let py = oy + (sy + 0.5) * cell_size;\n"
+        "    let pz = oz + (sz + 0.5) * cell_size;\n\n"
+        "    let dx = px - cx;\n"
+        "    let dy = py - cy;\n"
+        "    let dz = pz - cz;\n"
+        "    let dist_to_crater_center = sqrt(dx*dx + dy*dy + dz*dz);\n"
+        "    let crater_dist = dist_to_crater_center - radius;\n\n"
+        "    var val = voxel_gpu_buffer[idx];\n"
+        "    let old_dist = val.x;\n\n"
+        "    if (op < 0.5) {\n"
+        "        // Carve (using smax to match CPU)\n"
+        "        let neg_crater_dist = -crater_dist;\n"
+        "        let new_dist = smax(old_dist, neg_crater_dist, 2.5);\n"
+        "        val.x = new_dist;\n"
+        "    } else {\n"
+        "        // Build (using smin to match CPU)\n"
+        "        let new_dist = smin(old_dist, crater_dist, 2.5);\n"
+        "        val.x = new_dist;\n"
+        "        if (crater_dist < 0.0) {\n"
+        "            val.y = 2.0; // Green material ID\n"
+        "        }\n"
+        "    }\n\n"
+        "    voxel_gpu_buffer[idx] = val;\n"
+        "}")))
 
-fn smin(a: f32, b: f32, k: f32) -> f32 {
-    let h = max(k - abs(a - b), 0.0) / k;
-    return min(a, b) - h * h * h * k * (1.0 / 6.0);
-}
+  (defn field-splat-shader [voxel-res]
+    (let [res-str (Int.str voxel-res)
+          total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
+      (str*
+        "struct PointInstance {\n"
+        "    pos_scale: vec4<f32>,\n"
+        "    rot: vec4<f32>,\n"
+        "    color_csg: vec4<f32>,\n"
+        "    sph_fields: vec4<f32>,\n"
+        "}\n\n"
+        "struct Uniforms {\n"
+        "    time: f32,\n"
+        "    width: f32,\n"
+        "    height: f32,\n"
+        "    cell_size: f32,\n"
+        "    cam_pos: vec4<f32>,\n"
+        "    cam_dir: vec4<f32>,\n"
+        "    cam_right: vec4<f32>,\n"
+        "    cam_up: vec4<f32>,\n"
+        "    bg_color: vec4<f32>,\n"
+        "    grid_dims: vec4<f32>,\n"
+        "    grid_origin: vec4<f32>,\n"
+        "    shadow_ao_quality: vec4<f32>,\n"
+        "    instances: array<PointInstance, 512>,\n"
+        "}\n\n"
+        "@group(0) @binding(0) var<storage, read_write> fields_gpu_buffer: array<vec4<f32>>;\n"
+        "@group(0) @binding(1) var<uniform>             u: Uniforms;\n"
+        "@group(0) @binding(2) var<storage, read>       params: array<f32>;\n\n"
+        "@compute @workgroup_size(64)\n"
+        "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n"
+        "    let idx = global_id.x;\n"
+        "    if (idx >= " &total-str "u) { return; }\n\n"
+        "    let ox = params[0];\n"
+        "    let oy = params[1];\n"
+        "    let oz = params[2];\n"
+        "    let cell_size = params[3];\n"
+        "    let num_instances = u32(round(params[4]));\n\n"
+        "    let sx = f32(idx % " &res-str "u);\n"
+        "    let sy = f32((idx / " &res-str "u) % " &res-str "u);\n"
+        "    let sz = f32(idx / (" &res-str "u * " &res-str "u));\n\n"
+        "    let p = vec3<f32>(\n"
+        "        ox + (sx + 0.5) * cell_size,\n"
+        "        oy + (sy + 0.5) * cell_size,\n"
+        "        oz + (sz + 0.5) * cell_size\n"
+        "    );\n\n"
+        "    var accumulated_fields = vec4<f32>(0.0);\n"
+        "    var total_weight = 0.0;\n\n"
+        "    for (var i = 0u; i < num_instances; i = i + 1u) {\n"
+        "        let inst = u.instances[i];\n"
+        "        let radius = inst.pos_scale.w;\n"
+        "        if (radius <= 0.0) { continue; }\n\n"
+        "        let dist = length(p - inst.pos_scale.xyz);\n"
+        "        if (dist < radius) {\n"
+        "            let weight = 1.0 - (dist / radius);\n"
+        "            \n"
+        "            accumulated_fields += inst.sph_fields * weight;\n"
+        "            total_weight += weight;\n"
+        "        }\n"
+        "    }\n\n"
+        "    if (total_weight > 0.0) {\n"
+        "        fields_gpu_buffer[idx] = accumulated_fields / total_weight;\n"
+        "    } else {\n"
+        "        fields_gpu_buffer[idx] = vec4<f32>(0.0);\n"
+        "    }\n"
+        "}")))
 
-fn smax(a: f32, b: f32, k: f32) -> f32 {
-    let h = max(k - abs(a - b), 0.0) / k;
-    return max(a, b) + h * h * h * k * (1.0 / 6.0);
-}
+  (defn pack-shader [voxel-res]
+    (let [total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
+      (str*
+        "@group(0) @binding(0) var<storage, read>       voxel_gpu_buffer: array<vec4<f32>>;\n"
+        "@group(0) @binding(1) var<storage, read_write> voxel_half_buffer: array<vec2<u32>>;\n\n"
+        "@compute @workgroup_size(64)\n"
+        "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n"
+        "    let idx = global_id.x;\n"
+        "    if (idx >= " &total-str "u) { return; }\n\n"
+        "    let val = voxel_gpu_buffer[idx];\n"
+        "    let p1 = pack2x16float(val.xy);\n"
+        "    let p2 = pack2x16float(val.zw);\n\n"
+        "    voxel_half_buffer[idx] = vec2<u32>(p1, p2);\n"
+        "}")))
 
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let idx = global_id.x;
-    if (idx >= 32768u) { return; }
-
-    let ox = params[0];
-    let oy = params[1];
-    let oz = params[2];
-    let cell_size = params[3];
-    let cx = params[4];
-    let cy = params[5];
-    let cz = params[6];
-    let radius = params[7];
-    let op = params[8];
-
-    let sx = f32(idx % 32u);
-    let sy = f32((idx / 32u) % 32u);
-    let sz = f32(idx / (32u * 32u));
-
-    let px = ox + (sx + 0.5) * cell_size;
-    let py = oy + (sy + 0.5) * cell_size;
-    let pz = oz + (sz + 0.5) * cell_size;
-
-    let dx = px - cx;
-    let dy = py - cy;
-    let dz = pz - cz;
-    let dist_to_crater_center = sqrt(dx*dx + dy*dy + dz*dz);
-    let crater_dist = dist_to_crater_center - radius;
-
-    var val = voxel_gpu_buffer[idx];
-    let old_dist = val.x;
-
-    if (op < 0.5) {
-        // Carve (using smax to match CPU)
-        let neg_crater_dist = -crater_dist;
-        let new_dist = smax(old_dist, neg_crater_dist, 2.5);
-        val.x = new_dist;
-    } else {
-        // Build (using smin to match CPU)
-        let new_dist = smin(old_dist, crater_dist, 2.5);
-        val.x = new_dist;
-        if (crater_dist < 0.0) {
-            val.y = 2.0; // Green material ID
-        }
-    }
-
-    voxel_gpu_buffer[idx] = val;
-}")
-
-  (def field-splat-shader
-    "struct PointInstance {
-    pos_scale: vec4<f32>,
-    rot: vec4<f32>,
-    color_csg: vec4<f32>,
-    sph_fields: vec4<f32>,
-}
-
-struct Uniforms {
-    time: f32,
-    width: f32,
-    height: f32,
-    cell_size: f32,
-    cam_pos: vec4<f32>,
-    cam_dir: vec4<f32>,
-    cam_right: vec4<f32>,
-    cam_up: vec4<f32>,
-    bg_color: vec4<f32>,
-    grid_dims: vec4<f32>,
-    grid_origin: vec4<f32>,
-    shadow_ao_quality: vec4<f32>,
-    instances: array<PointInstance, 512>,
-}
-
-@group(0) @binding(0) var<storage, read_write> fields_gpu_buffer: array<vec4<f32>>;
-@group(0) @binding(1) var<uniform>             u: Uniforms;
-@group(0) @binding(2) var<storage, read>       params: array<f32>;
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let idx = global_id.x;
-    if (idx >= 32768u) { return; }
-
-    let ox = params[0];
-    let oy = params[1];
-    let oz = params[2];
-    let cell_size = params[3];
-    let num_instances = u32(round(params[4]));
-
-    let sx = f32(idx % 32u);
-    let sy = f32((idx / 32u) % 32u);
-    let sz = f32(idx / (32u * 32u));
-
-    let p = vec3<f32>(
-        ox + (sx + 0.5) * cell_size,
-        oy + (sy + 0.5) * cell_size,
-        oz + (sz + 0.5) * cell_size
-    );
-
-    var accumulated_fields = vec4<f32>(0.0);
-    var total_weight = 0.0;
-
-    for (var i = 0u; i < num_instances; i = i + 1u) {
-        let inst = u.instances[i];
-        let radius = inst.pos_scale.w;
-        if (radius <= 0.0) { continue; }
-
-        let dist = length(p - inst.pos_scale.xyz);
-        if (dist < radius) {
-            let weight = 1.0 - (dist / radius);
-            
-            accumulated_fields += inst.sph_fields * weight;
-            total_weight += weight;
-        }
-    }
-
-    if (total_weight > 0.0) {
-        fields_gpu_buffer[idx] = accumulated_fields / total_weight;
-    } else {
-        fields_gpu_buffer[idx] = vec4<f32>(0.0);
-    }
-}")
-
-  (def pack-shader
-    "@group(0) @binding(0) var<storage, read>       voxel_gpu_buffer: array<vec4<f32>>;
-@group(0) @binding(1) var<storage, read_write> voxel_half_buffer: array<vec2<u32>>;
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-    let idx = global_id.x;
-    if (idx >= 32768u) { return; }
-
-    let val = voxel_gpu_buffer[idx];
-    
-    let p1 = pack2x16float(val.xy);
-    let p2 = pack2x16float(val.zw);
-
-    voxel_half_buffer[idx] = vec2<u32>(p1, p2);
-}")
-
-  (defn build-master-jit-template [user-code-snippet]
-    (str*
-      "struct PointInstance {
-          pos_scale: vec4<f32>,
-          rot: vec4<f32>,
-          color_csg: vec4<f32>,
-          sph_fields: vec4<f32>,
-      }
-      struct Uniforms { 
-          time: f32, 
-          width: f32, 
-          height: f32, 
-          cell_size: f32,
-          cam_pos: vec4<f32>, 
-          cam_dir: vec4<f32>,
-          cam_right: vec4<f32>,
-          cam_up: vec4<f32>,
-          bg_color: vec4<f32>,
-          grid_dims: vec4<f32>,
-          grid_origin: vec4<f32>,
-          shadow_ao_quality: vec4<f32>,
-          instances: array<PointInstance, 512>,
-      }
-      
-      @group(0) @binding(0) var<storage, read_write> voxel_grid: array<vec4<f32>>;
-      @group(0) @binding(1) var<uniform> u: Uniforms;
-
-      @compute @workgroup_size(64)
-      fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
-          let idx = global_id.x;
-          if (idx >= 32768u) { return; } // Match exact voxel array limit parameters
-          
-          var cell = voxel_grid[idx];
-          let dt = 0.00833; // Synced simulation timestep constant
-          let dummy_use = u.time * 0.0;
-          cell.x += dummy_use;
-          
-          // ============================================
-          // --- RUNTIME INJECTED SCRIPT BEGINS HERE ---
-"
-      @user-code-snippet
-      "
-          // --- RUNTIME INJECTED SCRIPT ENDS HERE ---
-          // ============================================
-          
-          voxel_grid[idx] = cell;
-      }"
-    ))
+  (defn build-master-jit-template [user-code-snippet voxel-res]
+    (let [total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
+      (str*
+        "struct PointInstance {\n"
+        "    pos_scale: vec4<f32>,\n"
+        "    rot: vec4<f32>,\n"
+        "    color_csg: vec4<f32>,\n"
+        "    sph_fields: vec4<f32>,\n"
+        "}\n"
+        "struct Uniforms { \n"
+        "    time: f32, \n"
+        "    width: f32, \n"
+        "    height: f32, \n"
+        "    cell_size: f32,\n"
+        "    cam_pos: vec4<f32>, \n"
+        "    cam_dir: vec4<f32>,\n"
+        "    cam_right: vec4<f32>,\n"
+        "    cam_up: vec4<f32>,\n"
+        "    bg_color: vec4<f32>,\n"
+        "    grid_dims: vec4<f32>,\n"
+        "    grid_origin: vec4<f32>,\n"
+        "    shadow_ao_quality: vec4<f32>,\n"
+        "    instances: array<PointInstance, 512>,\n"
+        "}\n\n"
+        "@group(0) @binding(0) var<storage, read_write> voxel_grid: array<vec4<f32>>;\n"
+        "@group(0) @binding(1) var<uniform> u: Uniforms;\n\n"
+        "@compute @workgroup_size(64)\n"
+        "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n"
+        "    let idx = global_id.x;\n"
+        "    if (idx >= " &total-str "u) { return; } // Match exact voxel array limit parameters\n\n"
+        "    var cell = voxel_grid[idx];\n"
+        "    let dt = 0.00833; // Synced simulation timestep constant\n"
+        "    let dummy_use = u.time * 0.0;\n"
+        "    cell.x += dummy_use;\n\n"
+        "    // ============================================\n"
+        "    // --- RUNTIME INJECTED SCRIPT BEGINS HERE ---\n"
+        user-code-snippet
+        "\n    // --- RUNTIME INJECTED SCRIPT ENDS HERE ---\n"
+        "    // ============================================\n\n"
+        "    voxel_grid[idx] = cell;\n"
+        "}")))
 )

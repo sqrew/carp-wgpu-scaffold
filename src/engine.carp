@@ -22,7 +22,7 @@
   (defn new [win aspect backend cfg]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -120.0 -300.0 -120.0)
-          world-data (World.new grid-origin 12.0 20 30 20)
+          world-data (World.new grid-origin 12.0 20 30 20 @(Settings.voxel-resolution &cfg))
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)
@@ -1087,8 +1087,9 @@
                 min-dist 999999]
             (do
               (for [i 0 num-chunks]
-                (let [c (Array.unsafe-nth chunks i)]
-                  (when (< @(Chunk.bake-progress c) 32)
+                (let [c (Array.unsafe-nth chunks i)
+                      res @(World.voxel-resolution world-data)]
+                  (when (< @(Chunk.bake-progress c) res)
                     (let [qx @(Chunk.coord-x c)
                           qy @(Chunk.coord-y c)
                           qz @(Chunk.coord-z c)
@@ -1104,6 +1105,7 @@
                   ;; Progress baking the active chunk
                   (let [chunk-ref (Array.unsafe-nth chunks baking-idx)
                         current-prog @(Chunk.bake-progress chunk-ref)
+                        res @(World.voxel-resolution world-data)
                         next-prog (+ current-prog 4)
                         qx @(Chunk.coord-x chunk-ref)
                         qy @(Chunk.coord-y chunk-ref)
@@ -1111,21 +1113,21 @@
                     (do
                       (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref world-data current-prog next-prog)
                       (Chunk.set-bake-progress! chunk-ref next-prog)
-                      (when (= next-prog 32)
+                      (when (= next-prog res)
                         (do
-                          (VoxelBaker.compute-chunk-lighting! chunk-ref)
+                          (VoxelBaker.compute-chunk-lighting! chunk-ref res)
                           (let [b @(Chunk.gpu-buffer chunk-ref)]
                             (if (WGPU.buffer-null?- b)
-                                (match (WGPU.create-buffer ctx 131072)
+                                (match (WGPU.create-buffer ctx (* res (* res (* res 16))))
                                   (Result.Error err) (IO.println &(format "Error creating buffer for baked chunk: %s" &err))
                                   (Result.Success new-b)
                                     (do
                                       (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk-ref))
                                       (Chunk.set-gpu-buffer! chunk-ref new-b)
-                                      (VoxelBaker.pack-and-copy-chunk! ctx ren new-b @(Chunk.atlas-slot chunk-ref))))
+                                      (VoxelBaker.pack-and-copy-chunk! ctx ren new-b @(Chunk.atlas-slot chunk-ref) res)))
                                 (do
                                   (WGPU.write-floats ctx b (Chunk.voxel-data chunk-ref))
-                                  (VoxelBaker.pack-and-copy-chunk! ctx ren b @(Chunk.atlas-slot chunk-ref)))))
+                                  (VoxelBaker.pack-and-copy-chunk! ctx ren b @(Chunk.atlas-slot chunk-ref) res))))
                           (Engine.set-need-chunk-scan! e true)))
                       (set! loaded-any true)))
                   
@@ -1181,19 +1183,23 @@
                                                                               (= @(Chunk.coord-z c) qz)))
                                                                 (set! found-idx i))))
                                                           (if (= found-idx -1)
-                                                              (let [voxel-data (the (Array Float) (replicate 131072 &1000.0f))
+                                                              (let [res @(World.voxel-resolution world-data)
+                                                                    size-floats (* res (* res (* res 4)))
+                                                                    voxel-data (the (Array Float) (replicate size-floats &1000.0f))
                                                                     chunk (Chunk.init qx yq qz voxel-data slot false 0 (null-buffer))]
                                                                 (do
                                                                   (Array.push-back! (World.chunks world-data) chunk)))
                                                               (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
-                                                                    voxel-data @(Chunk.voxel-data saved-chunk)]
-                                                                (match (WGPU.create-buffer ctx 131072)
+                                                                    voxel-data @(Chunk.voxel-data saved-chunk)
+                                                                    res @(World.voxel-resolution world-data)
+                                                                    size-floats (* res (* res (* res 4)))]
+                                                                (match (WGPU.create-buffer ctx (* size-floats 4))
                                                                   (Result.Error err) (IO.println &(format "Error creating buffer for loaded chunk: %s" &err))
                                                                   (Result.Success b)
                                                                     (do
                                                                       (WGPU.write-floats ctx b &voxel-data)
-                                                                      (VoxelBaker.pack-and-copy-chunk! ctx ren b slot)
-                                                                      (let [chunk (Chunk.init qx yq qz voxel-data slot true 32 b)]
+                                                                      (VoxelBaker.pack-and-copy-chunk! ctx ren b slot res)
+                                                                      (let [chunk (Chunk.init qx yq qz voxel-data slot true res b)]
                                                                         (Array.push-back! (World.chunks world-data) chunk))))))
                                                           (set! loaded-any true))))))
                                                 (set! i-dy (inc i-dy)))))
@@ -1234,6 +1240,8 @@
                 diag (Engine.diagnostics e)]
             (for [j 0 num-chunks]
               (let [chunk (Array.unsafe-nth chunks j)
+                    res @(World.voxel-resolution world-data)
+                    cell-size (World.voxel-cell-size world-data)
                     overlapped false]
                 (do
                   (for [i 0 num-craters]
@@ -1245,13 +1253,13 @@
                         (do
                           (Diagnostics.start-zone! diag "Bake: Carve CPU")
                           (if (< op 0.5)
-                              (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad)
-                              (VoxelBaker.build-voxel-grid-cpu! chunk pos rad))
+                              (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad res cell-size)
+                              (VoxelBaker.build-voxel-grid-cpu! chunk pos rad res cell-size))
                           (Diagnostics.end-zone! diag "Bake: Carve CPU")
                           (Diagnostics.start-zone! diag "Bake: Carve GPU")
                           (if (< op 0.5)
-                              (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad)
-                              (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad))
+                              (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad res)
+                              (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res))
                           (Diagnostics.end-zone! diag "Bake: Carve GPU")
                           (Chunk.set-modified! chunk true)
                           (set! overlapped true))))))))))
@@ -1423,6 +1431,12 @@
   (sig assemble-dynamic-ecs-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
   (defn assemble-dynamic-ecs-shader [e world]
     (let [db (Engine.db e)
+          world-data (Engine.world-data e)
+          res @(World.voxel-resolution world-data)
+          res-str (Int.str res)
+          res-sq-str (Int.str (* res res))
+          total-str (Int.str (* res (* res res)))
+          cell-size-str (Double.str (/ 32.0 (Double.from-int res)))
           header-block 
           (str*
             "struct PointInstance {
@@ -1454,9 +1468,9 @@
             @compute @workgroup_size(64)
             fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 let idx = global_id.x;
-                if (idx >= 32768u) { return; }
+                if (idx >= " @&total-str "u) { return; }
                 var cell = voxel_grid[idx];
-                let voxel_pos = vec3<f32>(f32(idx % 32u), f32((idx / 32u) % 32u), f32(idx / 1024u));
+                let voxel_pos = vec3<f32>(f32(idx % " @&res-str "u), f32((idx / " @&res-str "u) % " @&res-str "u), f32(idx / " @&res-sq-str "u)) * " @&cell-size-str ";
                 let dt = 0.00833;
                 let dummy_use = u.time * 0.0;
                 cell.x += dummy_use;
@@ -1509,7 +1523,9 @@
     (let [world-data (Engine.world-data e)
           chunks (World.chunks world-data)
           num-chunks (Array.length chunks)
-          script (Engine.last-known-script e)]
+          script (Engine.last-known-script e)
+          res @(World.voxel-resolution world-data)
+          dispatch-cnt (/ (* res (* res res)) 64)]
       (if (String.empty? script)
           ()
           (let [cache (Engine.jit-cache e)
@@ -1528,9 +1544,9 @@
                                 (IO.println &(str* "JIT Bind Group error: " &err))
                               (Result.Success bg)
                                 (do
-                                  (WGPU.dispatch ctx @&pipe bg 512)
+                                  (WGPU.dispatch ctx @&pipe bg dispatch-cnt)
                                   (WGPU.free-bind-group bg)
-                                  (VoxelBaker.pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk)))))))))
+                                  (VoxelBaker.pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk) res))))))))
               _ ())))))
 
   (defn tick! [e ctx ren width height]
@@ -1587,7 +1603,8 @@
             (when steps-changed
               (let [ray-steps @(Settings.ray-steps &new-cfg)
                     shadow-steps @(Settings.shadow-steps &new-cfg)
-                    new-shader (Shaders.shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell ray-steps shadow-steps)
+                    voxel-res @(Settings.voxel-resolution &new-cfg)
+                    new-shader (Shaders.shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell ray-steps shadow-steps voxel-res)
                     format (WGPURenderer.format ren)
                     pipe-res (WGPURender.create-pipeline ctx &new-shader "vs_main" "fs_main" format)]
                 (match pipe-res
