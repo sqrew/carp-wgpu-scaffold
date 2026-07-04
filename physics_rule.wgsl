@@ -17,7 +17,7 @@
 // === Examples (Uncomment to play) ===
 
 // --- Example 1: Sinusoidal Terrain Waving ---
-// cell.x = sin(u.time + (f32(idx) * 0.01));
+/// cell.x = sin(u.time + (f32(idx) * 0.01));
 
 // --- Example 2: Pulsing Material Colors ---
 // cell.y = 2.0 + (sin(u.time * 2.0) * 0.5 + 0.5) * 4.0;

@@ -35,6 +35,7 @@
     active-ui-panel (Maybe (Handle ()))
     jit-cache (Map String WGPUComputePipeline)
     last-known-script String
+    settings Settings
   ])
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))

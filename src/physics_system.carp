@@ -100,9 +100,10 @@
               _ ())))
         (Vector2.init min-d mat-id))))
 
-  (defn apply-atmospheric-forces! [world db grid vel-field gravity-field]
+  (defn apply-atmospheric-forces! [e world db grid vel-field gravity-field]
     (let [coeff -30.0
-          drag-coeff 0.15]
+          drag-coeff 0.15
+          gravity (Settings.gravity (Engine.settings e))]
       (ECS.query world [ent (rb RigidBody)]
         (let [pos (RigidBody.position rb)
               vel (Body.velocity (RigidBody.body rb))
@@ -113,7 +114,7 @@
               rel-vel (Vector3.sub &ind-vel vel)
               drag-force (Vector3.mul &rel-vel drag-coeff)
               g-scale (Field.sample gravity-field pos)
-              local-gravity (Vector3.mul &PhysicsSystem.gravity g-scale)
+              local-gravity (Vector3.mul gravity g-scale)
               temp-sum (Vector3.add &local-gravity &p-force)
               total-force (let [tf (Vector3.add &temp-sum &drag-force)]
                             (PhysicsSystem.clamp-vector3 &tf 1000.0))]
@@ -124,7 +125,9 @@
           coord (Engine.coordinator e)
           diag (Engine.diagnostics e)
           collision-occurred false
-          manifolds []]
+          manifolds []
+          fixed-dt @(Settings.fixed-dt (Engine.settings e))
+          iterations @(Settings.physics-iterations (Engine.settings e))]
       (do
         
         ;; 1. Step Bodies (Integrate forces and advance state)

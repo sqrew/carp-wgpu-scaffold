@@ -1,0 +1,88 @@
+;; src/config.carp
+
+(load "Pattern.carp")
+
+(deftype Config [
+  width Int
+  height Int
+  shadow-quality Int
+  ao-quality Int
+  volumetric-sdf Bool
+  show-debug-lines Bool
+  chunk-loading-enabled Bool
+  fixed-dt Double
+  physics-iterations Int
+  gravity (Vector3 Double)
+])
+
+(defmodule Config
+  (defn default []
+    (Config.init
+      1280
+      720
+      2
+      2
+      false
+      true
+      true
+      0.00833
+      8
+      (Vector3.init 0.0 -9.81 0.0)))
+
+  (defn parse-bool [s]
+    (or (= s "true") (= s "1")))
+
+  (defn load-from-file [filepath]
+    (let [file-res (IO.read-file filepath)
+          cfg (Config.default)]
+      (match file-res
+        (Result.Success content)
+          (let [lines-arr (String.lines &content)]
+            (do
+              (for [i 0 (Array.length &lines-arr)]
+                (let [line (Array.unsafe-nth &lines-arr i)
+                      parts (String.split-by line &[\=])]
+                  (when (= (Array.length &parts) 2)
+                    (let [key (Pattern.trim (Array.unsafe-nth &parts 0))
+                          val (Pattern.trim (Array.unsafe-nth &parts 1))]
+                      (do
+                        (when (= &key "width")
+                          (match (Int.from-string &val)
+                            (Maybe.Just w) (Config.set-width! &cfg w)
+                            _ ()))
+                        (when (= &key "height")
+                          (match (Int.from-string &val)
+                            (Maybe.Just h) (Config.set-height! &cfg h)
+                            _ ()))
+                        (when (= &key "shadow_quality")
+                          (match (Int.from-string &val)
+                            (Maybe.Just sq) (Config.set-shadow-quality! &cfg sq)
+                            _ ()))
+                        (when (= &key "ao_quality")
+                          (match (Int.from-string &val)
+                            (Maybe.Just aq) (Config.set-ao-quality! &cfg aq)
+                            _ ()))
+                        (when (= &key "volumetric_sdf")
+                          (Config.set-volumetric-sdf! &cfg (Config.parse-bool &val)))
+                        (when (= &key "show_debug_lines")
+                          (Config.set-show-debug-lines! &cfg (Config.parse-bool &val)))
+                        (when (= &key "chunk_loading_enabled")
+                          (Config.set-chunk-loading-enabled! &cfg (Config.parse-bool &val)))
+                        (when (= &key "fixed_dt")
+                          (match (Double.from-string &val)
+                            (Maybe.Just dt) (Config.set-fixed-dt! &cfg dt)
+                            _ ()))
+                        (when (= &key "physics_iterations")
+                          (match (Int.from-string &val)
+                            (Maybe.Just iter) (Config.set-physics-iterations! &cfg iter)
+                            _ ()))
+                        (when (= &key "gravity_y")
+                          (match (Double.from-string &val)
+                            (Maybe.Just gy) (Config.set-gravity! &cfg (Vector3.init 0.0 gy 0.0))
+                            _ ())))))))
+              cfg))
+        (Result.Error _)
+          (let [default-content @"width=1280\nheight=720\nshadow_quality=2\nao_quality=2\nvolumetric_sdf=false\nshow_debug_lines=true\nchunk_loading_enabled=true\nfixed_dt=0.00833\nphysics_iterations=8\ngravity_y=-9.81\n"
+                _ (IO.write-file filepath &default-content)]
+            cfg))))
+)

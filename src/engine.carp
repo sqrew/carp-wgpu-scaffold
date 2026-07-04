@@ -19,7 +19,7 @@
   (use World)
   (use Raymarch)
   (use Ray)
-  (defn new [win aspect backend]
+  (defn new [win aspect backend cfg]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -120.0 -300.0 -120.0)
           world-data (World.new grid-origin 12.0 20 30 20)
@@ -220,9 +220,9 @@
               []
               []
               1.2
-              true
+              @(Settings.show-debug-lines &cfg)
               0
-              1
+              @(Settings.shadow-quality &cfg)
               pres-field
               vel-field
               temp-field
@@ -231,12 +231,13 @@
               ch-field
               grav-field
               r-db
-              false
-              true
+              @(Settings.volumetric-sdf &cfg)
+              @(Settings.chunk-loading-enabled &cfg)
               diag
               (Maybe.Nothing)
               (Map.create)
-              (the String @""))))))
+              (the String @"")
+              cfg)))))
 
   (defn db [e]
     (World.field-db (Engine.world-data e)))
@@ -685,15 +686,17 @@
 
   (defn tick-simulation! [e dt]
     (let [world (Engine.world e)
-          grid (Engine.grid e)]
+          grid (Engine.grid e)
+          cfg (Engine.settings e)
+          f-dt @(Settings.fixed-dt cfg)]
       (do
         (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.033)))
-        (while (>= @(Engine.accumulator e) PhysicsSystem.fixed-dt)
+        (while (>= @(Engine.accumulator e) f-dt)
           (do
-            (PhysicsSystem.apply-atmospheric-forces! world (Engine.db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
+            (PhysicsSystem.apply-atmospheric-forces! e world (Engine.db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
             (ignore (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e)))
-            (ExplosionSystem.step-explosions! e world (Engine.db e) PhysicsSystem.fixed-dt)
-            (Engine.set-accumulator! e (- @(Engine.accumulator e) PhysicsSystem.fixed-dt)))))))
+            (ExplosionSystem.step-explosions! e world (Engine.db e) f-dt)
+            (Engine.set-accumulator! e (- @(Engine.accumulator e) f-dt)))))))
 
   (defn tick-lifecycle! [e dt]
     (let [cam (Engine.camera e)
@@ -1391,6 +1394,32 @@
                 (Map.put! cache &master-wgsl-source &native-pipe)
                 native-pipe)))))
 
+  (sig has-active-code? (Fn [&String] Bool))
+  (defn has-active-code? [content]
+    (let [lines-arr (String.lines content)
+          has-code false]
+      (do
+        (for [i 0 (Array.length &lines-arr)]
+          (let [line (Array.unsafe-nth &lines-arr i)
+                len (String.length line)
+                non-space false
+                comment false
+                c-idx 0]
+            (do
+              (while (and (< c-idx len) (not non-space))
+                (let [ch (String.char-at line c-idx)]
+                  (if (Char.whitespace? ch)
+                      (set! c-idx (inc c-idx))
+                      (do
+                        (set! non-space true)
+                        (when (and (< (+ c-idx 1) len)
+                                   (and (= (Char.to-int ch) 47) 
+                                        (= (Char.to-int (String.char-at line (inc c-idx))) 47)))
+                          (set! comment true))))))
+              (when (and non-space (not comment))
+                (set! has-code true)))))
+        has-code)))
+
   (sig assemble-dynamic-ecs-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
   (defn assemble-dynamic-ecs-shader [e world]
     (let [db (Engine.db e)
@@ -1441,6 +1470,12 @@
             }"
           injection-accum @""]
       (do
+        (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/physics_rule.wgsl")]
+          (match file-res
+            (Result.Success content)
+              (when (Engine.has-active-code? &content)
+                (set! injection-accum (str* injection-accum "\n{\n// === Injected from physics_rule.wgsl ===\n" content "\n}\n")))
+            (Result.Error _) ()))
         (ECS.query world [ent (gs GravitySource)]
           (let [inst-idx (FieldDatabase.get-index-by-handle db (ECS.Entity.handle &ent))]
             (when (>= inst-idx 0)
@@ -1465,7 +1500,9 @@
               (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
                 (if (WGPU.pipeline-null?- pipe)
                     ()
-                    (IO.println "Physical system reloaded and active."))))))))
+                    (do
+                      (IO.println "Physical system reloaded and active.")
+                      (VoxelBaker.bake-voxel-grid! ctx ren (Engine.grid e) (Engine.world e) (Engine.world-data e))))))))))
 
   (sig run-jit-physics-loop! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn run-jit-physics-loop! [e ctx ren]

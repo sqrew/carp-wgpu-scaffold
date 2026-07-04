@@ -36,6 +36,7 @@
 
 ;; --- PROJECT MODULES ---
 (load "../carp-diagnostics/diagnostics.carp")
+(load "settings.carp")
 (load "events.carp")
 (load "coordinator.carp")
 (load "commands.carp")
@@ -68,8 +69,9 @@
 (use ECS)
 
 (defn main []
-  (let [width 1280
-        height 720
+  (let [cfg (Settings.load-from-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/settings.cfg")
+        width @(Settings.width &cfg)
+        height @(Settings.height &cfg)
         aspect (/ (Double.from-int width) (Double.from-int height))]
     (match (Init.create-app width height "Carp WGPU Game Scaffold")
       (Result.Error e) (do (println* "Initialization Error: " &e) -1)
@@ -79,7 +81,7 @@
               surf @(App.surf &app)
               _ (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)
               backend (GLFWBackend.init)
-              eng (Engine.new (glfw-window->voidptr win) aspect backend)]
+              eng (Engine.new (glfw-window->voidptr win) aspect backend cfg)]
               (do
               (let [_ (Engine.register-internal-handlers! &eng)] ())
               (let [_ (Engine.init-fields! &eng)] ())
