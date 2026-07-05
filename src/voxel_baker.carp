@@ -23,7 +23,7 @@
       (let [max-val (if (> a b) a b)]
         (+ max-val (* (* (* h h) h) (* k (/ 1.0 6.0)))))))
 
-  (defn pack-and-copy-chunk! [ctx ren v-gpu-b slot res]
+  (defn pack-and-copy-chunk! [ctx ren chunk v-gpu-b slot res]
     (let [v-half-b @(WGPURenderer.voxel-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
           slots-per-dim (/ 384 res)
@@ -35,18 +35,24 @@
           oy (* slot-y res)
           oz (* slot-z res)
           dispatch-cnt (/ (* res (* res res)) 64)
-          pack-bufs [v-gpu-b v-half-b]]
-      (match (WGPU.create-bind-group ctx pipe &pack-bufs)
-        (Result.Error e) (IO.println &(format "Pack Bind Group error: %s" &e))
-        (Result.Success bg)
-          (do
-            (WGPU.dispatch ctx pipe bg dispatch-cnt)
-            (WGPU.free-bind-group bg)
-            (WGPURender.copy-buffer-to-3d-texture-offset 
-              ctx 
-              v-half-b 
-              @(WGPURenderer.voxel-texture ren) 
-              ox oy oz res res res)))))
+          cached-bg @(Chunk.pack-bind-group chunk)
+          bg (if (WGPU.bindgroup-null?- cached-bg)
+                 (let [pack-bufs [v-gpu-b v-half-b]]
+                   (match (WGPU.create-bind-group ctx pipe &pack-bufs)
+                     (Result.Error e) (do (IO.println &(format "Pack Bind Group error: %s" &e)) (null-bind-group))
+                     (Result.Success new-bg)
+                       (do
+                         (Chunk.set-pack-bind-group! chunk new-bg)
+                         new-bg)))
+                 cached-bg)]
+      (when (not (WGPU.bindgroup-null?- bg))
+        (do
+          (WGPU.dispatch ctx pipe bg dispatch-cnt)
+          (WGPURender.copy-buffer-to-3d-texture-offset 
+            ctx 
+            v-half-b 
+            @(WGPURenderer.voxel-texture ren) 
+            ox oy oz res res res)))))
 
   (defn chunk-overlaps-sphere? [chunk center radius]
     (let [qx @(Chunk.coord-x chunk)
@@ -103,7 +109,7 @@
                   (do
                     (WGPU.dispatch ctx pipe bg dispatch-cnt)
                     (WGPU.free-bind-group bg))))
-            (pack-and-copy-chunk! ctx ren v-gpu-b @(Chunk.atlas-slot chunk) res)
+            (pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
             )))))
 
   (defn carve-voxel-grid-gpu! [ctx ren chunk center radius res]
@@ -241,10 +247,10 @@
                 (do
                   (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk))
                   (Chunk.set-gpu-buffer! chunk new-b)
-                  (pack-and-copy-chunk! ctx ren new-b @(Chunk.atlas-slot chunk) res)))
+                  (pack-and-copy-chunk! ctx ren chunk new-b @(Chunk.atlas-slot chunk) res)))
             (do
               (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
-              (pack-and-copy-chunk! ctx ren b @(Chunk.atlas-slot chunk) res)))))))
+              (pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res)))))))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
     (let [chunks (World.chunks world-data)]

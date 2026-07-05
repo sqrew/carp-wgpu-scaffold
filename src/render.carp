@@ -74,7 +74,7 @@
   (sig build-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double Int] ()))
   (sig carve-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double Int Double] ()))
   (sig build-voxel-grid-cpu! (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double Int Double] ()))
-  (sig pack-and-copy-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) WGPUBuffer Int Int] ()))
+  (sig pack-and-copy-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) WGPUBuffer Int Int] ()))
   (sig bake-fields-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) Double] ()))
   (sig pack-and-copy-fields-chunk! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) Int] ()))
 )
@@ -87,12 +87,34 @@
   (def max-csg-nodes 1024)
   (def csg-node-size 64)
 
+  (def cache-qx-arr (the (Array Int) []))
+  (def cache-qz-arr (the (Array Int) []))
+  (def cache-qy-arr (the (Array Int) []))
+  (def cache-initialized false)
+
   (sig get-surface-qy (Fn [Int Int] Int))
   (defn get-surface-qy [qx qz]
-    (let [px (* (Double.from-int qx) 32.0)
-          pz (* (Double.from-int qz) 32.0)
-          final-h (get-terrain-height px pz)]
-      (the Int (Double.to-int (Double.floor (/ final-h 32.0))))))
+    (do
+      (when (not cache-initialized)
+        (do
+          (set! cache-qx-arr (replicate 2048 &-999999))
+          (set! cache-qz-arr (replicate 2048 &-999999))
+          (set! cache-qy-arr (replicate 2048 &0))
+          (set! cache-initialized true)))
+      (let [hash-idx (Int.mod (Int.abs (+ (* qx 73856093) (* qz 19349663))) 2048)
+            cached-qx @(Array.unsafe-nth &cache-qx-arr hash-idx)
+            cached-qz @(Array.unsafe-nth &cache-qz-arr hash-idx)]
+        (if (and (= qx cached-qx) (= qz cached-qz))
+            @(Array.unsafe-nth &cache-qy-arr hash-idx)
+            (let [px (* (Double.from-int qx) 32.0)
+                  pz (* (Double.from-int qz) 32.0)
+                  final-h (get-terrain-height px pz)
+                  qy (the Int (Double.to-int (Double.floor (/ final-h 32.0))))]
+              (do
+                (Array.aset! &cache-qx-arr hash-idx qx)
+                (Array.aset! &cache-qz-arr hash-idx qz)
+                (Array.aset! &cache-qy-arr hash-idx qy)
+                qy))))))
 
   (sig float-from-int (Fn [Int] Float))
   (defn float-from-int [x]

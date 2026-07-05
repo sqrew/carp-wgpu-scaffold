@@ -2,6 +2,10 @@
   "WGPUBuffer $NAME()"
   "$DECL { return NULL; }")
 
+(deftemplate null-bind-group (Fn [] WGPUBindGroup)
+  "WGPUBindGroup $NAME()"
+  "$DECL { return NULL; }")
+
 (deftype Chunk [
   coord-x Int
   coord-y Int
@@ -11,6 +15,8 @@
   modified Bool
   bake-progress Int
   gpu-buffer WGPUBuffer
+  jit-bind-group WGPUBindGroup
+  pack-bind-group WGPUBindGroup
 ])
 
 (deftype World [
@@ -46,7 +52,7 @@
             (for [x -1 2]
               (let [voxel-data (the (Array Float) (replicate size-floats &1000.0f))
                     slot (+ (+ (+ x 1) (* (+ y 1) 3)) (* (+ z 1) 9))
-                    chunk (Chunk.init x y z voxel-data slot false 0 (null-buffer))]
+                    chunk (Chunk.init x y z voxel-data slot false 0 (null-buffer) (null-bind-group) (null-bind-group))]
                 (Array.push-back! &arr chunk)))))
         arr)))
 
@@ -283,7 +289,7 @@
               (set! found-idx i))))
         (if (= found-idx -1)
             (let [saved-voxel @(Chunk.voxel-data chunk)
-                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true @(World.voxel-resolution world) (null-buffer))]
+                  saved-chunk (Chunk.init qx qy qz saved-voxel -1 true @(World.voxel-resolution world) (null-buffer) (null-bind-group) (null-bind-group))]
               (Array.push-back! saved-list saved-chunk))
             (let [target-chunk (Array.unsafe-nth saved-list found-idx)]
                (Chunk.set-voxel-data! target-chunk @(Chunk.voxel-data chunk)))))))
@@ -292,8 +298,19 @@
     (let [chunks (World.chunks world)
           len (Array.length chunks)]
       (for [i 0 len]
-        (let [chunk (Array.unsafe-nth chunks i)]
-          (Chunk.set-bake-progress! chunk 0)))))
+        (let [chunk (Array.unsafe-nth chunks i)
+              bg @(Chunk.jit-bind-group chunk)
+              pbg @(Chunk.pack-bind-group chunk)]
+          (do
+            (Chunk.set-bake-progress! chunk 0)
+            (when (not (WGPU.bindgroup-null?- bg))
+              (do
+                (WGPU.free-bind-group bg)
+                (Chunk.set-jit-bind-group! chunk (null-bind-group))))
+            (when (not (WGPU.bindgroup-null?- pbg))
+              (do
+                (WGPU.free-bind-group pbg)
+                (Chunk.set-pack-bind-group! chunk (null-bind-group)))))))))
 
   (defn clear-cache! [world]
     (let [cqx (World.cache-qx world)
