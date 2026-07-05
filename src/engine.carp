@@ -19,6 +19,172 @@
   (use World)
   (use Raymarch)
   (use Ray)
+  (defn register-bindings! [mgr]
+    (do
+      (InputManager.add-binding! mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
+      (InputManager.add-binding! mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
+      (InputManager.add-binding! mgr "Left" (InputSource.Key GLFW.Keycode.A) 1.0)
+      (InputManager.add-binding! mgr "Right" (InputSource.Key GLFW.Keycode.D) 1.0)
+      (InputManager.add-binding! mgr "Up" (InputSource.Key GLFW.Keycode.E) 1.0)
+      (InputManager.add-binding! mgr "Down" (InputSource.Key GLFW.Keycode.Q) 1.0)
+      (InputManager.add-binding! mgr "LookX" (InputSource.MouseDeltaX) 0.002)
+      (InputManager.add-binding! mgr "LookY" (InputSource.MouseDeltaY) 0.002)
+      (InputManager.add-binding! mgr "StopMovement" (InputSource.Key GLFW.Keycode.R) 1.0)
+      (InputManager.add-binding! mgr "ResetPlayer" (InputSource.Key GLFW.Keycode.Y) 1.0)
+      (InputManager.add-binding! mgr "Teleport" (InputSource.Key GLFW.Keycode.T) 1.0)
+      (InputManager.add-binding! mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
+      (InputManager.add-binding! mgr "FireBouncy" (InputSource.Key GLFW.Keycode.F) 1.0)
+      (InputManager.add-binding! mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
+      (InputManager.add-binding! mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
+      (InputManager.add-binding! mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
+      (InputManager.add-binding! mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
+      (InputManager.add-binding! mgr "Implode" (InputSource.Key GLFW.Keycode.I) 1.0)
+      (InputManager.add-binding! mgr "MorphLess" (InputSource.Key GLFW.Keycode.COMMA) 1.0)
+      (InputManager.add-binding! mgr "MorphMore" (InputSource.Key GLFW.Keycode.PERIOD) 1.0)
+      (InputManager.add-binding! mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
+      (InputManager.add-binding! mgr "CycleViewMode" (InputSource.Key GLFW.Keycode.M) 1.0)
+      (InputManager.add-binding! mgr "CycleShadowQuality" (InputSource.Key GLFW.Keycode.O) 1.0)
+      (InputManager.add-binding! mgr "ToggleVolumetricSdf" (InputSource.Key GLFW.Keycode.V) 1.0)
+      (InputManager.add-binding! mgr "ToggleChunkLoading" (InputSource.Key GLFW.Keycode.L) 1.0)
+      (InputManager.add-binding! mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)))
+
+  (defn spawn-csg-demo! [world]
+    (let [root-ent (GameWorld.create-entity! world)
+          root-pos (Vector3.init 5.0 2.0 0.0)
+          root-rb (RigidBody.static @&root-pos (Quaternion.identity) 0.5 0.5)
+          root-vol (Volume.Sdf (SDF.init-box (Vector3.init 1.5 1.5 1.5) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+          root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          root-color (Color.init (Vector3.init 0.2 0.8 0.2))
+          params (Vector4.init 1.5 1.5 1.5 0.0)
+          root-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+          child-ent (GameWorld.create-entity! world)
+          child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+          child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          parent-comp (Parent.init @(ECS.Entity.handle &root-ent))
+          csg-comp (CsgNode.init (Box.init (SDF.init-sphere 1.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))) 1)]
+      (do
+        (ECS.add-component! world &root-ent root-rb)
+        (ECS.add-component! world &root-ent root-col)
+        (ECS.add-component! world &root-ent root-color)
+        (ECS.add-component! world &root-ent root-fi)
+        (ECS.add-component! world &root-ent (StaticWorldTag.init))
+        (ECS.add-component! world &child-ent child-col)
+        (ECS.add-component! world &child-ent parent-comp)
+        (ECS.add-component! world &child-ent csg-comp)
+        (ECS.with-components world @&root-ent [e (col Collidable)]
+          (match-ref (Collidable.volume col)
+            (Volume.Sdf sdf) (PhysicsSystem.build-csg-tree-rec! world (ECS.Entity.handle &root-ent) sdf)
+            _ ())))))
+
+  (defn spawn-player! [world]
+    (let [p-ent (GameWorld.create-entity! world)
+          p-pos (Vector3.init 5.0 35.0 5.0)
+          p-rb (RigidBody.new p-pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)
+          p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
+          p-col (Collidable.init @(ECS.Entity.handle &p-ent) p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          p-color (Color.init (Vector3.init 0.0 1.0 0.0))
+          p-rot (RotationState.init -1.5707 0.0)]
+      (do
+        (ECS.add-component! world &p-ent p-rb)
+        (ECS.add-component! world &p-ent p-col)
+        (ECS.add-component! world &p-ent p-color)
+        (ECS.add-component! world &p-ent p-rot)
+        (ECS.add-component! world &p-ent (PlayerTag.init)))))
+
+  (defn spawn-gravity-fields! [world]
+    (do
+      ;; Create Zero-Gravity Field (Purple Sphere, 0.0 Gravity)
+      (let [zero-g-ent (GameWorld.create-entity! world)
+            zero-g-pos (Vector3.init 15.0 5.0 -2.0)
+            zero-g-rb (RigidBody.static @&zero-g-pos (Quaternion.identity) 0.5 0.5)
+            zero-g-color-v (Vector3.init 0.6 0.1 0.8)
+            zero-g-color (Color.init @&zero-g-color-v)
+            params (Vector4.init 1.0 0.0 0.0 0.0)
+            zero-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+            gs (GravitySource.init 0.0)]
+        (do
+          (ECS.add-component! world &zero-g-ent zero-g-rb)
+          (ECS.add-component! world &zero-g-ent zero-g-color)
+          (ECS.add-component! world &zero-g-ent zero-g-fi)
+          (ECS.add-component! world &zero-g-ent gs)))
+
+      ;; Spawn test boxes inside Zero-Gravity Field
+      (for [y 0 3]
+        (let [box-ent (GameWorld.create-entity! world)
+              pos (Vector3.init 15.0 (+ 3.0 (* (Double.from-int y) 1.5)) -2.0)
+              rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
+              vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
+              col (Collidable.init @(ECS.Entity.handle &box-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+              c-val (Vector3.init 0.6 0.1 0.8)
+              color (Color.init @&c-val)
+              params (Vector4.init 0.5 0.5 0.5 0.0)
+              box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+          (do
+            (ECS.add-component! world &box-ent rb)
+            (ECS.add-component! world &box-ent col)
+            (ECS.add-component! world &box-ent color)
+            (ECS.add-component! world &box-ent box-fi))))
+
+      ;; Create Inverted Gravity Field (Red Sphere, -1.0 Gravity)
+      (let [inv-g-ent (GameWorld.create-entity! world)
+            inv-g-pos (Vector3.init -5.0 5.0 -2.0)
+            inv-g-rb (RigidBody.static @&inv-g-pos (Quaternion.identity) 0.5 0.5)
+            inv-g-color-v (Vector3.init 0.9 0.2 0.1)
+            inv-g-color (Color.init @&inv-g-color-v)
+            params (Vector4.init 1.0 0.0 0.0 0.0)
+            inv-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+            gs (GravitySource.init -1.0)]
+        (do
+          (ECS.add-component! world &inv-g-ent inv-g-rb)
+          (ECS.add-component! world &inv-g-ent inv-g-color)
+          (ECS.add-component! world &inv-g-ent inv-g-fi)
+          (ECS.add-component! world &inv-g-ent gs)))
+
+      ;; Spawn test boxes inside Inverted Gravity Field
+      (for [y 0 3]
+        (let [box-ent (GameWorld.create-entity! world)
+              pos (Vector3.init -5.0 (+ 3.0 (* (Double.from-int y) 1.5)) -2.0)
+              rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
+              vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
+              col (Collidable.init @(ECS.Entity.handle &box-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+              c-val (Vector3.init 0.9 0.2 0.1)
+              color (Color.init @&c-val)
+              params (Vector4.init 0.5 0.5 0.5 0.0)
+              box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+          (do
+            (ECS.add-component! world &box-ent rb)
+            (ECS.add-component! world &box-ent col)
+            (ECS.add-component! world &box-ent color)
+            (ECS.add-component! world &box-ent box-fi))))))
+
+  (defn spawn-physics-blocks! [world]
+    (for [y 0 5]
+      (for [x 0 2]
+        (let [ent (GameWorld.create-entity! world)
+              x-pos (+ 5.0 (* (- (Double.from-int x) 1.5) 1.05))
+              y-pos (+ 0.55 (* (Double.from-int y) 2.0))
+              z-pos -2.0
+              pos (Vector3.init x-pos y-pos z-pos)
+              rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
+              vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
+              col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+              color-idx (Int.random-between 0 4)
+              c-val (if (= color-idx 0)
+                        (Vector3.init 0.0 1.0 1.0)
+                        (if (= color-idx 1)
+                            (Vector3.init 1.0 0.0 1.0)
+                            (if (= color-idx 2)
+                                (Vector3.init 1.0 0.5 0.0)
+                                (Vector3.init 1.0 1.0 0.0))))
+              color (Color.init @&c-val)
+              params (Vector4.init 0.5 0.5 0.5 0.0)
+              fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+          (do
+            (ECS.add-component! world &ent rb)
+            (ECS.add-component! world &ent col)
+            (ECS.add-component! world &ent color)
+            (ECS.add-component! world &ent fi))))))
+
   (defn new [win aspect backend cfg]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -120.0 -300.0 -120.0)
@@ -37,207 +203,47 @@
           diag (Diagnostics.new @"/home/sqrew/Desktop/carp-wgpu-scaffold/diagnostics.log")]
       (do
         (Diagnostics.log! &diag (LogLevel.Info) "=== Engine Started / Diagnostics Initialized ===")
-        (InputManager.add-binding! &mgr "Forward" (InputSource.Key GLFW.Keycode.W) 1.0)
-        (InputManager.add-binding! &mgr "Backward" (InputSource.Key GLFW.Keycode.S) 1.0)
-        (InputManager.add-binding! &mgr "Left" (InputSource.Key GLFW.Keycode.A) 1.0)
-        (InputManager.add-binding! &mgr "Right" (InputSource.Key GLFW.Keycode.D) 1.0)
-        (InputManager.add-binding! &mgr "Up" (InputSource.Key GLFW.Keycode.E) 1.0)
-        (InputManager.add-binding! &mgr "Down" (InputSource.Key GLFW.Keycode.Q) 1.0)
-        (InputManager.add-binding! &mgr "LookX" (InputSource.MouseDeltaX) 0.002)
-        (InputManager.add-binding! &mgr "LookY" (InputSource.MouseDeltaY) 0.002)
-        (InputManager.add-binding! &mgr "StopMovement" (InputSource.Key GLFW.Keycode.R) 1.0)
-        (InputManager.add-binding! &mgr "ResetPlayer" (InputSource.Key GLFW.Keycode.Y) 1.0)
-        (InputManager.add-binding! &mgr "Teleport" (InputSource.Key GLFW.Keycode.T) 1.0)
-        (InputManager.add-binding! &mgr "Fire" (InputSource.Key GLFW.Keycode.SPACE) 1.0)
-        (InputManager.add-binding! &mgr "FireBouncy" (InputSource.Key GLFW.Keycode.F) 1.0)
-        (InputManager.add-binding! &mgr "ScaleUp" (InputSource.Key GLFW.Keycode.C) 1.0)
-        (InputManager.add-binding! &mgr "ScaleDown" (InputSource.Key GLFW.Keycode.Z) 1.0)
-        (InputManager.add-binding! &mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
-        (InputManager.add-binding! &mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
-        (InputManager.add-binding! &mgr "Implode" (InputSource.Key GLFW.Keycode.I) 1.0)
-        (InputManager.add-binding! &mgr "MorphLess" (InputSource.Key GLFW.Keycode.COMMA) 1.0)
-        (InputManager.add-binding! &mgr "MorphMore" (InputSource.Key GLFW.Keycode.PERIOD) 1.0)
-        (InputManager.add-binding! &mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
-        (InputManager.add-binding! &mgr "CycleViewMode" (InputSource.Key GLFW.Keycode.M) 1.0)
-        (InputManager.add-binding! &mgr "CycleShadowQuality" (InputSource.Key GLFW.Keycode.O) 1.0)
-        (InputManager.add-binding! &mgr "ToggleVolumetricSdf" (InputSource.Key GLFW.Keycode.V) 1.0)
-        (InputManager.add-binding! &mgr "ToggleChunkLoading" (InputSource.Key GLFW.Keycode.L) 1.0)
-        (InputManager.add-binding! &mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)
-
-        ()
-
-        ;; Create CSG Root Shape (Static Box) and Child Shape (Cylinder)
-        (let [root-ent (GameWorld.create-entity! &world)
-              root-pos (Vector3.init 5.0 2.0 0.0)
-              root-rb (RigidBody.static @&root-pos (Quaternion.identity) 0.5 0.5)
-              root-vol (Volume.Sdf (SDF.init-box (Vector3.init 1.5 1.5 1.5) (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-              root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-              root-color (Color.init (Vector3.init 0.2 0.8 0.2))
-              params (Vector4.init 1.5 1.5 1.5 0.0)
-              root-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
-              child-ent (GameWorld.create-entity! &world)
-              child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
-              child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-              parent-comp (Parent.init @(ECS.Entity.handle &root-ent))
-              csg-comp (CsgNode.init (Box.init (SDF.init-sphere 1.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity))) 1)]
-          (do
-            (ECS.add-component! &world &root-ent root-rb)
-            (ECS.add-component! &world &root-ent root-col)
-            (ECS.add-component! &world &root-ent root-color)
-            (ECS.add-component! &world &root-ent root-fi)
-            (ECS.add-component! &world &root-ent (StaticWorldTag.init))
-            (ECS.add-component! &world &child-ent child-col)
-            (ECS.add-component! &world &child-ent parent-comp)
-            (ECS.add-component! &world &child-ent csg-comp)
-            (let [world-ref &world]
-              (ECS.with-components world-ref @&root-ent [e (col Collidable)]
-                (match-ref (Collidable.volume col)
-                  (Volume.Sdf sdf) (PhysicsSystem.build-csg-tree-rec! world-ref (ECS.Entity.handle &root-ent) sdf)
-                  _ ())))))
-
-        ;; Create Player Entity
-        (let [p-ent (GameWorld.create-entity! &world)
-              p-pos (Vector3.init 5.0 35.0 5.0)
-              p-rb (RigidBody.new p-pos (Quaternion.identity) 1.0 0.8 0.5 0.98 0.95 0.5)
-              p-vol (Volume.Ball (Sphere.init (Vector3.init 0.0 0.0 0.0) 1.0))
-              p-col (Collidable.init @(ECS.Entity.handle &p-ent) p-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-              p-color (Color.init (Vector3.init 0.0 1.0 0.0))
-              p-rot (RotationState.init -1.5707 0.0)]
-          (do
-            (ECS.add-component! &world &p-ent p-rb)
-            (ECS.add-component! &world &p-ent p-col)
-            (ECS.add-component! &world &p-ent p-color)
-            (ECS.add-component! &world &p-ent p-rot)
-            (ECS.add-component! &world &p-ent (PlayerTag.init))))
-
-        ;; Create Zero-Gravity Field (Purple Sphere, 0.0 Gravity)
-        (let [zero-g-ent (GameWorld.create-entity! &world)
-              zero-g-pos (Vector3.init 15.0 5.0 -2.0)
-              zero-g-rb (RigidBody.static @&zero-g-pos (Quaternion.identity) 0.5 0.5)
-              zero-g-color-v (Vector3.init 0.6 0.1 0.8)
-              zero-g-color (Color.init @&zero-g-color-v)
-              params (Vector4.init 1.0 0.0 0.0 0.0)
-              zero-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
-              gs (GravitySource.init 0.0)]
-          (do
-            (ECS.add-component! &world &zero-g-ent zero-g-rb)
-            (ECS.add-component! &world &zero-g-ent zero-g-color)
-            (ECS.add-component! &world &zero-g-ent zero-g-fi)
-            (ECS.add-component! &world &zero-g-ent gs)))
-
-        ;; Spawn test boxes inside Zero-Gravity Field
-        (for [y 0 3]
-          (let [box-ent (GameWorld.create-entity! &world)
-                pos (Vector3.init 15.0 (+ 3.0 (* (Double.from-int y) 1.5)) -2.0)
-                rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
-                vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
-                col (Collidable.init @(ECS.Entity.handle &box-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-                c-val (Vector3.init 0.6 0.1 0.8)
-                color (Color.init @&c-val)
-                params (Vector4.init 0.5 0.5 0.5 0.0)
-                box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
-            (do
-              (ECS.add-component! &world &box-ent rb)
-              (ECS.add-component! &world &box-ent col)
-              (ECS.add-component! &world &box-ent color)
-              (ECS.add-component! &world &box-ent box-fi))))
-
-        ;; Create Inverted Gravity Field (Red Sphere, -1.0 Gravity)
-        (let [inv-g-ent (GameWorld.create-entity! &world)
-              inv-g-pos (Vector3.init -5.0 5.0 -2.0)
-              inv-g-rb (RigidBody.static @&inv-g-pos (Quaternion.identity) 0.5 0.5)
-              inv-g-color-v (Vector3.init 0.9 0.2 0.1)
-              inv-g-color (Color.init @&inv-g-color-v)
-              params (Vector4.init 1.0 0.0 0.0 0.0)
-              inv-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
-              gs (GravitySource.init -1.0)]
-          (do
-            (ECS.add-component! &world &inv-g-ent inv-g-rb)
-            (ECS.add-component! &world &inv-g-ent inv-g-color)
-            (ECS.add-component! &world &inv-g-ent inv-g-fi)
-            (ECS.add-component! &world &inv-g-ent gs)))
-
-        ;; Spawn test boxes inside Inverted Gravity Field
-        (for [y 0 3]
-          (let [box-ent (GameWorld.create-entity! &world)
-                pos (Vector3.init -5.0 (+ 3.0 (* (Double.from-int y) 1.5)) -2.0)
-                rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
-                vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
-                col (Collidable.init @(ECS.Entity.handle &box-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-                c-val (Vector3.init 0.9 0.2 0.1)
-                color (Color.init @&c-val)
-                params (Vector4.init 0.5 0.5 0.5 0.0)
-                box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
-            (do
-              (ECS.add-component! &world &box-ent rb)
-              (ECS.add-component! &world &box-ent col)
-              (ECS.add-component! &world &box-ent color)
-              (ECS.add-component! &world &box-ent box-fi))))
-
-
-        (for [y 0 5]
-          (for [x 0 2]
-            (let [ent (GameWorld.create-entity! &world)
-                  x-pos (+ 5.0 (* (- (Double.from-int x) 1.5) 1.05))
-                  y-pos (+ 0.55 (* (Double.from-int y) 2.0))
-                  z-pos -2.0
-                  pos (Vector3.init x-pos y-pos z-pos)
-                  rb (RigidBody.new @&pos (Quaternion.identity) 1.0 0.3 0.6 0.98 0.95 0.5)
-                  vol (Volume.Sdf (SDF.init-box (Vector3.init 0.5 0.5 0.5) @&pos (Quaternion.identity)))
-                  col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-                  color-idx (Int.random-between 0 4)
-                  c-val (if (= color-idx 0)
-                            (Vector3.init 0.0 1.0 1.0)
-                            (if (= color-idx 1)
-                                (Vector3.init 1.0 0.0 1.0)
-                                (if (= color-idx 2)
-                                    (Vector3.init 1.0 0.5 0.0)
-                                    (Vector3.init 1.0 1.0 0.0))))
-                  color (Color.init @&c-val)
-                  params (Vector4.init 0.5 0.5 0.5 0.0)
-                  fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
-              (do
-                (ECS.add-component! &world &ent rb)
-                (ECS.add-component! &world &ent col)
-                (ECS.add-component! &world &ent color)
-                (ECS.add-component! &world &ent fi)))))
-
-          (let [r-db (RenderDatabase.create &grid WGPURenderer.max-ids-per-cell)]
-            (Engine.init 
-              (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
-              (Clock.new)
-              mgr
-              grid
-              world
-              (Vector3.init 0.1 0.1 0.1)
-              0.0
-              coord
-              world-data
-              true
-              true
-              true
-              true
-              []
-              []
-              1.2
-              @(Settings.show-debug-lines &cfg)
-              0
-              @(Settings.shadow-quality &cfg)
-              pres-field
-              vel-field
-              temp-field
-              age-field
-              hum-field
-              ch-field
-              grav-field
-              r-db
-              @(Settings.volumetric-sdf &cfg)
-              @(Settings.chunk-loading-enabled &cfg)
-              diag
-              (Maybe.Nothing)
-              (Map.create)
-              (the String @"")
-              cfg)))))
+        (register-bindings! &mgr)
+        (spawn-csg-demo! &world)
+        (spawn-player! &world)
+        (spawn-gravity-fields! &world)
+        (spawn-physics-blocks! &world)
+        (let [r-db (RenderDatabase.create &grid WGPURenderer.max-ids-per-cell)]
+          (Engine.init 
+            (Camera.new (Vector3.init 5.0 1.0 5.0) -90.0 0.0 aspect)
+            (Clock.new)
+            mgr
+            grid
+            world
+            (Vector3.init 0.1 0.1 0.1)
+            0.0
+            coord
+            world-data
+            true
+            true
+            true
+            true
+            []
+            []
+            1.2
+            @(Settings.show-debug-lines &cfg)
+            0
+            @(Settings.shadow-quality &cfg)
+            pres-field
+            vel-field
+            temp-field
+            age-field
+            hum-field
+            ch-field
+            grav-field
+            r-db
+            @(Settings.volumetric-sdf &cfg)
+            @(Settings.chunk-loading-enabled &cfg)
+            diag
+            (Maybe.Nothing)
+            (Map.create)
+            (the String @"")
+            cfg)))))
 
   (defn db [e]
     (World.field-db (Engine.world-data e)))
