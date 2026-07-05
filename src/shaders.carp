@@ -1805,45 +1805,5 @@
         "    voxel_half_buffer[idx] = vec2<u32>(p1, p2);\n"
         "}")))
 
-  (defn build-master-jit-template [user-code-snippet voxel-res]
-    (let [total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
-      (str*
-        "struct PointInstance {\n"
-        "    pos_scale: vec4<f32>,\n"
-        "    rot: vec4<f32>,\n"
-        "    color_csg: vec4<f32>,\n"
-        "    sph_fields: vec4<f32>,\n"
-        "}\n"
-        "struct Uniforms { \n"
-        "    time: f32, \n"
-        "    width: f32, \n"
-        "    height: f32, \n"
-        "    cell_size: f32,\n"
-        "    cam_pos: vec4<f32>, \n"
-        "    cam_dir: vec4<f32>,\n"
-        "    cam_right: vec4<f32>,\n"
-        "    cam_up: vec4<f32>,\n"
-        "    bg_color: vec4<f32>,\n"
-        "    grid_dims: vec4<f32>,\n"
-        "    grid_origin: vec4<f32>,\n"
-        "    shadow_ao_quality: vec4<f32>,\n"
-        "    instances: array<PointInstance, 512>,\n"
-        "}\n\n"
-        "@group(0) @binding(0) var<storage, read_write> voxel_grid: array<vec4<f32>>;\n"
-        "@group(0) @binding(1) var<uniform> u: Uniforms;\n\n"
-        "@compute @workgroup_size(64)\n"
-        "fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {\n"
-        "    let idx = global_id.x;\n"
-        "    if (idx >= " &total-str "u) { return; } // Match exact voxel array limit parameters\n\n"
-        "    var cell = voxel_grid[idx];\n"
-        "    let dt = 0.00833; // Synced simulation timestep constant\n"
-        "    let dummy_use = u.time * 0.0;\n"
-        "    cell.x += dummy_use;\n\n"
-        "    // ============================================\n"
-        "    // --- RUNTIME INJECTED SCRIPT BEGINS HERE ---\n"
-        user-code-snippet
-        "\n    // --- RUNTIME INJECTED SCRIPT ENDS HERE ---\n"
-        "    // ============================================\n\n"
-        "    voxel_grid[idx] = cell;\n"
-        "}")))
+
 )

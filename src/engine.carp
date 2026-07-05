@@ -301,11 +301,6 @@
                 _ ())))
         result)))
 
-) ;; close Engine module
-
-
-(defmodule Engine
-
   (defn init-fields! [e]
     (let [db-ptr (FieldDatabase.ptr-cast (Pointer.address (World.field-db (Engine.world-data e))))
           grid-ptr (Pointer.address (Engine.grid e))
