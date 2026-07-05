@@ -178,13 +178,14 @@
                       mat-id (if (< min-d 0.0) 1.0f 0.0f)]
                   (do
                     ;; Bake dynamic/static SDF colliders from FieldDatabase
-                    (let [scene-res (FieldDatabase.evaluate-scene-sdf-material-subset db &p &near-indices min-d)
-                          scene-d @(Vector2.x &scene-res)
-                          scene-mat @(Vector2.y &scene-res)]
-                      (do
-                        (set! min-d scene-d)
-                        (when (> scene-mat 0.0)
-                          (set! mat-id (Double.to-float scene-mat)))))
+                    (when (> (Array.length &near-indices) 0)
+                      (let [scene-res (FieldDatabase.evaluate-scene-sdf-material-subset db &p &near-indices min-d)
+                            scene-d @(Vector2.x &scene-res)
+                            scene-mat @(Vector2.y &scene-res)]
+                        (do
+                          (set! min-d scene-d)
+                          (when (> scene-mat 0.0)
+                            (set! mat-id (Double.to-float scene-mat))))))
                     (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
                       (do
                         (Array.aset! voxel-data idx (Double.to-float min-d))

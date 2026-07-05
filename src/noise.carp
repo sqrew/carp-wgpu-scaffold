@@ -2,9 +2,13 @@
 
 (defmodule WGPURenderer
   (defn hash2d [x z]
-    (let [s (Double.sin (+ (* x 12.9898) (* z 78.233)))
-          mult (* s 43758.5453123)]
-      (- mult (Double.floor mult))))
+    (let [ix (Double.to-int (+ x 1000000.0))
+          iz (Double.to-int (+ z 1000000.0))
+          n (+ (* ix 1619) (* iz 31337))
+          n-xor (Int.bit-xor (Int.bit-shift-right n 13) n)
+          n-mult (+ (* n-xor (+ (* n-xor (* n-xor 15731)) 789221)) 1376312589)
+          n-and (Int.bit-and n-mult 2147483647)]
+      (/ (Double.from-int n-and) 2147483647.0)))
 
 
   (defn lerp [a b t]
@@ -66,9 +70,14 @@
       (+ (* W1 h-plains) (+ (* W2 h-canyons) (* W3 h-mountains)))))
 
   (defn hash3d [x y z]
-    (let [s (Double.sin (+ (+ (* x 12.9898) (* y 78.233)) (* z 144.7272)))
-          mult (* s 43758.5453123)]
-      (- mult (Double.floor mult))))
+    (let [ix (Double.to-int (+ x 1000000.0))
+          iy (Double.to-int (+ y 1000000.0))
+          iz (Double.to-int (+ z 1000000.0))
+          n (+ (+ (* ix 1619) (* iy 31337)) (* iz 6971))
+          n-xor (Int.bit-xor (Int.bit-shift-right n 13) n)
+          n-mult (+ (* n-xor (+ (* n-xor (* n-xor 15731)) 789221)) 1376312589)
+          n-and (Int.bit-and n-mult 2147483647)]
+      (/ (Double.from-int n-and) 2147483647.0)))
 
   (defn noise3d [x y z]
     (let [fx (Double.floor x)

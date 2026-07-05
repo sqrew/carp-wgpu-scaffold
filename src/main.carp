@@ -7,6 +7,15 @@
 (load "WGPU.carp")
 (load "WGPURender.carp")
 
+(defndynamic remove-g [lst]
+  (if (empty? lst)
+      '()
+      (if (= (car lst) "-g")
+          (remove-g (cdr lst))
+          (cons (car lst) (remove-g (cdr lst))))))
+
+(Project.config "cflag" (remove-g (Project.get-config "cflag")))
+
 (add-lib "-lX11")
 
 (register-type GLFWwindow)

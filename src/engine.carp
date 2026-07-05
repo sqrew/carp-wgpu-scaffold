@@ -540,11 +540,13 @@
                                                            ())))))))))
                                          (Engine.apply-control-value! e @(UiPanel.target panel) @(UiControl.label-id ctrl) new-val))))))))))))))))))
 
+  (sig tick-ui! (Fn [(Ref Engine.Engine) Double Int Int] ()))
   (defn tick-ui! [e dt width height]
     (do
       (Engine.tick-billboards! e)
       (Engine.tick-ui-drag! e width height)))
 
+  (sig tick-input! (Fn [(Ref Engine.Engine) Double] ()))
   (defn tick-input! [e dt]
     (let [mgr (Engine.input e)]
       (do

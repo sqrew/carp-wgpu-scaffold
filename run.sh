@@ -10,4 +10,4 @@ if [ ! -d "$CARP_FORK_DIR" ]; then
 fi
 
 cd "$CARP_FORK_DIR"
-./scripts/carp.sh -x $PROJECT_DIR/src/main.carp
+./scripts/carp.sh --optimize -x $PROJECT_DIR/src/main.carp
