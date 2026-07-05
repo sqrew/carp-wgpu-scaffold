@@ -13,14 +13,34 @@
 // - dt        : f32              -> Physics simulation timestep delta (constant ~0.00833)
 // - u.time    : f32              -> Accumulated simulation runtime in seconds
 // - u.cam_pos : vec4<f32>        -> Player / camera position
-//
-// === Examples (Uncomment to play) ===
+// - voxel_pos : vec3<f32>        -> 3D world space coordinate of this voxel
+// - cell_velocity : vec3<f32>    -> Velocity vector of this cell
 
-// --- Example 1: Sinusoidal Terrain Waving ---
-/// cell.x = sin(u.time + (f32(idx) * 0.01));
-
-// --- Example 2: Pulsing Material Colors ---
-// cell.y = 2.0 + (sin(u.time * 2.0) * 0.5 + 0.5) * 4.0;
-
-// --- Example 3: Dynamic Expanding/Contracting SDF Shells ---
-// cell.x = cell.x + sin(u.time * 3.0) * 0.2;
+// --- Dynamic Pressure-Based Terrain Displacement & Charring ---
+// for (var i = 0u; i < 512u; i = i + 1u) {
+//     let inst = u.instances[i];
+//     if (inst.pos_scale.w <= 0.0) { break; } // End of active list
+    
+//     // sph_fields.w is used to store pressure/force values
+//     let pressure = inst.sph_fields.w;
+//     if (pressure > 0.0) {
+//         let to_voxel = voxel_pos - inst.pos_scale.xyz;
+//         let dist = length(to_voxel);
+        
+//         if (dist < inst.pos_scale.w) {
+//             let falloff = 1.0 - (dist / inst.pos_scale.w);
+            
+//             // Push the SDF density outward (carving a physical crater)
+//             let push_force = pressure * falloff * dt * 45.0;
+//             cell.x += push_force;
+            
+//             // Apply outward kinetic velocity to cell's internal flow
+//             cell_velocity += normalize(to_voxel + vec3<f32>(0.0, 0.01, 0.0)) * pressure * falloff * 8.0;
+            
+//             // Char the surface of the blasted crater (Material ID 3.0 = dark charred rock)
+//             if (cell.x < 0.0 && falloff > 0.4) {
+//                 cell.y = 3.0; 
+//             }
+//         }
+//     }
+// }
