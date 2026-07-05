@@ -552,6 +552,117 @@
       (Engine.tick-billboards! e)
       (Engine.tick-ui-drag! e width height)))
 
+  (sig tick-settings-input! (Fn [(Ref Engine.Engine) (Ref InputManager)] ()))
+  (defn tick-settings-input! [e mgr]
+    (do
+      (when (InputManager.action-pressed? mgr "ScaleUp")
+        (PlayerSystem.scale-player! e 1.1))
+      (when (InputManager.action-pressed? mgr "ScaleDown")
+        (PlayerSystem.scale-player! e 0.9))
+      (when (InputManager.action-pressed? mgr "MorphLess")
+        (let [k @(Engine.metaball-k e)
+              new-k (let [val (- k 0.1)] (if (< val 0.1) 0.1 val))]
+          (do
+            (Engine.set-metaball-k! e new-k)
+            (IO.println &(str* "Metaball Morphiness: " (Double.str new-k))))))
+      (when (InputManager.action-pressed? mgr "MorphMore")
+        (let [k @(Engine.metaball-k e)
+              new-k (let [val (+ k 0.1)] (if (> val 10.0) 10.0 val))]
+          (do
+            (Engine.set-metaball-k! e new-k)
+            (IO.println &(str* "Metaball Morphiness: " (Double.str new-k))))))
+      (when (InputManager.action-pressed? mgr "ToggleDebug")
+        (let [show @(Engine.show-debug-lines e)
+              new-show (not show)]
+          (do
+            (Engine.set-show-debug-lines! e new-show)
+            (IO.println &(str* "Debug Lines: " (if new-show "ON" "OFF")))
+            (Diagnostics.print-stats! (Engine.diagnostics e)))))
+      (when (InputManager.action-pressed? mgr "CycleViewMode")
+        (let [mode @(Engine.view-mode e)
+              new-mode (Int.mod (+ mode 1) 5)]
+          (do
+            (Engine.set-view-mode! e new-mode)
+            (Engine.set-grid-dirty! e true)
+            (IO.println &(str* "Active Scalar Field View: "
+              (if (= new-mode 0) "Normal (Water Volume)"
+              (if (= new-mode 1) "Temperature"
+              (if (= new-mode 2) "Age / Spawn Time"
+              (if (= new-mode 3) "Humidity"
+              "Pressure")))))))))
+      (when (InputManager.action-pressed? mgr "CycleShadowQuality")
+        (let [curr @(Engine.shadow-quality e)
+              next (Int.mod (+ curr 1) 3)]
+          (do
+            (Engine.set-shadow-quality! e next)
+            (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next))))))
+      (when (InputManager.action-pressed? mgr "ToggleVolumetricSdf")
+        (let [is-on @(Engine.volumetric-sdf e)
+              mode @(Engine.view-mode e)]
+          (do
+            (if (not is-on)
+                (do
+                  (Engine.set-volumetric-sdf! e true)
+                  (Engine.set-view-mode! e 0)
+                  (IO.println "Volumetric Sdf Fog Mode: ON (SDF Vol Fog)"))
+                (if (= mode 0)
+                    (do
+                      (Engine.set-view-mode! e 4)
+                      (IO.println "Volumetric Sdf Fog Mode: ON (Pressure Field)"))
+                    (if (= mode 4)
+                        (do
+                          (Engine.set-view-mode! e 1)
+                          (IO.println "Volumetric Sdf Fog Mode: ON (Temperature)"))
+                        (if (= mode 1)
+                            (do
+                              (Engine.set-view-mode! e 2)
+                              (IO.println "Volumetric Sdf Fog Mode: ON (Age / Spawn Time)"))
+                            (if (= mode 2)
+                                (do
+                                  (Engine.set-view-mode! e 3)
+                                  (IO.println "Volumetric Sdf Fog Mode: ON (Humidity)"))
+                                (do
+                                  (Engine.set-volumetric-sdf! e false)
+                                  (Engine.set-view-mode! e 0)
+                                  (IO.println "Volumetric Sdf Fog Mode: OFF")))))))
+            (Engine.set-grid-dirty! e true))))
+      (when (InputManager.action-pressed? mgr "ToggleChunkLoading")
+        (let [curr @(Engine.chunk-loading-enabled e)]
+          (do
+            (Engine.set-chunk-loading-enabled! e (not curr))
+            (IO.println (if curr "Background chunk loading DISABLED" "Background chunk loading ENABLED")))))))
+
+  (sig tick-gameplay-input! (Fn [(Ref Engine.Engine) (Ref InputManager) Double (Ref RigidBody) (Ref RotationState) Double] ()))
+  (defn tick-gameplay-input! [e mgr dt p-rb p-rot p-scale]
+    (do
+      (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)
+      (when (InputManager.action-pressed? mgr "StopMovement")
+        (do
+          (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+          (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+      (when (InputManager.action-pressed? mgr "ResetPlayer")
+        (do
+          (RigidBody.set-position! p-rb (Vector3.init 0.0 35.0 0.0))
+          (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+          (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
+      (when (InputManager.action-pressed? mgr "Teleport")
+        (let [cam (Engine.camera e)
+              grid (Engine.grid e)
+              cam-pos (Camera.pos cam)
+              cam-front (Camera.front cam)
+              ray (Ray.make @cam-pos @cam-front)
+              config (RaymarchConfig.init 128 150.0 0.005 0.001 0.05)
+              hit (PlayerSystem.march-world (Engine.world e) (Engine.world-data e) grid &ray &config)]
+          (if @(RaymarchHit.hit &hit)
+              (let [hit-p (RaymarchHit.p &hit)
+                    dest (Vector3.add hit-p &(Vector3.init 0.0 2.5 0.0))]
+                (do
+                  (RigidBody.set-position! p-rb @&dest)
+                  (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                  (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
+                  (IO.println &(str* "Teleported player to " &(Vector3.str &dest)))))
+              (IO.println "Teleport target missed or too far!"))))))
+
   (sig tick-input! (Fn [(Ref Engine.Engine) Double] ()))
   (defn tick-input! [e dt]
     (let [mgr (Engine.input e)]
@@ -570,34 +681,7 @@
                 (let [p-scale (match-ref (Collidable.volume p-col)
                                 (Volume.Ball sphere) @(Sphere.radius sphere)
                                 _ 1.0)]
-                  (do
-                    (PlayerSystem.apply-movement! p-rb p-rot p-scale mgr dt)
-                    (when (InputManager.action-pressed? mgr "StopMovement")
-                      (do
-                        (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                        (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
-                    (when (InputManager.action-pressed? mgr "ResetPlayer")
-                      (do
-                        (RigidBody.set-position! p-rb (Vector3.init 0.0 35.0 0.0))
-                        (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                        (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))))
-                    (when (InputManager.action-pressed? mgr "Teleport")
-                      (let [cam (Engine.camera e)
-                            grid (Engine.grid e)
-                            cam-pos (Camera.pos cam)
-                            cam-front (Camera.front cam)
-                            ray (Ray.make @cam-pos @cam-front)
-                            config (RaymarchConfig.init 128 150.0 0.005 0.001 0.05)
-                            hit (PlayerSystem.march-world (Engine.world e) (Engine.world-data e) grid &ray &config)]
-                        (if @(RaymarchHit.hit &hit)
-                            (let [hit-p (RaymarchHit.p &hit)
-                                  dest (Vector3.add hit-p &(Vector3.init 0.0 2.5 0.0))]
-                              (do
-                                (RigidBody.set-position! p-rb @&dest)
-                                (Body.set-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                                (Body.set-angular-velocity! (RigidBody.body p-rb) (Vector3.init 0.0 0.0 0.0))
-                                (IO.println &(str* "Teleported player to " &(Vector3.str &dest)))))
-                            (IO.println "Teleport target missed or too far!")))))))
+                  (tick-gameplay-input! e mgr dt p-rb p-rot p-scale)))
               (when (InputManager.action-pressed? mgr "Fire")
                 (PlayerSystem.spawn-bullet! e false))
               (when (InputManager.action-digital? mgr "FireBouncy")
@@ -610,82 +694,7 @@
                 (PlayerSystem.fire-implosion-laser! e))
               (when (InputManager.action-pressed? mgr "ToggleUI")
                 (Engine.open-ui-at-crosshair! e))))
-        (when (InputManager.action-pressed? mgr "ScaleUp")
-          (PlayerSystem.scale-player! e 1.1))
-        (when (InputManager.action-pressed? mgr "ScaleDown")
-          (PlayerSystem.scale-player! e 0.9))
-        (when (InputManager.action-pressed? mgr "MorphLess")
-          (let [k @(Engine.metaball-k e)
-                new-k (let [val (- k 0.1)] (if (< val 0.1) 0.1 val))]
-            (do
-              (Engine.set-metaball-k! e new-k)
-              (IO.println &(str* "Metaball Morphiness: " (Double.str new-k))))))
-        (when (InputManager.action-pressed? mgr "MorphMore")
-          (let [k @(Engine.metaball-k e)
-                new-k (let [val (+ k 0.1)] (if (> val 10.0) 10.0 val))]
-            (do
-              (Engine.set-metaball-k! e new-k)
-              (IO.println &(str* "Metaball Morphiness: " (Double.str new-k))))))
-        (when (InputManager.action-pressed? mgr "ToggleDebug")
-          (let [show @(Engine.show-debug-lines e)
-                new-show (not show)]
-            (do
-              (Engine.set-show-debug-lines! e new-show)
-              (IO.println &(str* "Debug Lines: " (if new-show "ON" "OFF")))
-              (Diagnostics.print-stats! (Engine.diagnostics e)))))
-        (when (InputManager.action-pressed? mgr "CycleViewMode")
-          (let [mode @(Engine.view-mode e)
-                new-mode (Int.mod (+ mode 1) 5)]
-            (do
-              (Engine.set-view-mode! e new-mode)
-              (Engine.set-grid-dirty! e true)
-              (IO.println &(str* "Active Scalar Field View: "
-                (if (= new-mode 0) "Normal (Water Volume)"
-                (if (= new-mode 1) "Temperature"
-                (if (= new-mode 2) "Age / Spawn Time"
-                (if (= new-mode 3) "Humidity"
-                "Pressure")))))))))
-        (when (InputManager.action-pressed? mgr "CycleShadowQuality")
-          (let [curr @(Engine.shadow-quality e)
-                next (Int.mod (+ curr 1) 3)]
-            (do
-              (Engine.set-shadow-quality! e next)
-              (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next))))))
-        (when (InputManager.action-pressed? mgr "ToggleVolumetricSdf")
-          (let [is-on @(Engine.volumetric-sdf e)
-                mode @(Engine.view-mode e)]
-            (do
-              (if (not is-on)
-                  (do
-                    (Engine.set-volumetric-sdf! e true)
-                    (Engine.set-view-mode! e 0)
-                    (IO.println "Volumetric Sdf Fog Mode: ON (SDF Vol Fog)"))
-                  (if (= mode 0)
-                      (do
-                        (Engine.set-view-mode! e 4)
-                        (IO.println "Volumetric Sdf Fog Mode: ON (Pressure Field)"))
-                      (if (= mode 4)
-                          (do
-                            (Engine.set-view-mode! e 1)
-                            (IO.println "Volumetric Sdf Fog Mode: ON (Temperature)"))
-                          (if (= mode 1)
-                              (do
-                                (Engine.set-view-mode! e 2)
-                                (IO.println "Volumetric Sdf Fog Mode: ON (Age / Spawn Time)"))
-                              (if (= mode 2)
-                                  (do
-                                    (Engine.set-view-mode! e 3)
-                                    (IO.println "Volumetric Sdf Fog Mode: ON (Humidity)"))
-                                  (do
-                                    (Engine.set-volumetric-sdf! e false)
-                                    (Engine.set-view-mode! e 0)
-                                    (IO.println "Volumetric Sdf Fog Mode: OFF")))))))
-              (Engine.set-grid-dirty! e true))))
-        (when (InputManager.action-pressed? mgr "ToggleChunkLoading")
-          (let [curr @(Engine.chunk-loading-enabled e)]
-            (do
-              (Engine.set-chunk-loading-enabled! e (not curr))
-              (IO.println (if curr "Background chunk loading DISABLED" "Background chunk loading ENABLED"))))))))
+        (tick-settings-input! e mgr))))
 
   (defn tick-simulation! [e dt]
     (let [world (Engine.world e)
@@ -1283,6 +1292,8 @@
                           (set! overlapped true))))))))))
         (Engine.set-voxel-dirty! e false))))
 
+  (def field-bake-frame-counter 0)
+
   (defn bake-all-fields-gpu! [e ctx ren]
     (let [world-data (Engine.world-data e)
           db (World.field-db world-data)
@@ -1291,24 +1302,27 @@
           num-instances (Double.from-int (Array.length (FieldDatabase.active db)))
           active-arr (FieldDatabase.active db)
           num-active (Array.length active-arr)]
-      (for [i 0 num-chunks]
-        (let [chunk (Array.unsafe-nth chunks i)
-              slot @(Chunk.atlas-slot chunk)
-              overlaps false]
-          (do
-            (for [k 0 num-active]
-              (when @(Array.unsafe-nth active-arr k)
-                (let [scale @(Array.unsafe-nth (FieldDatabase.scales db) k)]
-                  (when (> scale 0.0)
-                    (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) k)]
-                      (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
-                        (set! overlaps true)))))))
-            (let [active-slots (WGPURenderer.fields-active-slots ren)
-                  had-fields @(Array.unsafe-nth active-slots slot)]
-              (when (or overlaps had-fields)
-                (do
-                  (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances)
-                  (Array.aset! active-slots slot overlaps)))))))))
+      (do
+        (for [i 0 num-chunks]
+          (when (= (Int.mod i 16) field-bake-frame-counter)
+            (let [chunk (Array.unsafe-nth chunks i)
+                  slot @(Chunk.atlas-slot chunk)
+                  overlaps false]
+              (do
+                (for [k 0 num-active]
+                  (when @(Array.unsafe-nth active-arr k)
+                    (let [scale @(Array.unsafe-nth (FieldDatabase.scales db) k)]
+                      (when (> scale 0.0)
+                        (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) k)]
+                          (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
+                            (set! overlaps true)))))))
+                (let [active-slots (WGPURenderer.fields-active-slots ren)
+                      had-fields @(Array.unsafe-nth active-slots slot)]
+                  (when (or overlaps had-fields)
+                    (do
+                      (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances)
+                      (Array.aset! active-slots slot overlaps))))))))
+        (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 16)))))
 
   (defn sync-render-db! [e ctx ren]
     (let [r-db (Engine.render-db e)
@@ -1542,9 +1556,51 @@
                       (IO.println "Physical system reloaded and active.")
                       (World.dirty-all-chunks! (Engine.world-data e))))))))))
 
+  (sig check-global-jit-rules? (Fn [] Bool))
+  (defn check-global-jit-rules? []
+    (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/physics_rule.wgsl")
+      (Result.Success content) (Engine.has-active-code? &content)
+      _ false))
+
+  (sig chunk-affected-by-jit? (Fn [(Ref GameWorld) (Ref Chunk) Bool] Bool))
+  (defn chunk-affected-by-jit? [world chunk has-global-rules]
+    (if has-global-rules
+        true
+        (let [affected false
+              qx @(Chunk.coord-x chunk)
+              qy @(Chunk.coord-y chunk)
+              qz @(Chunk.coord-z chunk)
+              c-min-x (* (Double.from-int qx) 32.0)
+              c-min-y (* (Double.from-int qy) 32.0)
+              c-min-z (* (Double.from-int qz) 32.0)
+              c-max-x (+ c-min-x 32.0)
+              c-max-y (+ c-min-y 32.0)
+              c-max-z (+ c-min-z 32.0)]
+          (do
+            (ECS.query world [ent (gs GravitySource) (col Collidable)]
+              (match-ref (Collidable.volume col)
+                (Volume.Ball sphere)
+                  (let [center (Sphere.center sphere)
+                        radius @(Sphere.radius sphere)
+                        cx @(Vector3.x center)
+                        cy @(Vector3.y center)
+                        cz @(Vector3.z center)
+                        px (Double.clamp c-min-x c-max-x cx)
+                        py (Double.clamp c-min-y c-max-y cy)
+                        pz (Double.clamp c-min-z c-max-z cz)
+                        dx (- px cx)
+                        dy (- py cy)
+                        dz (- pz cz)
+                        dist-sq (+ (* dx dx) (+ (* dy dy) (* dz dz)))]
+                    (when (< dist-sq (* radius radius))
+                      (set! affected true)))
+                _ ()))
+            affected))))
+
   (sig run-jit-physics-loop! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn run-jit-physics-loop! [e ctx ren]
     (let [world-data (Engine.world-data e)
+          world (Engine.world e)
           chunks (World.chunks world-data)
           num-chunks (Array.length chunks)
           script (Engine.last-known-script e)
@@ -1556,29 +1612,31 @@
                 pipe-maybe (Map.get-maybe cache script)]
             (match pipe-maybe
               (Maybe.Just pipe)
-                (let [u-b (WGPURender.uniform-buffer-get-buffer @(WGPURenderer.u-buffer ren))]
+                (let [u-b (WGPURender.uniform-buffer-get-buffer @(WGPURenderer.u-buffer ren))
+                      has-global-rules (check-global-jit-rules?)]
                   (for [i 0 num-chunks]
                     (let [chunk (Array.unsafe-nth chunks i)
                           v-gpu-b @(Chunk.gpu-buffer chunk)]
                       (if (WGPU.buffer-null?- v-gpu-b)
                           ()
-                          (let [cached-bg @(Chunk.jit-bind-group chunk)
-                                bg (if (WGPU.bindgroup-null?- cached-bg)
-                                       (let [bufs [v-gpu-b u-b]]
-                                         (match (WGPU.create-bind-group ctx pipe &bufs)
-                                           (Result.Error err)
-                                             (do
-                                               (IO.println &(str* "JIT Bind Group error: " &err))
-                                               (null-bind-group))
-                                           (Result.Success new-bg)
-                                             (do
-                                               (Chunk.set-jit-bind-group! chunk new-bg)
-                                               new-bg)))
-                                       cached-bg)]
-                            (when (not (WGPU.bindgroup-null?- bg))
-                              (do
-                                (WGPU.dispatch ctx pipe bg dispatch-cnt)
-                                (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res))))))))
+                          (when (chunk-affected-by-jit? world chunk has-global-rules)
+                            (let [cached-bg @(Chunk.jit-bind-group chunk)
+                                  bg (if (WGPU.bindgroup-null?- cached-bg)
+                                         (let [bufs [v-gpu-b u-b]]
+                                           (match (WGPU.create-bind-group ctx pipe &bufs)
+                                             (Result.Error err)
+                                               (do
+                                                 (IO.println &(str* "JIT Bind Group error: " &err))
+                                                 (null-bind-group))
+                                             (Result.Success new-bg)
+                                               (do
+                                                 (Chunk.set-jit-bind-group! chunk new-bg)
+                                                 new-bg)))
+                                         cached-bg)]
+                              (when (not (WGPU.bindgroup-null?- bg))
+                                (do
+                                  (WGPU.dispatch ctx pipe bg dispatch-cnt)
+                                  (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)))))))))
               _ ())))))
 
   (defn tick! [e ctx ren width height]
