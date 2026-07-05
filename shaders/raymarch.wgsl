@@ -1376,12 +1376,28 @@ struct PointInstance {
                 let ground_color = vec3<f32>(0.06, 0.05, 0.05);
                 let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5) * sky_visibility;
 
-                // Combine direct diffuse lighting and hemispherical ambient
-                var lighting = shadow * diffuse * vec3<f32>(1.0) + ambient;
-
-                var specular = 0.0;
                 let view_dir = normalize(u.cam_pos.xyz - p);
                 let half_dir = normalize(light_dir + view_dir);
+
+                // Clay/wax subsurface scattering (SSS) for translucent organic look
+                var sss = 0.0;
+                if (!is_wet) {
+                    let sss_steps = 4;
+                    var sss_thickness = 0.0;
+                    let sss_step_size = 0.15;
+                    for (var s_i = 1; s_i <= sss_steps; s_i = s_i + 1) {
+                        let sample_p = p - normal * (f32(s_i) * sss_step_size);
+                        let s_res = worldSDF(sample_p, rd, dither_threshold, false);
+                        sss_thickness += max(0.0, -s_res.y);
+                    }
+                    let sss_dot = pow(max(dot(view_dir, -light_dir), 0.0), 2.0);
+                    sss = exp(-sss_thickness * 2.0) * sss_dot * 0.4;
+                }
+
+                // Combine direct diffuse lighting, hemispherical ambient, and SSS scatter bloom
+                var lighting = shadow * diffuse * vec3<f32>(1.0) + ambient + sss * vec3<f32>(0.85, 0.38, 0.22);
+
+                var specular = 0.0;
                 if (is_wet) {
                     let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
                     let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
