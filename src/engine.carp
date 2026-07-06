@@ -1270,7 +1270,6 @@
                     res @(World.voxel-resolution world-data)
                     cell-size (World.voxel-cell-size world-data)
                     overlapped false]
-                (do
                   (for [i 0 num-craters]
                     (let [crater (Array.unsafe-nth craters i)
                           pos (CraterSpawnData.pos crater)
@@ -1289,7 +1288,15 @@
                               (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res))
                           (Diagnostics.end-zone! diag "Bake: Carve GPU")
                           (Chunk.set-modified! chunk true)
-                          (set! overlapped true))))))))))
+                          (set! overlapped true)))))
+                  (when overlapped
+                    (do
+                      (VoxelBaker.compute-chunk-lighting! chunk res)
+                      (let [b @(Chunk.gpu-buffer chunk)]
+                        (when (not (WGPU.buffer-null?- b))
+                          (do
+                            (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
+                            (VoxelBaker.pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res))))))))))
         (Engine.set-voxel-dirty! e false))))
 
   (def field-bake-frame-counter 0)

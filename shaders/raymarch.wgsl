@@ -204,7 +204,7 @@ struct PointInstance {
               
               let dist_xz = length(vec2<f32>(px, pz) - u.cam_pos.xz);
               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
-              let detail_h = fbm2d(px * 0.07, pz * 0.07) * 4.5 * detail_fade;
+              let detail_h = fbm2d(px * 0.005, pz * 0.005) * 1.5 * detail_fade;
               
               let base_terrain_d = py - final_h;
               let terrain_d = (base_terrain_d - detail_h) * 0.55;
@@ -236,115 +236,112 @@ struct PointInstance {
           }
       }
 
-       fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
-           let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
-           let c0 = vec3<i32>(floor(tx));
-           let f = fract(tx);
-           
-           let lx = i32(u32(c0.x) & {{VOXEL_RES_SUB_1}}u);
-           let ly = i32(u32(c0.y) & {{VOXEL_RES_SUB_1}}u);
-           let lz = i32(u32(c0.z) & {{VOXEL_RES_SUB_1}}u);
-           
-           let qx = c0.x >> {{LOG_RES}}u;
-           let qy = c0.y >> {{LOG_RES}}u;
-           let qz = c0.z >> {{LOG_RES}}u;
-           let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-           var chunk_is_loaded = false;
-           var slot = -1;
-           if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
-               let mx = u32(local_q.x) >> 2u;
-               let my = u32(local_q.y) >> 2u;
-               let mz = u32(local_q.z) >> 2u;
-               let skip_idx = mx + (my << 3u) + (mz << 6u);
-               let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-               if (skip_val != 0) {
-                   let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                   slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                   if (slot >= 0) {
-                       chunk_is_loaded = true;
-                   }
-               }
+        fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
+            let chunk_q = vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz;
+            var chunk_is_loaded = false;
+            var slot = -1;
+            if (all(chunk_q >= vec3<i32>(0)) && all(chunk_q < vec3<i32>(32))) {
+                let mx = u32(chunk_q.x) >> 2u;
+                let my = u32(chunk_q.y) >> 2u;
+                let mz = u32(chunk_q.z) >> 2u;
+                let skip_idx = mx + (my << 3u) + (mz << 6u);
+                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                if (skip_val != 0) {
+                    let idx = chunk_q.x + chunk_q.y * 32 + chunk_q.z * 1024;
+                    slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                    if (slot >= 0) {
+                        chunk_is_loaded = true;
+                    }
+                }
+            }
+            
+            if (!chunk_is_loaded) {
+                let final_h = get_terrain_height(p.x, p.z);
+                
+                let dist_xz = length(p.xz - u.cam_pos.xz);
+                let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
+                let detail_h = fbm2d(p.x * 0.005, p.z * 0.005) * 4.5 * detail_fade;
+                
+                let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
+                let mat_id = 1.0;
+                return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
+            }
+            
+            let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
+            let c0 = vec3<i32>(floor(tx));
+            let f = fract(tx);
+            
+            let lx = i32(u32(c0.x) & {{VOXEL_RES_SUB_1}}u);
+            let ly = i32(u32(c0.y) & {{VOXEL_RES_SUB_1}}u);
+            let lz = i32(u32(c0.z) & {{VOXEL_RES_SUB_1}}u);
+            
+            var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v2 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v3 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v4 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v5 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v6 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            
+            var tex_val = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
+            var best_mat = 0.0;
+            let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+            if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
+                let slot_x = slot % {{SLOTS_PER_DIM}};
+                let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+                let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+                let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
+                let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+                tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
+                tex_val.r = min(tex_val.r, 1.5);
+                best_mat = round(tex_val.g);
+            } else {
+               v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
+               v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);
+               v2 = getVoxelAt(c0.x,     c0.y + 1, c0.z,     only_dist);
+               v3 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z,     only_dist);
+               v4 = getVoxelAt(c0.x,     c0.y,     c0.z + 1, only_dist);
+               v5 = getVoxelAt(c0.x + 1, c0.y,     c0.z + 1, only_dist);
+               v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1, only_dist);
+               v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1, only_dist);
+               
+               v0.x = min(v0.x, 1.5);
+               v1.x = min(v1.x, 1.5);
+               v2.x = min(v2.x, 1.5);
+               v3.x = min(v3.x, 1.5);
+               v4.x = min(v4.x, 1.5);
+               v5.x = min(v5.x, 1.5);
+               v6.x = min(v6.x, 1.5);
+               v7.x = min(v7.x, 1.5);
+               
+               best_mat = v0.y;
+               var min_d_corner = v0.x;
+               if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
+               if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
+               if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
+               if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
+               if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
+               if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
+               if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
+               
+               let sf = f;
+               let v_01 = mix(v0, v1, sf.x);
+               let v_23 = mix(v2, v3, sf.x);
+               let v_45 = mix(v4, v5, sf.x);
+               let v_67 = mix(v6, v7, sf.x);
+               
+               let v_y0 = mix(v_01, v_23, sf.y);
+               let v_y1 = mix(v_45, v_67, sf.y);
+               
+               tex_val = mix(v_y0, v_y1, sf.z);
            }
            
-           if (!chunk_is_loaded) {
-               let final_h = get_terrain_height(p.x, p.z);
-               
-               let dist_xz = length(p.xz - u.cam_pos.xz);
-               let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
-               let detail_h = fbm2d(p.x * 0.07, p.z * 0.07) * 4.5 * detail_fade;
-               
-               let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
-               let mat_id = 1.0;
-               return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
-           }
+           let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
+           let dummy = dummy_sample.r * 1e-10;
            
-           var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v2 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v3 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v4 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v5 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v6 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var v7 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           
-           var tex_val = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
-           var best_mat = 0.0;
-           let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
-           if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
-               let slot_x = slot % {{SLOTS_PER_DIM}};
-               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
-               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-               let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
-               let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
-               tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
-               tex_val.r = min(tex_val.r, 1.5);
-               best_mat = round(tex_val.g);
-           } else {
-              v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
-              v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);
-              v2 = getVoxelAt(c0.x,     c0.y + 1, c0.z,     only_dist);
-              v3 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z,     only_dist);
-              v4 = getVoxelAt(c0.x,     c0.y,     c0.z + 1, only_dist);
-              v5 = getVoxelAt(c0.x + 1, c0.y,     c0.z + 1, only_dist);
-              v6 = getVoxelAt(c0.x,     c0.y + 1, c0.z + 1, only_dist);
-              v7 = getVoxelAt(c0.x + 1, c0.y + 1, c0.z + 1, only_dist);
-              
-              v0.x = min(v0.x, 1.5);
-              v1.x = min(v1.x, 1.5);
-              v2.x = min(v2.x, 1.5);
-              v3.x = min(v3.x, 1.5);
-              v4.x = min(v4.x, 1.5);
-              v5.x = min(v5.x, 1.5);
-              v6.x = min(v6.x, 1.5);
-              v7.x = min(v7.x, 1.5);
-              
-              best_mat = v0.y;
-              var min_d_corner = v0.x;
-              if (v1.x < min_d_corner) { min_d_corner = v1.x; best_mat = v1.y; }
-              if (v2.x < min_d_corner) { min_d_corner = v2.x; best_mat = v2.y; }
-              if (v3.x < min_d_corner) { min_d_corner = v3.x; best_mat = v3.y; }
-              if (v4.x < min_d_corner) { min_d_corner = v4.x; best_mat = v4.y; }
-              if (v5.x < min_d_corner) { min_d_corner = v5.x; best_mat = v5.y; }
-              if (v6.x < min_d_corner) { min_d_corner = v6.x; best_mat = v6.y; }
-              if (v7.x < min_d_corner) { min_d_corner = v7.x; best_mat = v7.y; }
-              
-              let sf = f;
-              let v_01 = mix(v0, v1, sf.x);
-              let v_23 = mix(v2, v3, sf.x);
-              let v_45 = mix(v4, v5, sf.x);
-              let v_67 = mix(v6, v7, sf.x);
-              
-              let v_y0 = mix(v_01, v_23, sf.y);
-              let v_y1 = mix(v_45, v_67, sf.y);
-              
-              tex_val = mix(v_y0, v_y1, sf.z);
-          }
-          
-          let dummy_sample = textureSampleLevel(voxel_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
-          let dummy = dummy_sample.r * 1e-10;
-          
-          return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
-      }
+           return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
+       }
 
        fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
           let qx = gx >> {{LOG_RES}}u;
@@ -462,10 +459,37 @@ struct PointInstance {
       }
 
         fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
-            let tx = p / {{VOXEL_CELL_SIZE}};
-            let c0 = vec3<i32>(floor(tx));
-            let val = getVoxelAt(c0.x, c0.y, c0.z, only_dist);
-            return vec2<f32>(val.x, val.y);
+            let chunk_q = vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz;
+            var is_loaded = false;
+            var slot = -1;
+            if (all(chunk_q >= vec3<i32>(0)) && all(chunk_q < vec3<i32>(32))) {
+                let mx = u32(chunk_q.x) >> 2u;
+                let my = u32(chunk_q.y) >> 2u;
+                let mz = u32(chunk_q.z) >> 2u;
+                let skip_idx = mx + (my << 3u) + (mz << 6u);
+                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                if (skip_val != 0) {
+                    let idx = chunk_q.x + chunk_q.y * 32 + chunk_q.z * 1024;
+                    slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+                    if (slot >= 0) {
+                        is_loaded = true;
+                    }
+                }
+            }
+            
+            if (is_loaded) {
+                let tx = p / {{VOXEL_CELL_SIZE}};
+                let c0 = vec3<i32>(floor(tx));
+                let val = getVoxelAt(c0.x, c0.y, c0.z, only_dist);
+                return vec2<f32>(val.x, val.y);
+            } else {
+                let final_h = get_terrain_height(p.x, p.z);
+                let dist_xz = length(p.xz - u.cam_pos.xz);
+                let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
+                let detail_h = fbm2d(p.x * 0.005, p.z * 0.005) * 1.5 * detail_fade;
+                let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
+                return vec2<f32>(terrain_d, 1.0);
+            }
         }
 
       struct VertexOutput {
@@ -1341,31 +1365,36 @@ struct PointInstance {
                 var sky_visibility = 1.0;
                 var ao = 1.0;
 
-                let p_chunk = vec3<i32>(floor(p / 32.0));
-                let cam_chunk = vec3<i32>(floor(u.cam_pos.xyz / 32.0));
-                let chunk_diff = abs(p_chunk - cam_chunk);
-                let is_near = (chunk_diff.x <= 1 && chunk_diff.y <= 1 && chunk_diff.z <= 1);
+                let dist_to_cam = length(p - u.cam_pos.xyz);
+                let blend_factor = smoothstep(32.0, 48.0, dist_to_cam);
 
-                if (is_near) {
+                if (blend_factor < 1.0) {
+                    var rt_shadow = 1.0;
+                    var rt_ao = 1.0;
+                    var rt_sky_vis = 1.0;
                     if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
                         if (diffuse <= 0.0) {
-                            shadow = 0.0;
+                            rt_shadow = 0.0;
                         } else {
                             let max_steps = select(SHADOW_STEPS, SHADOW_STEPS * 3 / 5, u.shadow_ao_quality.x == 1.0);
                             let shadow_dist = select(120.0, 250.0, t > 200.0);
-                            shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
+                            rt_shadow = getShadow(p + normal * 0.02, light_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
                         }
                     }
                     if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
                         if (hitId == -1.0) {
-                            ao = voxel_val.w;
+                            rt_ao = voxel_val.w;
                         } else {
-                            ao = getAO(p, normal, dither_threshold);
+                            rt_ao = getAO(p, normal, dither_threshold);
                         }
                     }
                     if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                        sky_visibility = ao;
+                        rt_sky_vis = rt_ao;
                     }
+                    
+                    shadow = mix(rt_shadow, voxel_val.z, blend_factor);
+                    ao = mix(rt_ao, voxel_val.w, blend_factor);
+                    sky_visibility = mix(rt_sky_vis, voxel_val.z, blend_factor);
                 } else {
                     shadow = voxel_val.z;
                     sky_visibility = voxel_val.z;

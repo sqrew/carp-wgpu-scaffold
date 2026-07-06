@@ -207,33 +207,28 @@
                     zy-offset (+ z-offset y-offset)]
                 (for [x 0 w-dim]
                   (let [idx (* (+ x zy-offset) 4)
-                        d @(Array.unsafe-nth voxel-data idx)]
-                    (if (< d 0.0f)
-                        (do
-                          (Array.aset! voxel-data (+ idx 2) 0.0f)
-                          (Array.aset! voxel-data (+ idx 3) 0.0f))
-                        (let [solid-l (if (>= (dec x) 0) (< @(Array.unsafe-nth voxel-data (* (+ (dec x) zy-offset) 4)) 0.0f) false)
-                              solid-r (if (< (inc x) res) (< @(Array.unsafe-nth voxel-data (* (+ (inc x) zy-offset) 4)) 0.0f) false)
-                              solid-d (if (>= (dec y) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res) 4)) 0.0f) false)
-                              solid-u (if (< (inc y) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res) 4)) 0.0f) false)
-                              solid-b (if (>= (dec z) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res-sq) 4)) 0.0f) false)
-                              solid-f (if (< (inc z) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res-sq) 4)) 0.0f) false)
-                              
-                              num-solid 0
-                              _1 (when solid-l (set! num-solid (inc num-solid)))
-                              _2 (when solid-r (set! num-solid (inc num-solid)))
-                              _3 (when solid-d (set! num-solid (inc num-solid)))
-                              _4 (when solid-u (set! num-solid (inc num-solid)))
-                              _5 (when solid-b (set! num-solid (inc num-solid)))
-                              _6 (when solid-f (set! num-solid (inc num-solid)))
-                              
-                              ao-val (- 1.0f (* (Float.from-int num-solid) 0.15f))
-                              ao-clamped (if (< ao-val 0.1f) 0.1f (if (> ao-val 1.0f) 1.0f ao-val))
-                              
-                              shadow-val (if solid-u 0.2f 1.0f)]
-                          (do
-                            (Array.aset! voxel-data (+ idx 2) shadow-val)
-                            (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))))
+                        solid-l (if (>= (dec x) 0) (< @(Array.unsafe-nth voxel-data (* (+ (dec x) zy-offset) 4)) 0.0f) false)
+                        solid-r (if (< (inc x) res) (< @(Array.unsafe-nth voxel-data (* (+ (inc x) zy-offset) 4)) 0.0f) false)
+                        solid-d (if (>= (dec y) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res) 4)) 0.0f) false)
+                        solid-u (if (< (inc y) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res) 4)) 0.0f) false)
+                        solid-b (if (>= (dec z) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res-sq) 4)) 0.0f) false)
+                        solid-f (if (< (inc z) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res-sq) 4)) 0.0f) false)
+                        
+                        num-solid 0
+                        _1 (when solid-l (set! num-solid (inc num-solid)))
+                        _2 (when solid-r (set! num-solid (inc num-solid)))
+                        _3 (when solid-d (set! num-solid (inc num-solid)))
+                        _4 (when solid-u (set! num-solid (inc num-solid)))
+                        _5 (when solid-b (set! num-solid (inc num-solid)))
+                        _6 (when solid-f (set! num-solid (inc num-solid)))
+                        
+                        ao-val (- 1.0f (* (Float.from-int num-solid) 0.15f))
+                        ao-clamped (if (< ao-val 0.1f) 0.1f (if (> ao-val 1.0f) 1.0f ao-val))
+                        
+                        shadow-val (if solid-u 0.2f 1.0f)]
+                    (do
+                      (Array.aset! voxel-data (+ idx 2) shadow-val)
+                      (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))
 
   (defn bake-chunk! [ctx ren chunk world-data]
     (let [res @(World.voxel-resolution world-data)]
