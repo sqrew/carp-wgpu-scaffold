@@ -1076,8 +1076,7 @@ struct PointInstance {
 
         fn getShadow(ro: vec3<f32>, rd: vec3<f32>, mint: f32, maxt: f32, k: f32, dither_threshold: f32, max_steps: i32) -> f32 {
             var res = 1.0;
-            // Jitter starting distance using ordered dithering to smooth shadow penumbras
-            var t = mint + dither_threshold * 0.15;
+            var t = mint;
             var last_h = 1e10;
             var dt = 0.0;
             for (var i = 0; i < max_steps; i = i + 1) {
@@ -1113,8 +1112,7 @@ struct PointInstance {
             var occ = 0.0;
             var sca = 1.0;
             for (var i = 0; i < 5; i = i + 1) {
-                // Jitter AO step height using ordered dithering to smooth occlusion rings
-                let hr = 0.01 + 0.12 * (f32(i) + dither_threshold) / 4.0;
+                let hr = 0.01 + 0.12 * f32(i) / 4.0;
                 let aopos = p + n * hr;
                 let d = worldSDF(aopos, vec3<f32>(0.0), dither_threshold, false).y;
                 occ += -(d - hr) * sca;
@@ -1183,7 +1181,7 @@ struct PointInstance {
             } else {
                 // Volumetric raymarching path
                 // Jitter starting distance to break up wood-grain banding artifacts
-                t = dither_threshold * 0.8;
+                t = dither_threshold * 0.35;
                 for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
                     let p = ro + rd * t;
                     let res = worldSDF(p, rd, dither_threshold, true);
