@@ -1397,6 +1397,7 @@
         ;; 5. Bake voxel grid (if dirty)
         (Diagnostics.start-zone! diag "Sync: Bake Voxels")
         (Engine.bake-voxels-if-dirty! e ctx ren grid world world-data craters voxel-dirty)
+        (Engine.set-craters! e [])
         (Diagnostics.end-zone! diag "Sync: Bake Voxels")
 
         ;; 5.5 Bake dynamic fields on the GPU
