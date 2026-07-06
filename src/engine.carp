@@ -1203,8 +1203,41 @@
                                                                         (= (Int.abs dz) r)))
                                                                 (not has-c)))
                                                   (let [slot (World.find-unused-atlas-slot world-data)]
-                                                    (when (>= slot 0)
-                                                      (let [saved-list (World.modified-chunks world-data)
+                                                    (do
+                                                      (when (< slot 0)
+                                                        (let [furthest-idx -1
+                                                              max-dist -1]
+                                                          (do
+                                                            (for [j 0 (Array.length (World.chunks world-data))]
+                                                              (let [chunk (Array.unsafe-nth (World.chunks world-data) j)
+                                                                    cqx @(Chunk.coord-x chunk)
+                                                                    cqy @(Chunk.coord-y chunk)
+                                                                    cqz @(Chunk.coord-z chunk)
+                                                                    dx (Int.abs (- cqx cam-qx))
+                                                                    dy (Int.abs (- cqy cam-qy))
+                                                                    dz (Int.abs (- cqz cam-qz))
+                                                                    dist (+ dx (+ dy dz))]
+                                                                (when (> dist max-dist)
+                                                                  (do
+                                                                    (set! max-dist dist)
+                                                                    (set! furthest-idx j)))))
+                                                            (when (/= furthest-idx -1)
+                                                              (let [evict-chunk (Array.unsafe-nth (World.chunks world-data) furthest-idx)
+                                                                    evict-slot @(Chunk.atlas-slot evict-chunk)]
+                                                                (do
+                                                                  (let [buf @(Chunk.gpu-buffer evict-chunk)]
+                                                                    (when (not (WGPU.buffer-null?- buf))
+                                                                      (WGPU.free-buffer buf)))
+                                                                  (let [bg @(Chunk.jit-bind-group evict-chunk)]
+                                                                    (when (not (WGPU.bindgroup-null?- bg))
+                                                                      (WGPU.free-bind-group bg)))
+                                                                  (let [pbg @(Chunk.pack-bind-group evict-chunk)]
+                                                                    (when (not (WGPU.bindgroup-null?- pbg))
+                                                                      (WGPU.free-bind-group pbg)))
+                                                                  (World.set-chunks! world-data (Array.remove-nth furthest-idx @(World.chunks world-data)))
+                                                                  (set! slot evict-slot)))))))
+                                                      (when (>= slot 0)
+                                                        (let [saved-list (World.modified-chunks world-data)
                                                             len (Array.length saved-list)
                                                             found-idx -1]
                                                         (do
@@ -1233,7 +1266,7 @@
                                                                        (do
                                                                          (VoxelBaker.pack-and-copy-chunk! ctx ren &chunk b slot res)
                                                                          (Array.push-back! (World.chunks world-data) chunk))))))
-                                                          (set! loaded-any true))))))
+                                                          (set! loaded-any true)))))))
                                                 (set! i-dy (inc i-dy)))))
                                           (set! dx (inc dx)))))
                                     (set! dz (inc dz)))))
