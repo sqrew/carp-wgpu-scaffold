@@ -207,12 +207,13 @@
                     zy-offset (+ z-offset y-offset)]
                 (for [x 0 w-dim]
                   (let [idx (* (+ x zy-offset) 4)
-                        solid-l (if (>= (dec x) 0) (< @(Array.unsafe-nth voxel-data (* (+ (dec x) zy-offset) 4)) 0.0f) false)
-                        solid-r (if (< (inc x) res) (< @(Array.unsafe-nth voxel-data (* (+ (inc x) zy-offset) 4)) 0.0f) false)
-                        solid-d (if (>= (dec y) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res) 4)) 0.0f) false)
-                        solid-u (if (< (inc y) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res) 4)) 0.0f) false)
-                        solid-b (if (>= (dec z) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res-sq) 4)) 0.0f) false)
-                        solid-f (if (< (inc z) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res-sq) 4)) 0.0f) false)
+                        d @(Array.unsafe-nth voxel-data idx)
+                        solid-l (if (>= (dec x) 0) (< @(Array.unsafe-nth voxel-data (* (+ (dec x) zy-offset) 4)) 0.0f) (< d 0.0f))
+                        solid-r (if (< (inc x) res) (< @(Array.unsafe-nth voxel-data (* (+ (inc x) zy-offset) 4)) 0.0f) (< d 0.0f))
+                        solid-d (if (>= (dec y) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res) 4)) 0.0f) (< d 0.0f))
+                        solid-u (if (< (inc y) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res) 4)) 0.0f) (< d 0.0f))
+                        solid-b (if (>= (dec z) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res-sq) 4)) 0.0f) (< d 0.0f))
+                        solid-f (if (< (inc z) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res-sq) 4)) 0.0f) (< d 0.0f))
                         
                         num-solid 0
                         _1 (when solid-l (set! num-solid (inc num-solid)))

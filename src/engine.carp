@@ -1103,10 +1103,13 @@
                   (World.set-chunks! world-data keep)
                   (World.clear-cache! world-data)))))
 
-          ;; Load missing chunks dynamically around player
-          (let [loaded-any false
-                baking-idx -1
-                min-dist 999999]
+          (let [chunks (World.chunks world-data)
+                num-chunks (Array.length chunks)]
+            (do
+              ;; Load missing chunks dynamically around player
+              (let [loaded-any false
+                    baking-idx -1
+                    min-dist 999999]
             (do
               (for [i 0 num-chunks]
                 (let [c (Array.unsafe-nth chunks i)
@@ -1192,10 +1195,13 @@
                                                             @(Array.unsafe-nth &lookup-grid (+ chk-dx (+ (* chk-dy 33) (* (* chk-dz 33) 49))))
                                                             false)]
                                               (do
-                                                (when (and (or (= (Int.abs dx) r)
-                                                               (or (= (Int.abs dy) r)
-                                                                   (= (Int.abs dz) r)))
-                                                           (not has-c))
+                                                (when (and (and (and (>= chk-dx 0) (< chk-dx 33))
+                                                                (and (and (>= chk-dy 0) (< chk-dy 49))
+                                                                     (and (>= chk-dz 0) (< chk-dz 33))))
+                                                           (and (or (= (Int.abs dx) r)
+                                                                    (or (= (Int.abs dy) r)
+                                                                        (= (Int.abs dz) r)))
+                                                                (not has-c)))
                                                   (let [slot (World.find-unused-atlas-slot world-data)]
                                                     (when (>= slot 0)
                                                       (let [saved-list (World.modified-chunks world-data)
@@ -1234,7 +1240,7 @@
                               (set! r (inc r)))))
                         (when (not loaded-any)
                           (Engine.set-need-chunk-scan! e false))
-                        (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))
+                        (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))))
 
   (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
