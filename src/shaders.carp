@@ -22,7 +22,7 @@
           slots-per-dim-sq-str (Int.str slots-per-dim-sq)
           voxel-res-str (Int.str voxel-res)
           voxel-cell-size-str (Double.str voxel-cell-size)]
-      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/shaders/raymarch.wgsl")
+      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/raymarch.wgsl")
         (Result.Success src)
           (let [s1 (replace-all &src "\\{\\{LIMIT\\}\\}" &limit-str)
                 s2 (replace-all &s1 "\\{\\{MAX_IDS\\}\\}" &max-ids-str)
@@ -43,7 +43,7 @@
   (defn carve-shader [voxel-res]
     (let [res-str (Int.str voxel-res)
           total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
-      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/shaders/carve.wgsl")
+      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/carve.wgsl")
         (Result.Success src)
           (let [s1 (replace-all &src "\\{\\{VOXEL_RES\\}\\}" &res-str)
                 s2 (replace-all &s1 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
@@ -56,7 +56,7 @@
   (defn field-splat-shader [voxel-res]
     (let [res-str (Int.str voxel-res)
           total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
-      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/shaders/field_splat.wgsl")
+      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/field_splat.wgsl")
         (Result.Success src)
           (let [s1 (replace-all &src "\\{\\{VOXEL_RES\\}\\}" &res-str)
                 s2 (replace-all &s1 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
@@ -68,7 +68,7 @@
 
   (defn pack-shader [voxel-res]
     (let [total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
-      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/shaders/pack.wgsl")
+      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/pack.wgsl")
         (Result.Success src)
           (replace-all &src "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)
         (Result.Error err)

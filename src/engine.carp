@@ -1547,15 +1547,29 @@
                 instances: array<PointInstance, 512>,
             }
 
-            @group(0) @binding(0) var<storage, read_write> voxel_grid: array<vec4<f32>>;
-            @group(0) @binding(1) var<uniform> u: Uniforms;
+            @group(0) @binding(0) var<storage, read> input_grid: array<vec4<f32>>;
+            @group(0) @binding(1) var<storage, read_write> output_grid: array<vec4<f32>>;
+            @group(0) @binding(2) var<uniform> u: Uniforms;
+
+            fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
+                if (x < 0 || x >= " @&res-str " || y < 0 || y >= " @&res-str " || z < 0 || z >= " @&res-str ") {
+                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                }
+                let idx = u32(x + y * " @&res-str " + z * " @&res-sq-str ");
+                return input_grid[idx];
+            }
 
             @compute @workgroup_size(64)
             fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                 let idx = global_id.x;
                 if (idx >= " @&total-str "u) { return; }
-                var cell = voxel_grid[idx];
-                let voxel_pos = vec3<f32>(f32(idx % " @&res-str "u), f32((idx / " @&res-str "u) % " @&res-str "u), f32(idx / " @&res-sq-str "u)) * " @&cell-size-str ";
+                
+                let local_x = i32(idx % " @&res-str "u);
+                let local_y = i32((idx / " @&res-str "u) % " @&res-str "u);
+                let local_z = i32(idx / " @&res-sq-str "u);
+                
+                var cell = input_grid[idx];
+                let voxel_pos = vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * " @&cell-size-str ";
                 let dt = 0.00833;
                 let dummy_use = u.time * 0.0;
                 cell.x += dummy_use;
@@ -1565,11 +1579,11 @@
           "
                 // Apply velocity displacement to Signed Distance Field
                 cell.x += length(cell_velocity) * 0.01;
-                voxel_grid[idx] = cell;
+                output_grid[idx] = cell;
             }"
           injection-accum @""]
       (do
-        (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/physics_rule.wgsl")]
+        (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/physics_rule.wgsl")]
           (match file-res
             (Result.Success content)
               (when (Engine.has-active-code? &content)
@@ -1605,7 +1619,7 @@
 
   (sig check-global-jit-rules? (Fn [] Bool))
   (defn check-global-jit-rules? []
-    (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/physics_rule.wgsl")
+    (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/physics_rule.wgsl")
       (Result.Success content) (Engine.has-active-code? &content)
       _ false))
 
@@ -1669,7 +1683,7 @@
                           (when (chunk-affected-by-jit? world chunk has-global-rules)
                             (let [cached-bg @(Chunk.jit-bind-group chunk)
                                   bg (if (WGPU.bindgroup-null?- cached-bg)
-                                         (let [bufs [v-gpu-b u-b]]
+                                         (let [bufs [v-gpu-b @(WGPURenderer.voxel-gpu-buffer ren) u-b]]
                                            (match (WGPU.create-bind-group ctx pipe &bufs)
                                              (Result.Error err)
                                                (do
@@ -1683,6 +1697,7 @@
                               (when (not (WGPU.bindgroup-null?- bg))
                                 (do
                                   (WGPU.dispatch ctx pipe bg dispatch-cnt)
+                                  (WGPURender.copy-buffer-to-buffer ctx @(WGPURenderer.voxel-gpu-buffer ren) v-gpu-b (* res (* res (* res 16))))
                                   (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)))))))))
               _ ())))))
 
