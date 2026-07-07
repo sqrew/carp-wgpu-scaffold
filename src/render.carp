@@ -428,12 +428,14 @@
                 (LinePass.render frame ctx (WGPURenderer.line-pass ren) line-count @(WGPURenderer.depth-texture ren) false 0.0f 0.0f 0.0f 0.0f)))
           
           (when (> (Array.length gui-flat-verts) 0)
-            (match (WGPURender.create-vertex-buffer ctx gui-flat-verts)
-              (Result.Error e) (IO.println &(str* "GUI VBO failed: " e))
-              (Result.Success vb)
-                (do
-                  (WGPURender.run-geom-pass-overlay frame @(WGPURenderer.gui-pipeline ren) @(WGPURenderer.gui-bg ren) vb @(WGPURenderer.depth-texture ren) @gui-num-verts (Maybe.Nothing))
-                  (WGPURender.free-vertex-buffer vb))))
+            (do
+              (IO.println &(str* "GUI drawing " (Int.str (Array.length gui-flat-verts)) " floats, verts: " (Uint32.str @gui-num-verts)))
+              (match (WGPURender.create-vertex-buffer ctx gui-flat-verts)
+                (Result.Error e) (IO.println &(str* "GUI VBO failed: " e))
+                (Result.Success vb)
+                  (do
+                    (WGPURender.run-geom-pass-overlay frame @(WGPURenderer.gui-pipeline ren) @(WGPURenderer.gui-bg ren) vb @(WGPURenderer.depth-texture ren) @gui-num-verts (Maybe.Nothing))
+                    (WGPURender.free-vertex-buffer vb)))))
                   
           (WGPURender.end-frame frame surf ctx)
           (WGPURender.free-frame frame))))

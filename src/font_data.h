@@ -65724,6 +65724,29 @@ static WGPUGeomPipelineWrapper* wgpu_create_gui_pipeline(
         .targets     = &color_target,
     };
 
+    WGPUDepthStencilState depth_stencil = {
+        .format              = WGPUTextureFormat_Depth24Plus,
+        .depthWriteEnabled   = WGPUOptionalBool_False,
+        .depthCompare        = WGPUCompareFunction_Always,
+        .stencilFront        = {
+            .compare         = WGPUCompareFunction_Always,
+            .failOp          = WGPUStencilOperation_Keep,
+            .depthFailOp     = WGPUStencilOperation_Keep,
+            .passOp          = WGPUStencilOperation_Keep,
+        },
+        .stencilBack         = {
+            .compare         = WGPUCompareFunction_Always,
+            .failOp          = WGPUStencilOperation_Keep,
+            .depthFailOp     = WGPUStencilOperation_Keep,
+            .passOp          = WGPUStencilOperation_Keep,
+        },
+        .stencilReadMask     = 0xFFFFFFFF,
+        .stencilWriteMask    = 0xFFFFFFFF,
+        .depthBias           = 0,
+        .depthBiasSlopeScale = 0.0f,
+        .depthBiasClamp      = 0.0f,
+    };
+
     WGPURenderPipelineDescriptor desc = {
         .layout     = pipeline_layout,
         .vertex     = {
@@ -65738,6 +65761,7 @@ static WGPUGeomPipelineWrapper* wgpu_create_gui_pipeline(
             .frontFace        = WGPUFrontFace_CCW,
             .cullMode         = WGPUCullMode_None,
         },
+        .depthStencil = &depth_stencil,
         .multisample = {
             .count                  = 1,
             .mask                   = 0xFFFFFFFF,

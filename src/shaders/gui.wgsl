@@ -86,8 +86,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let half_size = in.rect_size * 0.5;
         let d = sdRoundBox(in.local_pos, half_size, in.corner_radius);
         
-        let edge_width = fwidth(d);
-        let alpha = smoothstep(edge_width, -edge_width, d);
+        // Rounded Rect mode using fixed edge size (antialiased over 1.0 pixel boundary)
+        let alpha = smoothstep(1.0, -1.0, d);
         
         if (alpha <= 0.0) {
             discard;
@@ -96,8 +96,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     } else {
         // SDF Font Text mode sampling
         let sample_val = textureSample(font_texture, font_sampler, in.uv).r;
-        let edge_width = fwidth(sample_val);
-        let text_alpha = smoothstep(0.5 - edge_width, 0.5 + edge_width, sample_val);
+        let text_alpha = smoothstep(0.45, 0.55, sample_val);
         
         if (text_alpha <= 0.05) {
             discard;

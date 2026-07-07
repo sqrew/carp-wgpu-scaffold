@@ -420,7 +420,9 @@
                                                    (IO.println &(str* "Editor laser hit at " &(Vector3.str hit-p)))
                                                    (Coordinator.dispatch! (Engine.coordinator &eng) ev))))))))
                                      
+                                     (IO.println &(str* "UI Draw commands count: " (Int.str (Array.length (Context.draw-commands &gui-ctx)))))
                                      (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
+                                     (IO.println &(str* "UI Flat Verts count: " (Int.str (Array.length &gui-flat-verts))))
                                      (set! gui-num-verts (Uint32.from-long (Long.from-int (/ (Array.length &gui-flat-verts) 8))))
                                      (set! left-was-down left-clicked)
                                      (set! right-was-down right-clicked)))))
