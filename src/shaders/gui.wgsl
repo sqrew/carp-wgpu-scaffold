@@ -87,7 +87,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         let d = sdRoundBox(in.local_pos, half_size, in.corner_radius);
         
         // Rounded Rect mode using fixed edge size (antialiased over 1.0 pixel boundary)
-        let alpha = smoothstep(1.0, -1.0, d);
+        let alpha = smoothstep(-1.0, 1.0, -d);
         
         if (alpha <= 0.0) {
             discard;

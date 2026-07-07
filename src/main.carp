@@ -78,7 +78,9 @@
 (use ECS)
 (use Gui)
 
-(defn draw-editor-ui! [win eng-ref gui-ctx-ref dt-frame pvx-ptr pvy-ptr pvw-ptr pvh-ptr lwd-ptr rwd-ptr]
+(defn draw-editor-ui! [win eng-ref gui-ctx-ref dt-frame cfg-ref
+                       pvx-ptr pvy-ptr pvw-ptr pvh-ptr lwd-ptr rwd-ptr
+                       vsdf-ptr sdl-ptr fdt-ptr rst-ptr sst-ptr]
   (let [win-w 0
         win-h 0
         _w1 (GLFW.get-window-size win (Pointer.address &win-w) (Pointer.address &win-h))
@@ -109,9 +111,69 @@
 
       (Context.begin gui-ctx-ref mx my left-clicked left-clicked)
 
-      (Context.begin-panel gui-ctx-ref (copy "Editor Controls") 10.0f 10.0f 260.0f (- (Float.from-int fb-h) 20.0f) (copy "Editor Diagnostics"))
-      (Context.label gui-ctx-ref (copy "--- Status ---"))
+      (Context.begin-panel gui-ctx-ref (copy "Editor Controls") 10.0f 10.0f 260.0f (- (Float.from-int fb-h) 20.0f) (copy "Voxel Engine Editor"))
+      (Context.label gui-ctx-ref (copy "--- Diagnostics ---"))
       (Context.label gui-ctx-ref (str* "FPS: " (Int.str (Double.to-int (/ 1000.0 dt-frame)))))
+      (let [cam (Engine.camera eng-ref)
+            cam-pos (Camera.pos cam)
+            pos-str (str* "Pos: " (Double.str @(Vector3.x cam-pos)) ", " (Double.str @(Vector3.y cam-pos)) ", " (Double.str @(Vector3.z cam-pos)))]
+        (Context.label gui-ctx-ref pos-str))
+      
+      (Context.label gui-ctx-ref (copy "--- Visuals & Sim ---"))
+      (let [vsdf (Pointer.to-value vsdf-ptr)
+            btn-label (if vsdf "Volumetric SDF: ON" "Volumetric SDF: OFF")]
+        (when (Context.button gui-ctx-ref "vol_sdf_btn" (copy btn-label))
+          (do
+            (Pointer.set vsdf-ptr (not vsdf))
+            (Engine.set-volumetric-sdf! eng-ref (not vsdf))
+            (Engine.set-grid-dirty! eng-ref true))))
+
+      (let [sdl (Pointer.to-value sdl-ptr)
+            btn-label (if sdl "Debug Lines: ON" "Debug Lines: OFF")]
+        (when (Context.button gui-ctx-ref "dbg_lines_btn" (copy btn-label))
+          (do
+            (Pointer.set sdl-ptr (not sdl))
+            (Engine.set-show-debug-lines! eng-ref (not sdl)))))
+
+      (let [fixed-dt (Pointer.to-value fdt-ptr)]
+        (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))
+          (Maybe.Just nv)
+            (do
+              (Pointer.set fdt-ptr nv)
+              (Settings.set-fixed-dt! cfg-ref (Double.from-float nv))
+              (Engine.set-settings! eng-ref @cfg-ref))
+          (Maybe.Nothing) ()))
+
+      (Context.label gui-ctx-ref (copy "--- Raymarcher ---"))
+      (let [ray-steps (Pointer.to-value rst-ptr)]
+        (match (Context.slider gui-ctx-ref "ray_steps_slider" ray-steps 20.0f 150.0f (copy "Ray Steps"))
+          (Maybe.Just nv)
+            (do
+              (Pointer.set rst-ptr nv)
+              (Settings.set-ray-steps! cfg-ref (Double.to-int (Double.from-float nv)))
+              (Engine.set-settings! eng-ref @cfg-ref))
+          (Maybe.Nothing) ()))
+
+      (let [shadow-steps (Pointer.to-value sst-ptr)]
+        (match (Context.slider gui-ctx-ref "shadow_steps_slider" shadow-steps 4.0f 32.0f (copy "Shadow Steps"))
+          (Maybe.Just nv)
+            (do
+              (Pointer.set sst-ptr nv)
+              (Settings.set-shadow-steps! cfg-ref (Double.to-int (Double.from-float nv)))
+              (Engine.set-settings! eng-ref @cfg-ref))
+          (Maybe.Nothing) ()))
+
+      (when (Context.button gui-ctx-ref "bake_grid_btn" (copy "Bake Voxel Grid"))
+        (do
+          (Engine.set-voxel-dirty! eng-ref true)
+          (Engine.set-grid-dirty! eng-ref true)))
+
+      (when (Context.button gui-ctx-ref "close_editor_btn" (copy "Close Editor [TAB]"))
+        (do
+          (Engine.close-ui! eng-ref)
+          (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
+
+      (Context.end-panel gui-ctx-ref)
       
       (let [active-panel-maybe @(Engine.active-ui-panel eng-ref)]
         (match active-panel-maybe
@@ -199,8 +261,6 @@
                                 (Engine.close-ui! eng-ref)
                                 (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
                             (Context.end-panel gui-ctx-ref))))))))))
-
-      (Context.end-panel gui-ctx-ref)
 
       (let [pvx (Pointer.to-value pvx-ptr)
             pvy (Pointer.to-value pvy-ptr)
@@ -357,9 +417,11 @@
                                (set! gui-num-verts (Uint32.from-long 0l))
                                 (if editor-mode
                                   (do
-                                     (draw-editor-ui! win &eng &gui-ctx dt-frame
+                                     (draw-editor-ui! win &eng &gui-ctx dt-frame &cfg
                                                       (Pointer.address &pvx) (Pointer.address &pvy) (Pointer.address &pvw) (Pointer.address &pvh)
-                                                      (Pointer.address &left-was-down) (Pointer.address &right-was-down))
+                                                      (Pointer.address &left-was-down) (Pointer.address &right-was-down)
+                                                      (Pointer.address &volumetric-sdf-val) (Pointer.address &show-debug-lines-val)
+                                                      (Pointer.address &fixed-dt-val) (Pointer.address &ray-steps-val) (Pointer.address &shadow-steps-val))
                                     (IO.println &(str* "UI Draw commands count: " (Int.str (Array.length (Context.draw-commands &gui-ctx)))))
                                     (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
                                     (IO.println &(str* "UI Flat Verts count: " (Int.str (Array.length &gui-flat-verts))))
