@@ -99,8 +99,10 @@
             ())
         line-count)))
 
-  (defn render [frame ctx lp line-count depth]
+  (defn render [frame ctx lp line-count depth editor-mode vx vy vw vh]
     (if (> line-count 0)
-        (WGPURender.run-geom-pass-overlay frame @(LinePassRenderer.pipeline lp) @(LinePassRenderer.bind-group lp) @(LinePassRenderer.v-buffer lp) depth (Uint32.from-long (Long.from-int (* line-count 2))) (Maybe.Nothing))
+        (if editor-mode
+            (WGPURender.run-geom-pass-overlay-viewport frame @(LinePassRenderer.pipeline lp) @(LinePassRenderer.bind-group lp) @(LinePassRenderer.v-buffer lp) depth (Uint32.from-long (Long.from-int (* line-count 2))) (Maybe.Nothing) vx vy vw vh)
+            (WGPURender.run-geom-pass-overlay frame @(LinePassRenderer.pipeline lp) @(LinePassRenderer.bind-group lp) @(LinePassRenderer.v-buffer lp) depth (Uint32.from-long (Long.from-int (* line-count 2))) (Maybe.Nothing)))
         ()))
 )

@@ -388,13 +388,18 @@
         ;; 4. Update debug lines pass
         (LinePass.update! ctx (WGPURenderer.line-pass ren) vp-data line-cmds))))
 
-  (defn draw [surf ctx ren line-count gui-flat-verts gui-num-verts]
+  (defn draw [surf ctx ren line-count gui-flat-verts gui-num-verts editor-mode vx vy vw vh]
     (match (WGPURender.begin-frame surf ctx)
       (Result.Error _) ()
       (Result.Success frame)
         (do
-          (WGPURenderer.run-pass frame @(WGPURenderer.pipeline ren) @(WGPURenderer.bind-group ren) (Maybe.Nothing))
-          (LinePass.render frame ctx (WGPURenderer.line-pass ren) line-count @(WGPURenderer.depth-texture ren))
+          (if editor-mode
+              (do
+                (WGPURender.run-pass-viewport frame @(WGPURenderer.pipeline ren) @(WGPURenderer.bind-group ren) (Maybe.Nothing) vx vy vw vh)
+                (LinePass.render frame ctx (WGPURenderer.line-pass ren) line-count @(WGPURenderer.depth-texture ren) true vx vy vw vh))
+              (do
+                (WGPURenderer.run-pass frame @(WGPURenderer.pipeline ren) @(WGPURenderer.bind-group ren) (Maybe.Nothing))
+                (LinePass.render frame ctx (WGPURenderer.line-pass ren) line-count @(WGPURenderer.depth-texture ren) false 0.0f 0.0f 0.0f 0.0f)))
           
           (when (> (Array.length gui-flat-verts) 0)
             (match (WGPURender.create-vertex-buffer ctx gui-flat-verts)
