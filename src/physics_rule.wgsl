@@ -44,3 +44,20 @@
 //         }
 //     }
 // }
+
+
+
+// Sample density (SDF) of the center voxel and its 6 cardially adjacent neighbors
+// let center = get_voxel(local_x, local_y, local_z).x;
+// let left   = get_voxel(local_x - 1, local_y, local_z).x;
+// let right  = get_voxel(local_x + 1, local_y, local_z).x;
+// let bottom = get_voxel(local_x, local_y - 1, local_z).x;
+// let top    = get_voxel(local_x, local_y + 1, local_z).x;
+// let back   = get_voxel(local_x, local_y, local_z - 1).x;
+// let front  = get_voxel(local_x, local_y, local_z + 1).x;
+
+// Apply thermal/density diffusion (Laplacian smoothing)
+// let average = (left + right + bottom + top + back + front) / 6.0;
+
+// Slowly blend the current voxel's density towards the average neighbor state
+// cell.x = mix(center, average, dt * 2.0);
