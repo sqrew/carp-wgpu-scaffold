@@ -65606,4 +65606,159 @@ static WGPUBindGroup wgpu_create_gui_bind_group(
     return wgpuDeviceCreateBindGroup(ctx->device, &desc);
 }
 
+static WGPUGeomPipelineWrapper* wgpu_create_gui_pipeline(
+    WGPUContext* ctx,
+    const char* wgsl_source,
+    const char* vs_entry,
+    const char* fs_entry,
+    const char* format_str,
+    uint32_t stride)
+{
+    if (!ctx || !ctx->device || !wgsl_source) {
+        return NULL;
+    }
+
+    WGPUTextureFormat target_format = WGPUTextureFormat_BGRA8Unorm;
+    if (format_str) {
+        if (strcmp(format_str, "rgba8unorm") == 0) target_format = WGPUTextureFormat_RGBA8Unorm;
+        else if (strcmp(format_str, "bgra8unorm") == 0) target_format = WGPUTextureFormat_BGRA8Unorm;
+    }
+
+    WGPUShaderSourceWGSL wgsl = {
+        .chain = { .sType = WGPUSType_ShaderSourceWGSL },
+        .code  = { .data = wgsl_source, .length = strlen(wgsl_source) },
+    };
+    WGPUShaderModuleDescriptor shader_desc = { .nextInChain = &wgsl.chain };
+    WGPUShaderModule shader = wgpuDeviceCreateShaderModule(ctx->device, &shader_desc);
+    if (!shader) return NULL;
+
+    WGPUBindGroupLayoutEntry entries[3] = {
+        {
+            .binding    = 0,
+            .visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment,
+            .buffer     = {
+                .type             = WGPUBufferBindingType_Uniform,
+                .hasDynamicOffset = 0,
+                .minBindingSize   = 0,
+            },
+        },
+        {
+            .binding    = 1,
+            .visibility = WGPUShaderStage_Fragment,
+            .sampler    = {
+                .type = WGPUSamplerBindingType_Filtering,
+            },
+        },
+        {
+            .binding    = 2,
+            .visibility = WGPUShaderStage_Fragment,
+            .texture    = {
+                .sampleType    = WGPUTextureSampleType_Float,
+                .viewDimension = WGPUTextureViewDimension_2D,
+                .multisampled  = 0,
+            },
+        }
+    };
+
+    WGPUBindGroupLayoutDescriptor bgl_desc = {
+        .entryCount = 3,
+        .entries    = entries,
+    };
+    WGPUBindGroupLayout bgl = wgpuDeviceCreateBindGroupLayout(ctx->device, &bgl_desc);
+    if (!bgl) {
+        wgpuShaderModuleRelease(shader);
+        return NULL;
+    }
+
+    WGPUPipelineLayoutDescriptor pl_desc = {
+        .bindGroupLayoutCount = 1,
+        .bindGroupLayouts     = &bgl,
+    };
+    WGPUPipelineLayout pipeline_layout = wgpuDeviceCreatePipelineLayout(ctx->device, &pl_desc);
+    if (!pipeline_layout) {
+        wgpuBindGroupLayoutRelease(bgl);
+        wgpuShaderModuleRelease(shader);
+        return NULL;
+    }
+
+    WGPUVertexAttribute attrs[2] = {
+        {
+            .format         = WGPUVertexFormat_Float32x4,
+            .offset         = 0,
+            .shaderLocation = 0,
+        },
+        {
+            .format         = WGPUVertexFormat_Float32x4,
+            .offset         = 16,
+            .shaderLocation = 1,
+        }
+    };
+    WGPUVertexBufferLayout vb_layout = {
+        .arrayStride    = stride,
+        .stepMode       = WGPUVertexStepMode_Vertex,
+        .attributeCount = 2,
+        .attributes     = attrs,
+    };
+
+    WGPUColorTargetState color_target = {
+        .format    = target_format,
+        .writeMask = WGPUColorWriteMask_All,
+        .blend     = &(WGPUBlendState){
+            .color = {
+                .operation = WGPUBlendOperation_Add,
+                .srcFactor = WGPUBlendFactor_SrcAlpha,
+                .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+            },
+            .alpha = {
+                .operation = WGPUBlendOperation_Add,
+                .srcFactor = WGPUBlendFactor_One,
+                .dstFactor = WGPUBlendFactor_OneMinusSrcAlpha,
+            },
+        },
+    };
+
+    WGPUFragmentState fragment = {
+        .module      = shader,
+        .entryPoint  = { .data = fs_entry, .length = strlen(fs_entry) },
+        .targetCount = 1,
+        .targets     = &color_target,
+    };
+
+    WGPURenderPipelineDescriptor desc = {
+        .layout     = pipeline_layout,
+        .vertex     = {
+            .module     = shader,
+            .entryPoint = { .data = vs_entry, .length = strlen(vs_entry) },
+            .bufferCount = 1,
+            .buffers     = &vb_layout,
+        },
+        .primitive  = {
+            .topology         = WGPUPrimitiveTopology_TriangleList,
+            .stripIndexFormat = WGPUIndexFormat_Undefined,
+            .frontFace        = WGPUFrontFace_CCW,
+            .cullMode         = WGPUCullMode_None,
+        },
+        .multisample = {
+            .count                  = 1,
+            .mask                   = 0xFFFFFFFF,
+            .alphaToCoverageEnabled = 0,
+        },
+        .fragment   = &fragment,
+    };
+
+    WGPURenderPipeline pipeline = wgpuDeviceCreateRenderPipeline(ctx->device, &desc);
+    wgpuPipelineLayoutRelease(pipeline_layout);
+    wgpuShaderModuleRelease(shader);
+
+    if (!pipeline) {
+        wgpuBindGroupLayoutRelease(bgl);
+        return NULL;
+    }
+
+    WGPUGeomPipelineWrapper* wrap = malloc(sizeof(WGPUGeomPipelineWrapper));
+    wrap->pipeline = pipeline;
+    wrap->bgl      = bgl;
+    return wrap;
+}
+
 #endif /* FONT_DATA_H */

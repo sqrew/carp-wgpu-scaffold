@@ -182,7 +182,10 @@
                                        right-clicked (= (GLFW.get-mouse-button win GLFW.Mouse.BUTTON_RIGHT) GLFW.PRESS)
                                        right-pressed (and right-clicked (not right-was-down))
                                        
-                                       panel-handle (Maybe.unsafe-from @(Engine.active-ui-panel &eng))
+                                       active-panel-opt @(Engine.active-ui-panel &eng)
+                                       panel-handle (match active-panel-opt
+                                                      (Maybe.Just ph) ph
+                                                      (Maybe.Nothing) (Handle.init (Uint64.from-long 999999l) (Uint32.from-long 0l)))
                                        is-dummy-handle (= (Uint64.to-long (Handle.index &panel-handle)) 999999l)
                                        found-panel-maybe (Maybe.Nothing)]
                                    (do

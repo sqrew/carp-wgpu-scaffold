@@ -35,32 +35,24 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) vertex_idx: u32) -> VertexOut
     let mode = floor(in.pos_size.w / 10000.0);
     let rh = in.pos_size.w - (mode * 10000.0);
     
-    let rx = in.pos_size.x;
-    let ry = in.pos_size.y;
+    let pos = vec2<f32>(in.pos_size.x, in.pos_size.y);
     
     // Generate UVs based on vertex index inside quad (6 vertices)
     let idx = vertex_idx % 6u;
     var uv = vec2<f32>(0.0);
-    var pos = vec2<f32>(0.0);
     
     if (idx == 0u) {
         uv = vec2<f32>(0.0, 0.0);
-        pos = vec2<f32>(rx, ry);
     } else if (idx == 1u) {
         uv = vec2<f32>(0.0, 1.0);
-        pos = vec2<f32>(rx, ry + rh);
     } else if (idx == 2u) {
         uv = vec2<f32>(1.0, 0.0);
-        pos = vec2<f32>(rx + rw, ry);
     } else if (idx == 3u) {
         uv = vec2<f32>(1.0, 0.0);
-        pos = vec2<f32>(rx + rw, ry);
     } else if (idx == 4u) {
         uv = vec2<f32>(0.0, 1.0);
-        pos = vec2<f32>(rx, ry + rh);
     } else if (idx == 5u) {
         uv = vec2<f32>(1.0, 1.0);
-        pos = vec2<f32>(rx + rw, ry + rh);
     }
     
     let ndc_x = (pos.x / screen_res.x) * 2.0 - 1.0;

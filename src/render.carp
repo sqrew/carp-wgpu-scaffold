@@ -21,6 +21,10 @@
   (Fn [(Ptr WGPUContext) (Ptr WGPUGeomPipelineWrapper) (Ptr WGPUUniformBufferWrapper) WGPUSampler (Ptr WGPURenderTexture)] WGPUBindGroup)
   "wgpu_create_gui_bind_group")
 
+(register create-gui-pipeline
+  (Fn [(Ptr WGPUContext) (Ptr CChar) (Ptr CChar) (Ptr CChar) (Ptr CChar) Int] (Ptr WGPUGeomPipelineWrapper))
+  "wgpu_create_gui_pipeline")
+
 (register wgpu-create-render-two-storage-uniform-bind-group
   (Fn [(Ptr WGPUContext) (Ptr WGPURenderPipelineWrapper) WGPUBuffer WGPUBuffer (Ptr WGPUUniformBufferWrapper)] WGPUBindGroup)
   "wgpu_create_render_two_storage_uniform_bind_group")
@@ -36,6 +40,10 @@
 (deftemplate uniform-buffer-get-buffer (Fn [(Ptr WGPUUniformBufferWrapper)] WGPUBuffer)
   "WGPUBuffer $NAME(WGPUUniformBufferWrapper* ub)"
   "$DECL { return ub->buffer; }")
+
+(deftemplate null-ptr? (Fn [(Ptr a)] Bool)
+  "bool $NAME(void* p)"
+  "$DECL { return p == NULL; }")
 
 (deftemplate array-zero-floats! (Fn [(Ref (Array Float))] ())
   "void $NAME(Array* arr)"
@@ -302,11 +310,11 @@
                                                           (match (LinePass.create ctx @&format 10000)
                                                             (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
                                                             (Result.Success lp)
-                                                              (let [gui-shader-src (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/gui.wgsl") (Result.Success s) s _ @"")]
-                                                                (match (WGPURender.create-geom-pipeline ctx &gui-shader-src "vs_main" "fs_main" &format "triangle-list" 32)
-                                                                  (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "GUI Pipeline failed: " e)))
-                                                                    (Result.Success gui-pipe)
-                                                                      (match (WGPURender.create-uniform-buffer ctx 8)
+                                                              (let [gui-shader-src (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/gui.wgsl") (Result.Success s) s _ @"")
+                                                                    gui-pipe (create-gui-pipeline ctx (String.cstr &gui-shader-src) (String.cstr "vs_main") (String.cstr "fs_main") (String.cstr &format) 32)]
+                                                                (if (null-ptr? gui-pipe)
+                                                                    (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error @"GUI Pipeline failed"))
+                                                                    (match (WGPURender.create-uniform-buffer ctx 8)
                                                                         (Result.Error e) (do (WGPURender.free-geom-pipeline gui-pipe) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture fields-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "GUI Uniform failed: " e)))
                                                                         (Result.Success gui-ubo)
                                                                           (match (WGPURender.create-render-texture ctx 512 512 "rgba8unorm")
