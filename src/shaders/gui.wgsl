@@ -59,7 +59,7 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) vertex_idx: u32) -> VertexOut
     let ndc_y = 1.0 - (pos.y / screen_res.y) * 2.0;
     
     let quad_idx = f32(vertex_idx / 6u);
-    let depth = 0.9 - (quad_idx * 0.01);
+    let depth = 0.9 - (quad_idx * 0.0001);
     
     out.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
     
