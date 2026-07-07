@@ -1,4 +1,5 @@
 // /home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/gui.wgsl
+
 struct VertexInput {
     @location(0) pos_size: vec4<f32>,
     @location(1) color: vec4<f32>,
@@ -43,15 +44,72 @@ fn vs_main(in: VertexInput, @builtin(vertex_index) vertex_idx: u32) -> VertexOut
     var pos = vec2<f32>(0.0);
     
     if (idx == 0u) {
-        uv = vec2<f32>(in.pos_size.x, in.pos_size.y); // We store raw uv coords in uv for text mode inside gui.carp?
-        // Wait, no! The vertex shader generates the raw uv from idx, but wait!
-        // In the original vs_main, it generated UVs 0.0 to 1.0!
-        // Yes, and in our gui.carp, we passed the interpolated texture coordinates (uv-u, uv-v) to Vertex.init!
-        // Wait! Let's check VertexInput in vs_main!
-        // Ah! Location 0 of VertexInput is pos_size (which is rx, ry, radius*10000+rw, mode*10000+rh).
-        // Wait, where are the vertex UVs in VertexInput?
-        // Let's check how the vertex buffers are bound/configured in render.carp!
-        // Oh! Let's search for "create-geom-pipeline" in render.carp or wgpu_render_helpers.h to see what the vertex layout is!
+        uv = vec2<f32>(0.0, 0.0);
+        pos = vec2<f32>(rx, ry);
+    } else if (idx == 1u) {
+        uv = vec2<f32>(0.0, 1.0);
+        pos = vec2<f32>(rx, ry + rh);
+    } else if (idx == 2u) {
+        uv = vec2<f32>(1.0, 0.0);
+        pos = vec2<f32>(rx + rw, ry);
+    } else if (idx == 3u) {
+        uv = vec2<f32>(1.0, 0.0);
+        pos = vec2<f32>(rx + rw, ry);
+    } else if (idx == 4u) {
+        uv = vec2<f32>(0.0, 1.0);
+        pos = vec2<f32>(rx, ry + rh);
+    } else if (idx == 5u) {
+        uv = vec2<f32>(1.0, 1.0);
+        pos = vec2<f32>(rx + rw, ry + rh);
     }
-    return out; // placeholder to not save yet
+    
+    let ndc_x = (pos.x / screen_res.x) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (pos.y / screen_res.y) * 2.0;
+    
+    let quad_idx = f32(vertex_idx / 6u);
+    let depth = 0.9 - (quad_idx * 0.01);
+    
+    out.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
+    
+    if (mode > 0.5) {
+        // Text mode: pos_size.z contains the exact U coord, pos_size.w contains 10000.0f + V coord
+        out.uv = vec2<f32>(in.pos_size.z, in.pos_size.w - 10000.0);
+    } else {
+        out.uv = uv;
+    }
+    
+    out.color = in.color;
+    out.mode = mode;
+    out.local_pos = (uv - vec2<f32>(0.5)) * vec2<f32>(rw, rh);
+    out.rect_size = vec2<f32>(rw, rh);
+    out.corner_radius = radius;
+    
+    return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+    if (in.mode < 0.5) {
+        // Rounded Rect mode using pixel-perfect derivatives
+        let half_size = in.rect_size * 0.5;
+        let d = sdRoundBox(in.local_pos, half_size, in.corner_radius);
+        
+        let edge_width = fwidth(d);
+        let alpha = smoothstep(edge_width, -edge_width, d);
+        
+        if (alpha <= 0.0) {
+            discard;
+        }
+        return vec4<f32>(in.color.rgb, in.color.a * alpha);
+    } else {
+        // SDF Font Text mode sampling
+        let sample_val = textureSample(font_texture, font_sampler, in.uv).r;
+        let edge_width = fwidth(sample_val);
+        let text_alpha = smoothstep(0.5 - edge_width, 0.5 + edge_width, sample_val);
+        
+        if (text_alpha <= 0.05) {
+            discard;
+        }
+        return vec4<f32>(in.color.rgb, in.color.a * text_alpha);
+    }
 }
