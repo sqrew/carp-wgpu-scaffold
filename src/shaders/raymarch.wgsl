@@ -1402,7 +1402,7 @@ struct PointInstance {
                 }
 
                 // Hemispherical ambient skylight (cool blueish sky, warm dark grey ground bounce)
-                let sky_color = vec3<f32>(0.15, 0.18, 0.25);
+                let sky_color = vec3<f32>(0.15, 0.35, 0.25);
                 let ground_color = vec3<f32>(0.06, 0.05, 0.05);
                 let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5) * sky_visibility;
 

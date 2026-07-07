@@ -243,6 +243,8 @@
             (Maybe.Nothing)
             (Map.create)
             (the String @"")
+            (the String @"")
+            (the String @"")
             cfg)))))
 
   (defn db [e]
@@ -1668,8 +1670,81 @@
                 (if (WGPU.pipeline-null?- pipe)
                     ()
                     (do
-                      (IO.println "Physical system reloaded and active.")
-                      (World.dirty-all-chunks! (Engine.world-data e))))))))))
+                       (IO.println "Physical system reloaded and active.")
+                       (World.dirty-all-chunks! (Engine.world-data e))))))))))
+
+  (sig evaluate-render-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-render-hot-reload! [e ctx ren]
+    (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/raymarch.wgsl")]
+      (match file-res
+        (Result.Success content)
+          (let [last-known (Engine.last-known-raymarch e)]
+            (if (String.empty? last-known)
+                (Engine.set-last-known-raymarch! e content)
+                (when (not (= last-known &content))
+                  (do
+                    (Engine.set-last-known-raymarch! e @&content)
+                    (let [ray-steps @(Settings.ray-steps (Engine.settings e))
+                          shadow-steps @(Settings.shadow-steps (Engine.settings e))
+                          voxel-res @(World.voxel-resolution (Engine.world-data e))
+                          new-shader (Shaders.shader-wgsl WGPURenderer.max-spheres WGPURenderer.max-ids-per-cell ray-steps shadow-steps voxel-res)
+                          format (WGPURenderer.format ren)
+                          pipe-res (WGPURender.create-pipeline ctx &new-shader "vs_main" "fs_main" format)]
+                      (match pipe-res
+                        (Result.Success new-pipe)
+                          (let [old-pipe @(WGPURenderer.pipeline ren)
+                                new-bg-res (WGPURender.create-voxel-render-bind-group-chunked
+                                             ctx
+                                             new-pipe
+                                             @(WGPURenderer.s-buffer ren)
+                                             @(WGPURenderer.csg-buffer ren)
+                                             @(WGPURenderer.u-buffer ren)
+                                             @(WGPURenderer.voxel-texture ren)
+                                             @(WGPURenderer.fields-texture ren)
+                                             @(WGPURenderer.voxel-sampler ren)
+                                             @(WGPURenderer.chunk-lookup-buffer ren)
+                                             @(WGPURenderer.noise-texture ren)
+                                             @(WGPURenderer.noise-sampler ren))]
+                            (match new-bg-res
+                              (Result.Success new-bg)
+                                (do
+                                  (WGPURender.free-pipeline old-pipe)
+                                  (WGPURenderer.set-pipeline! ren new-pipe)
+                                  (WGPURender.free-bind-group @(WGPURenderer.bind-group ren))
+                                  (WGPURenderer.set-bind-group! ren new-bg)
+                                  (IO.println "GPU raymarching render pipeline recompiled successfully!"))
+                              (Result.Error err)
+                                (do
+                                  (WGPURender.free-pipeline new-pipe)
+                                  (println* "Failed to create bind group for new render pipeline: " &err))))
+                        (Result.Error err)
+                          (println* "Failed to compile new render pipeline: " &err)))))))
+        (Result.Error _) ())))
+
+  (sig evaluate-carve-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-carve-hot-reload! [e ctx ren]
+    (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/carve.wgsl")]
+      (match file-res
+        (Result.Success content)
+          (let [last-known (Engine.last-known-carve e)]
+            (if (String.empty? last-known)
+                (Engine.set-last-known-carve! e content)
+                (when (not (= last-known &content))
+                  (do
+                    (Engine.set-last-known-carve! e @&content)
+                    (let [voxel-res @(World.voxel-resolution (Engine.world-data e))
+                          new-shader (Shaders.carve-shader voxel-res)
+                          pipe-res (WGPU.create-pipeline ctx &new-shader "main")]
+                      (match pipe-res
+                        (Result.Success new-pipe)
+                          (let [old-pipe @(WGPURenderer.carve-pipeline ren)]
+                            (do
+                              (WGPU.free-pipeline old-pipe)
+                              (WGPURenderer.set-carve-pipeline! ren new-pipe)
+                              (IO.println "GPU carve compute pipeline recompiled successfully!")))
+                        (Result.Error err)
+                          (println* "Failed to compile new carve compute pipeline: " &err)))))))
+        (Result.Error _) ())))
 
   (sig check-global-jit-rules? (Fn [] Bool))
   (defn check-global-jit-rules? []
@@ -1796,6 +1871,8 @@
         (Diagnostics.start-zone! diag "Render Submit & Sync")
         (Diagnostics.start-zone! diag "Sync: JIT Hot Reload")
         (Engine.evaluate-jit-hot-reload! e ctx ren)
+        (Engine.evaluate-render-hot-reload! e ctx ren)
+        (Engine.evaluate-carve-hot-reload! e ctx ren)
         (Diagnostics.end-zone! diag "Sync: JIT Hot Reload")
         (Diagnostics.start-zone! diag "Sync: JIT Physics Loop")
         (Engine.run-jit-physics-loop! e ctx ren)
