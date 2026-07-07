@@ -76,6 +76,7 @@
 (use RigidBody)
 (use Transform)
 (use ECS)
+(use Gui)
 
 (defn main []
   (let [cfg (Settings.load-from-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/settings.cfg")
@@ -102,7 +103,18 @@
                   (println* "Engine started.")
                   (let [frame-count 0
                         current-width width
-                        current-height height]
+                        current-height height
+                        gui-ctx (Context.create)
+                        editor-mode false
+                        tab-was-down false
+                        fixed-dt-val (Double.to-float @(Settings.fixed-dt &cfg))
+                        volumetric-sdf-val @(Settings.volumetric-sdf &cfg)
+                        show-debug-lines-val @(Settings.show-debug-lines &cfg)
+                        ray-steps-val (Float.from-int @(Settings.ray-steps &cfg))
+                        shadow-steps-val (Float.from-int @(Settings.shadow-steps &cfg))
+                        dt-frame 16.6
+                        gui-flat-verts []
+                        gui-num-verts (Uint32.from-long 0l)]
                     (while (= (GLFW.window-should-close win) 0)
                       (let [t-start (System.nanotime)
                             _poll (GLFW.poll-events)
@@ -122,25 +134,223 @@
                               (Camera.set-aspect! (Engine.camera &eng) (/ (Double.from-int w) (Double.from-int h)))
                               (set! current-width w)
                               (set! current-height h)))
+                          ;; Toggle Editor Mode with TAB key
+                          (let [tab-pressed-now (= (GLFW.get-key win GLFW.TAB) GLFW.PRESS)]
+                            (do
+                              (when (and tab-pressed-now (not tab-was-down))
+                                (do
+                                  (set! editor-mode (not editor-mode))
+                                  (if editor-mode
+                                    (do
+                                      (Engine.set-active-ui-panel! &eng (Maybe.Just (Handle.init (Uint64.from-long 999999l) (Uint32.from-long 0l))))
+                                      (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_NORMAL)
+                                      (IO.println "Editor Mode: ENABLED"))
+                                    (do
+                                      (Engine.close-ui! &eng)
+                                      (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)
+                                      (IO.println "Editor Mode: DISABLED")))))
+                              (set! tab-was-down tab-pressed-now)))
+
+                          ;; GUI State Updates and Layouts
+                          (let [fps (/ 1000.0 dt-frame)]
+                            (do
+                              (set! gui-flat-verts [])
+                              (set! gui-num-verts (Uint32.from-long 0l))
+                              (when (Maybe.just? (Engine.active-ui-panel &eng))
+                                (let [win-w 0
+                                      win-h 0
+                                      _w1 (GLFW.get-window-size win (Pointer.address &win-w) (Pointer.address &win-h))
+                                      fb-w 0
+                                      fb-h 0
+                                      _w2 (GLFW.get-framebuffer-size win (Pointer.address &fb-w) (Pointer.address &fb-h))
+                                      scale-x (/ (Double.from-int fb-w) (Double.from-int win-w))
+                                      scale-y (/ (Double.from-int fb-h) (Double.from-int win-h))
+                                      cursor-x 0.0
+                                      cursor-y 0.0
+                                      _w3 (GLFW.get-cursor-pos win (Pointer.address &cursor-x) (Pointer.address &cursor-y))
+                                      mx (* cursor-x scale-x)
+                                      my (* cursor-y scale-y)
+                                      click-state (= (GLFW.get-mouse-button win GLFW.Mouse.BUTTON_LEFT) GLFW.PRESS)
+                                      panel-handle (Maybe.unsafe-from @(Engine.active-ui-panel &eng))
+                                      is-dummy-handle (= (Uint64.to-long (Handle.index &panel-handle)) 999999l)
+                                      found-panel-maybe (Maybe.Nothing)]
+                                  (do
+                                    (ECS.query (Engine.world &eng) [ent (p UiPanel)]
+                                      (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
+                                        (set! found-panel-maybe (Maybe.Just @p))))
+                                        
+                                    (Context.begin &gui-ctx mx my click-state click-state)
+                                    
+                                    ;; --- General Editor Panel ---
+                                    (Context.begin-panel &gui-ctx @"editor_panel" 10.0f 10.0f 260.0f 450.0f @"Voxel Engine Editor")
+                                      (Context.label &gui-ctx @"--- Diagnostics ---")
+                                      (let [fps-str (str* "FPS: " (Double.str fps))]
+                                        (Context.label &gui-ctx fps-str))
+                                      (let [cam (Engine.camera &eng)
+                                            cam-pos (Camera.pos cam)
+                                            pos-str (str* "Pos: " (Double.str @(Vector3.x cam-pos)) ", " (Double.str @(Vector3.y cam-pos)) ", " (Double.str @(Vector3.z cam-pos)))]
+                                        (Context.label &gui-ctx pos-str))
+                                        
+                                      (Context.label &gui-ctx @"--- Visuals & Sim ---")
+                                      (if (Context.button &gui-ctx &@"vol_sdf_btn" (if volumetric-sdf-val @"Volumetric SDF: ON" @"Volumetric SDF: OFF"))
+                                        (do
+                                          (set! volumetric-sdf-val (not volumetric-sdf-val))
+                                          (Engine.set-volumetric-sdf! &eng volumetric-sdf-val)
+                                          (Engine.set-grid-dirty! &eng true))
+                                        ())
+                                        
+                                      (if (Context.button &gui-ctx &@"dbg_lines_btn" (if show-debug-lines-val @"Debug Lines: ON" @"Debug Lines: OFF"))
+                                        (do
+                                          (set! show-debug-lines-val (not show-debug-lines-val))
+                                          (Engine.set-show-debug-lines! &eng show-debug-lines-val))
+                                        ())
+                                        
+                                      (match (Context.slider &gui-ctx &@"fixed_dt_slider" fixed-dt-val 0.005f 0.05f @"Fixed DT")
+                                        (Maybe.Just nv)
+                                          (do
+                                            (set! fixed-dt-val nv)
+                                            (Settings.set-fixed-dt! &cfg (Double.from-float nv))
+                                            (Engine.set-settings! &eng @&cfg))
+                                        (Maybe.Nothing) ())
+                                        
+                                      (Context.label &gui-ctx @"--- Raymarcher ---")
+                                      (match (Context.slider &gui-ctx &@"ray_steps_slider" ray-steps-val 20.0f 150.0f @"Ray Steps")
+                                        (Maybe.Just nv)
+                                          (do
+                                            (set! ray-steps-val nv)
+                                            (Settings.set-ray-steps! &cfg (Double.to-int (Double.from-float nv)))
+                                            (Engine.set-settings! &eng @&cfg))
+                                        (Maybe.Nothing) ())
+                                        
+                                      (match (Context.slider &gui-ctx &@"shadow_steps_slider" shadow-steps-val 4.0f 32.0f @"Shadow Steps")
+                                        (Maybe.Just nv)
+                                          (do
+                                            (set! shadow-steps-val nv)
+                                            (Settings.set-shadow-steps! &cfg (Double.to-int (Double.from-float nv)))
+                                            (Engine.set-settings! &eng @&cfg))
+                                        (Maybe.Nothing) ())
+                                        
+                                      (when (Context.button &gui-ctx &@"bake_grid_btn" @"Bake Voxel Grid")
+                                        (do
+                                          (Engine.set-voxel-dirty! &eng true)
+                                          (Engine.set-grid-dirty! &eng true)))
+                                          
+                                      (when (Context.button &gui-ctx &@"close_editor_btn" @"Close Editor [TAB]")
+                                        (do
+                                          (Engine.close-ui! &eng)
+                                          (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
+                                    (Context.end-panel &gui-ctx)
+                                    
+                                    ;; --- Field Instance Panel ---
+                                    (match found-panel-maybe
+                                      (Maybe.Nothing) ()
+                                      (Maybe.Just panel)
+                                        (ECS.query (Engine.world &eng) [ent (rb RigidBody) (p-comp UiPanel) (fi FieldInstance) (color Color)]
+                                          (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
+                                            (do
+                                              (Context.begin-panel &gui-ctx @"field_panel" 530.0f 10.0f 260.0f 450.0f @"Field Instance Editor")
+                                                (let [h-str (str* "Source Index: #" (Long.str (Uint64.to-long (Handle.index (UiPanel.target p-comp)))))]
+                                                  (Context.label &gui-ctx h-str))
+                                                  
+                                                (let [controls (UiPanel.controls p-comp)]
+                                                  (do
+                                                    ;; Slider 0: Scale
+                                                    (let [ctrl (Array.unsafe-nth controls 0)
+                                                          curr-val (Double.to-float @(UiControl.value ctrl))]
+                                                      (match (Context.slider &gui-ctx &@"scale_slider" curr-val 0.0f 1.0f @"Scale")
+                                                        (Maybe.Just nv)
+                                                          (let [d-nv (Double.from-float nv)]
+                                                            (do
+                                                              (UiControl.set-value! ctrl d-nv)
+                                                              (FieldInstance.set-humidity! fi d-nv)
+                                                              (Engine.apply-control-value! &eng @(UiPanel.target p-comp) 0 d-nv)))
+                                                        (Maybe.Nothing) ()))
+                                                        
+                                                    ;; Slider 1: Gravity
+                                                    (let [ctrl (Array.unsafe-nth controls 1)
+                                                          curr-val (Double.to-float @(UiControl.value ctrl))]
+                                                      (match (Context.slider &gui-ctx &@"grav_slider" curr-val 0.0f 1.0f @"Gravity")
+                                                        (Maybe.Just nv)
+                                                          (let [d-nv (Double.from-float nv)]
+                                                            (do
+                                                              (UiControl.set-value! ctrl d-nv)
+                                                              (FieldInstance.set-pressure! fi d-nv)
+                                                              (Engine.apply-control-value! &eng @(UiPanel.target p-comp) 1 d-nv)))
+                                                        (Maybe.Nothing) ()))
+                                                        
+                                                    ;; Slider 2: Temp
+                                                    (let [ctrl (Array.unsafe-nth controls 2)
+                                                          curr-val (Double.to-float @(UiControl.value ctrl))
+                                                          cv @(Color.v color)
+                                                          cy @(Vector3.y &cv)
+                                                          cz @(Vector3.z &cv)]
+                                                      (match (Context.slider &gui-ctx &@"temp_slider" curr-val 0.0f 1.0f @"Temperature")
+                                                        (Maybe.Just nv)
+                                                          (let [d-nv (Double.from-float nv)]
+                                                            (do
+                                                              (UiControl.set-value! ctrl d-nv)
+                                                              (Color.set-v! color (Vector3.init d-nv cy cz))
+                                                              (Engine.apply-control-value! &eng @(UiPanel.target p-comp) 2 d-nv)))
+                                                        (Maybe.Nothing) ()))
+                                                        
+                                                    ;; Slider 3: Charge
+                                                    (let [ctrl (Array.unsafe-nth controls 3)
+                                                          curr-val (Double.to-float @(UiControl.value ctrl))
+                                                          cv @(Color.v color)
+                                                          cx @(Vector3.x &cv)
+                                                          cz @(Vector3.z &cv)]
+                                                      (match (Context.slider &gui-ctx &@"chg_slider" curr-val 0.0f 1.0f @"Charge")
+                                                        (Maybe.Just nv)
+                                                          (let [d-nv (Double.from-float nv)]
+                                                            (do
+                                                              (UiControl.set-value! ctrl d-nv)
+                                                              (Color.set-v! color (Vector3.init cx d-nv cz))
+                                                              (Engine.apply-control-value! &eng @(UiPanel.target p-comp) 3 d-nv)))
+                                                        (Maybe.Nothing) ()))
+                                                        
+                                                    ;; Slider 4: Influence
+                                                    (let [ctrl (Array.unsafe-nth controls 4)
+                                                          curr-val (Double.to-float @(UiControl.value ctrl))
+                                                          cv @(Color.v color)
+                                                          cx @(Vector3.x &cv)
+                                                          cy @(Vector3.y &cv)]
+                                                      (match (Context.slider &gui-ctx &@"inf_slider" curr-val 0.0f 1.0f @"Influence")
+                                                        (Maybe.Just nv)
+                                                          (let [d-nv (Double.from-float nv)]
+                                                            (do
+                                                              (UiControl.set-value! ctrl d-nv)
+                                                              (Color.set-v! color (Vector3.init cx cy d-nv))
+                                                              (Engine.apply-control-value! &eng @(UiPanel.target p-comp) 4 d-nv)))
+                                                        (Maybe.Nothing) ()))))
+                                                        
+                                              (when (Context.button &gui-ctx &@"close_panel_btn" @"Dismiss Panel")
+                                                (do
+                                                  (Engine.close-ui! &eng)
+                                                  (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
+                                              (Context.end-panel &gui-ctx)))))
+                                              
+                                    (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
+                                    (set! gui-num-verts (Uint32.from-long (Long.from-int (/ (Array.length &gui-flat-verts) 8)))))))))
+
                           (let [_tick (Engine.tick! &eng ctx &ren current-width current-height)
                                  t-after-tick (System.nanotime)
                                  cam (Engine.camera &eng)
                                  time (Clock.total (Engine.clock &eng))
                                  _clear (WGPURenderer.clear! &ren)
                                  line-count (WGPURenderer.process-commands! ctx &ren 
-                                                    time current-width current-height cam (Engine.render-db &eng))
+                                                     time current-width current-height cam (Engine.render-db &eng))
                                  t-after-proc (System.nanotime)
-                                _draw (WGPURenderer.draw surf ctx &ren line-count)
-                                t-after-draw (System.nanotime)
-                                _csg (Engine.set-csg-dirty! &eng false)
-                                _grid (Engine.set-grid-dirty! &eng false)
-                                _voxel (Engine.set-voxel-dirty! &eng false)
-                                _craters (Engine.set-craters! &eng [])
-                                t-end (System.nanotime)
-                                dt-tick (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-tick t-start))) 1000000.0)
-                                dt-proc (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-proc t-after-tick))) 1000000.0)
-                                dt-draw (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-draw t-after-proc))) 1000000.0)
-                                dt-frame (/ (Double.from-long (Uint64.to-long (Uint64.- t-end t-start))) 1000000.0)]
+                                 _draw (WGPURenderer.draw surf ctx &ren line-count &gui-flat-verts &gui-num-verts)
+                                 t-after-draw (System.nanotime)
+                                 _csg (Engine.set-csg-dirty! &eng false)
+                                 _grid (Engine.set-grid-dirty! &eng false)
+                                 _voxel (Engine.set-voxel-dirty! &eng false)
+                                 _craters (Engine.set-craters! &eng [])
+                                 t-end (System.nanotime)
+                                 dt-tick (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-tick t-start))) 1000000.0)
+                                 dt-proc (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-proc t-after-tick))) 1000000.0)
+                                 dt-draw (/ (Double.from-long (Uint64.to-long (Uint64.- t-after-draw t-after-proc))) 1000000.0)
+                                 _ (set! dt-frame (/ (Double.from-long (Uint64.to-long (Uint64.- t-end t-start))) 1000000.0))]
                             (do
                               (set! frame-count (inc frame-count))
                               (when (= (Int.mod frame-count 120) 0)

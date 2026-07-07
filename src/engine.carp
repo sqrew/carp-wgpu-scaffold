@@ -1918,7 +1918,25 @@
                       (do
                         (WGPURender.free-pipeline old-pipe)
                         (WGPURenderer.set-pipeline! ren new-pipe)
-                        (IO.println "GPU raymarching pipelines recompiled successfully!")))
+                        (let [old-bg @(WGPURenderer.bind-group ren)
+                              new-bg-res (WGPURender.create-voxel-render-bind-group-chunked ctx new-pipe 
+                                            @(WGPURenderer.s-buffer ren) 
+                                            @(WGPURenderer.csg-buffer ren) 
+                                            @(WGPURenderer.u-buffer ren) 
+                                            @(WGPURenderer.voxel-texture ren) 
+                                            @(WGPURenderer.fields-texture ren) 
+                                            @(WGPURenderer.voxel-sampler ren) 
+                                            @(WGPURenderer.chunk-lookup-buffer ren) 
+                                            @(WGPURenderer.noise-texture ren) 
+                                            @(WGPURenderer.noise-sampler ren))]
+                          (match new-bg-res
+                            (Result.Success bg)
+                              (do
+                                (WGPURender.free-bind-group old-bg)
+                                (WGPURenderer.set-bind-group! ren bg)
+                                (IO.println "GPU raymarching pipelines recompiled successfully!"))
+                            (Result.Error err)
+                              (println* "Failed to recreate render bind group: " &err)))))
                   (Result.Error err)
                     (println* "Failed to recompile render pipeline: " &err))))
             
