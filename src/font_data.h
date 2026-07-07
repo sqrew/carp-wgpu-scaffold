@@ -65617,11 +65617,13 @@ static WGPUGeomPipelineWrapper* wgpu_create_gui_pipeline(
     if (!ctx || !ctx->device || !wgsl_source) {
         return NULL;
     }
+    printf("wgpu_create_gui_pipeline format_str: %s\n", format_str ? format_str : "NULL");
 
     WGPUTextureFormat target_format = WGPUTextureFormat_BGRA8Unorm;
     if (format_str) {
         if (strcmp(format_str, "rgba8unorm") == 0) target_format = WGPUTextureFormat_RGBA8Unorm;
         else if (strcmp(format_str, "bgra8unorm") == 0) target_format = WGPUTextureFormat_BGRA8Unorm;
+        else if (strcmp(format_str, "bgra8unorm-srgb") == 0 || strcmp(format_str, "bgra8unormsrgb") == 0) target_format = WGPUTextureFormat_BGRA8UnormSrgb;
     }
 
     WGPUShaderSourceWGSL wgsl = {
