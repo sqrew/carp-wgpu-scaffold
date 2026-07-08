@@ -998,7 +998,15 @@
       (Array.aset! u-data 32 (Double.to-float (Double.from-int shadow-quality)))
       (Array.aset! u-data 33 (Double.to-float (Double.from-int shadow-quality)))
       (Array.aset! u-data 34 (if volumetric-sdf 1.0f 0.0f))
-      (Array.aset! u-data 35 0.0f)))
+      (Array.aset! u-data 35 0.0f)
+      (Array.aset! u-data 36 (Double.to-float WGPURenderer.plains-scale))
+      (Array.aset! u-data 37 (Double.to-float WGPURenderer.plains-offset))
+      (Array.aset! u-data 38 (Double.to-float WGPURenderer.canyons-scale))
+      (Array.aset! u-data 39 (Double.to-float WGPURenderer.canyons-offset))
+      (Array.aset! u-data 40 (Double.to-float WGPURenderer.mountains-scale))
+      (Array.aset! u-data 41 (Double.to-float WGPURenderer.mountains-offset))
+      (Array.aset! u-data 42 0.0f)
+      (Array.aset! u-data 43 0.0f)))
 
   (defn pack-instances! [world db u-data csg-data csg-dirty]
     (let [next-csg-node-idx 0]
@@ -1030,7 +1038,7 @@
                     humidity (FieldDatabase.get-entity-scalar db 2 id)
                     pressure (FieldDatabase.get-entity-scalar db 3 id)
                     final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
-                    base (+ 36 (* id 16))]
+                    base (+ 44 (* id 16))]
                 (do
                   (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
                   (Array.aset! u-data (+ base 1) (Double.to-float @(Vector3.y pos)))

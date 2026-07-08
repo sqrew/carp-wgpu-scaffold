@@ -23,6 +23,8 @@ struct PointInstance {
           grid_dims: vec4<f32>,
           grid_origin: vec4<f32>,
           shadow_ao_quality: vec4<f32>,
+          terrain_params1: vec4<f32>,
+          terrain_params2: vec4<f32>,
           instances: array<PointInstance, {{LIMIT}}>
       }
       struct CsgNode {
@@ -109,16 +111,23 @@ struct PointInstance {
           let W2 = w2 / sum_safe;
           let W3 = w3 / sum_safe;
           
-          let h_plains = fbm2d(x * 0.015, z * 0.015) * 12.0 - 18.0;
+          let plains_scale = u.terrain_params1.x;
+          let plains_offset = u.terrain_params1.y;
+          let canyons_scale = u.terrain_params1.z;
+          let canyons_offset = u.terrain_params1.w;
+          let mountains_scale = u.terrain_params2.x;
+          let mountains_offset = u.terrain_params2.y;
+
+          let h_plains = fbm2d(x * 0.015, z * 0.015) * plains_scale + plains_offset;
           
           let base_canyon = fbm2d(x * 0.012, z * 0.012);
           let bc5 = base_canyon * 5.0;
           let fbc = floor(bc5);
           let tbc = bc5 - fbc;
           let stepped_canyon = fbc + 0.1 * fade(tbc);
-          let h_canyons = (stepped_canyon / 5.0) * 45.0 - 25.0;
+          let h_canyons = (stepped_canyon / 5.0) * canyons_scale + canyons_offset;
           
-          let h_mountains = rigid_fbm2d(x * 0.01, z * 0.01) * 60.0 - 30.0;
+          let h_mountains = rigid_fbm2d(x * 0.01, z * 0.01) * mountains_scale + mountains_offset;
           
           return W1 * h_plains + W2 * h_canyons + W3 * h_mountains;
       }

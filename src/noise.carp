@@ -1,6 +1,17 @@
 ;; src/noise.carp
 
 (defmodule WGPURenderer
+  (def plains-scale 12.0)
+  (def plains-offset -18.0)
+  (def canyons-scale 45.0)
+  (def canyons-offset -25.0)
+  (def mountains-scale 60.0)
+  (def mountains-offset -30.0)
+  (def seed-offset 0.0)
+  (def global-frequency 1.0)
+  (def lacunarity 2.0)
+  (def gain 0.5)
+
   (defn hash2d [x z]
     (let [s (Double.sin (+ (* x 12.9898) (* z 78.233)))
           mult (* s 43758.5453123)]
@@ -32,8 +43,8 @@
 
   (defn fbm2d [x z]
     (let [n1 (noise2d x z)
-          n2 (* 0.5 (noise2d (* x 2.0) (* z 2.0)))
-          n3 (* 0.25 (noise2d (* x 4.0) (* z 4.0)))]
+          n2 (* gain (noise2d (* x lacunarity) (* z lacunarity)))
+          n3 (* (* gain gain) (noise2d (* x (* lacunarity lacunarity)) (* z (* lacunarity lacunarity))))]
       (+ n1 (+ n2 n3))))
 
   (defn clamp-double [low high val]
@@ -41,12 +52,14 @@
 
   (defn rigid-fbm2d [x z]
     (let [n1 (- 1.0 (Double.abs (- (* (noise2d x z) 2.0) 1.0)))
-          n2 (* 0.5 (- 1.0 (Double.abs (- (* (noise2d (* x 2.0) (* z 2.0)) 2.0) 1.0))))
-          n3 (* 0.25 (- 1.0 (Double.abs (- (* (noise2d (* x 4.0) (* z 4.0)) 2.0) 1.0))))]
+          n2 (* gain (- 1.0 (Double.abs (- (* (noise2d (* x lacunarity) (* z lacunarity)) 2.0) 1.0))))
+          n3 (* (* gain gain) (- 1.0 (Double.abs (- (* (noise2d (* x (* lacunarity lacunarity)) (* z (* lacunarity lacunarity))) 2.0) 1.0))))]
       (+ n1 (+ n2 n3))))
 
   (defn get-terrain-height [x z]
-    (let [b-val (noise2d (* x 0.003) (* z 0.003))
+    (let [sx (+ x seed-offset)
+          sz (+ z seed-offset)
+          b-val (noise2d (* sx (* 0.003 global-frequency)) (* sz (* 0.003 global-frequency)))
           w1 (clamp-double 0.0 1.0 (- 1.0 (/ (Double.abs (- b-val 0.2)) 0.35)))
           w2 (clamp-double 0.0 1.0 (- 1.0 (/ (Double.abs (- b-val 0.5)) 0.35)))
           w3 (clamp-double 0.0 1.0 (- 1.0 (/ (Double.abs (- b-val 0.8)) 0.35)))
@@ -55,14 +68,14 @@
           W1 (/ w1 sum-safe)
           W2 (/ w2 sum-safe)
           W3 (/ w3 sum-safe)
-          h-plains (- (* (fbm2d (* x 0.015) (* z 0.015)) 12.0) 18.0)
-          base-canyon (fbm2d (* x 0.012) (* z 0.012))
+          h-plains (+ (* (fbm2d (* sx (* 0.015 global-frequency)) (* sz (* 0.015 global-frequency))) plains-scale) plains-offset)
+          base-canyon (fbm2d (* sx (* 0.012 global-frequency)) (* sz (* 0.012 global-frequency)))
           bc5 (* base-canyon 5.0)
           fbc (Double.floor bc5)
           tbc (- bc5 fbc)
           stepped-canyon (+ fbc (* 0.1 (fade tbc)))
-          h-canyons (- (* (/ stepped-canyon 5.0) 45.0) 25.0)
-          h-mountains (- (* (rigid-fbm2d (* x 0.01) (* z 0.01)) 60.0) 30.0)]
+          h-canyons (+ (* (/ stepped-canyon 5.0) canyons-scale) canyons-offset)
+          h-mountains (+ (* (rigid-fbm2d (* sx (* 0.01 global-frequency)) (* sz (* 0.01 global-frequency))) mountains-scale) mountains-offset)]
       (+ (* W1 h-plains) (+ (* W2 h-canyons) (* W3 h-mountains)))))
 
   (defn hash3d [x y z]
