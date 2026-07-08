@@ -57,6 +57,17 @@ struct PointInstance {
           return r;
       }
 
+      fn getTerrainDistanceScale() -> f32 {
+           let plains_scale = u.terrain_params1.x;
+           let canyons_scale = u.terrain_params1.z;
+           let mountains_scale = u.terrain_params2.x;
+           let global_frequency = u.terrain_params2.w;
+           
+           let max_scale = max(plains_scale, max(canyons_scale, mountains_scale));
+           let safety_factor = 1.0 / (1.0 + max_scale * global_frequency * 0.015);
+           return 0.55 * safety_factor;
+       }
+
       fn hash2d(x: f32, z: f32) -> f32 {
           let s = sin(x * 12.9898 + z * 78.233);
           let mult = s * 43758.5453123;
@@ -217,7 +228,7 @@ struct PointInstance {
               let detail_h = fbm2d(px * 0.005, pz * 0.005) * 1.5 * detail_fade;
               
               let base_terrain_d = py - final_h;
-              let terrain_d = (base_terrain_d - detail_h) * 0.55;
+              let terrain_d = (base_terrain_d - detail_h) * getTerrainDistanceScale();
               
               var cave_val = 0.0;
               var cave_sdf = -1000.0;
@@ -272,7 +283,7 @@ struct PointInstance {
                 let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
                 let detail_h = fbm2d(p.x * 0.005, p.z * 0.005) * 4.5 * detail_fade;
                 
-                let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
+                let terrain_d = (p.y - (final_h + detail_h)) * getTerrainDistanceScale();
                 let mat_id = 1.0;
                 return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
             }
@@ -497,7 +508,7 @@ struct PointInstance {
                 let dist_xz = length(p.xz - u.cam_pos.xz);
                 let detail_fade = clamp((dist_xz - 256.0) / 128.0, 0.0, 1.0);
                 let detail_h = fbm2d(p.x * 0.005, p.z * 0.005) * 1.5 * detail_fade;
-                let terrain_d = (p.y - (final_h + detail_h)) * 0.55;
+                let terrain_d = (p.y - (final_h + detail_h)) * getTerrainDistanceScale();
                 return vec2<f32>(terrain_d, 1.0);
             }
         }
