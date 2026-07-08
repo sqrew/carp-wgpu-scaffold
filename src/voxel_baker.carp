@@ -158,8 +158,12 @@
                 (let [py (+ oy (* (+ (Double.from-int y) 0.5) cell-size))
                       p (Vector3.init px py pz)
                       
-                      ;; Base SDF is the distance to the terrain height
-                      terrain-d (- py final-h)
+                      raw-terrain-d (- py final-h)
+                      max-scale (if (> WGPURenderer.plains-scale WGPURenderer.canyons-scale)
+                                    (if (> WGPURenderer.plains-scale WGPURenderer.mountains-scale) WGPURenderer.plains-scale WGPURenderer.mountains-scale)
+                                    (if (> WGPURenderer.canyons-scale WGPURenderer.mountains-scale) WGPURenderer.canyons-scale WGPURenderer.mountains-scale))
+                      safety-factor (/ 1.0 (+ 1.0 (* max-scale (* WGPURenderer.global-frequency 0.015))))
+                      terrain-d (* raw-terrain-d (* 0.55 safety-factor))
                       
                       ;; Carve out caves if below terrain height using 3D noise
                       cave-val (if (< terrain-d 0.0)
