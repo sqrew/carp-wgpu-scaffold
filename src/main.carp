@@ -80,7 +80,9 @@
 
 (defn draw-editor-ui! [win eng-ref gui-ctx-ref dt-frame cfg-ref
                        pvx-ptr pvy-ptr pvw-ptr pvh-ptr lwd-ptr rwd-ptr
-                       vsdf-ptr sdl-ptr fdt-ptr rst-ptr sst-ptr]
+                       vsdf-ptr sdl-ptr fdt-ptr rst-ptr sst-ptr
+                       sim-open-ptr ray-open-ptr terrain-open-ptr
+                       gui-time-val gui-cmd-val gui-vert-val]
   (let [win-w 0
         win-h 0
         _w1 (GLFW.get-window-size win (Pointer.address &win-w) (Pointer.address &win-h))
@@ -114,199 +116,254 @@
       (Context.begin-panel gui-ctx-ref (copy "Editor Controls") 10.0f 10.0f 260.0f (- (Float.from-int fb-h) 20.0f) (copy "Voxel Engine Editor"))
       (Context.label gui-ctx-ref (copy "--- Diagnostics ---"))
       (Context.label gui-ctx-ref (str* "FPS: " (Int.str (Double.to-int (/ 1000.0 dt-frame)))))
+      (Context.label gui-ctx-ref (str* "GUI CPU: " (Double.str gui-time-val) " ms"))
+      (Context.label gui-ctx-ref (str* "GUI Cmds: " (Int.str gui-cmd-val) " (Verts: " (Int.str gui-vert-val) ")"))
       (let [cam (Engine.camera eng-ref)
             cam-pos (Camera.pos cam)
             pos-str (str* "Pos: " (Double.str @(Vector3.x cam-pos)) ", " (Double.str @(Vector3.y cam-pos)) ", " (Double.str @(Vector3.z cam-pos)))]
         (Context.label gui-ctx-ref pos-str))
-      
-      (Context.label gui-ctx-ref (copy "--- Visuals & Sim ---"))
-      (let [vsdf (Pointer.to-value vsdf-ptr)
-            btn-label (if vsdf "Volumetric SDF: ON" "Volumetric SDF: OFF")]
-        (when (Context.button gui-ctx-ref "vol_sdf_btn" (copy btn-label))
-          (do
-            (Pointer.set vsdf-ptr (not vsdf))
-            (Engine.set-volumetric-sdf! eng-ref (not vsdf))
-            (Engine.set-grid-dirty! eng-ref true))))
+      (Gui.separator gui-ctx-ref)
 
-      (let [sdl (Pointer.to-value sdl-ptr)
-            btn-label (if sdl "Debug Lines: ON" "Debug Lines: OFF")]
-        (when (Context.button gui-ctx-ref "dbg_lines_btn" (copy btn-label))
-          (do
-            (Pointer.set sdl-ptr (not sdl))
-            (Engine.set-show-debug-lines! eng-ref (not sdl)))))
-
-      (let [fixed-dt (Pointer.to-value fdt-ptr)]
-        (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))
-          (Maybe.Just nv)
-            (do
-              (Pointer.set fdt-ptr nv)
-              (Settings.set-fixed-dt! cfg-ref (Double.from-float nv))
-              (Engine.set-settings! eng-ref @cfg-ref))
-          (Maybe.Nothing) ()))
-
-      (Context.label gui-ctx-ref (copy "--- Raymarcher ---"))
-      (let [ray-steps (Pointer.to-value rst-ptr)]
-        (match (Context.slider gui-ctx-ref "ray_steps_slider" ray-steps 20.0f 150.0f (copy "Ray Steps"))
-          (Maybe.Just nv)
-            (do
-              (Pointer.set rst-ptr nv)
-              (Settings.set-ray-steps! cfg-ref (Double.to-int (Double.from-float nv)))
-              (Engine.set-settings! eng-ref @cfg-ref))
-          (Maybe.Nothing) ()))
-
-      (let [shadow-steps (Pointer.to-value sst-ptr)]
-        (match (Context.slider gui-ctx-ref "shadow_steps_slider" shadow-steps 4.0f 32.0f (copy "Shadow Steps"))
-          (Maybe.Just nv)
-            (do
-              (Pointer.set sst-ptr nv)
-              (Settings.set-shadow-steps! cfg-ref (Double.to-int (Double.from-float nv)))
-              (Engine.set-settings! eng-ref @cfg-ref))
-          (Maybe.Nothing) ()))
-
-      (Context.label gui-ctx-ref (copy "--- Terrain Noise ---"))
-      (let [ps (Double.to-float WGPURenderer.plains-scale)]
-        (match (Context.slider gui-ctx-ref "plains_scale_slider" ps 0.0f 50.0f (copy "Plains Scale"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.plains-scale (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [po (Double.to-float WGPURenderer.plains-offset)]
-        (match (Context.slider gui-ctx-ref "plains_offset_slider" po -50.0f 50.0f (copy "Plains Offset"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.plains-offset (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [cs (Double.to-float WGPURenderer.canyons-scale)]
-        (match (Context.slider gui-ctx-ref "canyons_scale_slider" cs 0.0f 100.0f (copy "Canyons Scale"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.canyons-scale (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [co (Double.to-float WGPURenderer.canyons-offset)]
-        (match (Context.slider gui-ctx-ref "canyons_offset_slider" co -100.0f 50.0f (copy "Canyons Offset"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.canyons-offset (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [ms (Double.to-float WGPURenderer.mountains-scale)]
-        (match (Context.slider gui-ctx-ref "mountains_scale_slider" ms 0.0f 150.0f (copy "Mtns Scale"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.mountains-scale (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [mo (Double.to-float WGPURenderer.mountains-offset)]
-        (match (Context.slider gui-ctx-ref "mountains_offset_slider" mo -150.0f 50.0f (copy "Mtns Offset"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.mountains-offset (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [so (Double.to-float WGPURenderer.seed-offset)]
-        (match (Context.slider gui-ctx-ref "seed_offset_slider" so 0.0f 1000.0f (copy "Terrain Seed"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.seed-offset (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [gf (Double.to-float WGPURenderer.global-frequency)]
-        (match (Context.slider gui-ctx-ref "global_freq_slider" gf 0.1f 5.0f (copy "Global Freq"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.global-frequency (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [lac (Double.to-float WGPURenderer.lacunarity)]
-        (match (Context.slider gui-ctx-ref "lacunarity_slider" lac 1.2f 4.0f (copy "Lacunarity"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.lacunarity (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (let [g (Double.to-float WGPURenderer.gain)]
-        (match (Context.slider gui-ctx-ref "gain_slider" g 0.1f 0.9f (copy "Fractal Gain"))
-          (Maybe.Just nv)
-            (do
-              (set! WGPURenderer.gain (Double.from-float nv))
-              (set! WGPURenderer.cache-initialized false)
-              (World.dirty-all-chunks! (Engine.world-data eng-ref))
-              (Engine.set-voxel-dirty! eng-ref true)
-              (Engine.set-grid-dirty! eng-ref true))
-          (Maybe.Nothing) ()))
-
-      (when (Context.button gui-ctx-ref "reset_terrain_btn" (copy "Reset Terrain Config"))
+      (let [sim-open (Pointer.to-value sim-open-ptr)
+            next-sim-open (Context.collapsing-header gui-ctx-ref "sim_header" (copy "Visuals & Sim") sim-open)]
         (do
-          (set! WGPURenderer.plains-scale 12.0)
-          (set! WGPURenderer.plains-offset -18.0)
-          (set! WGPURenderer.canyons-scale 45.0)
-          (set! WGPURenderer.canyons-offset -25.0)
-          (set! WGPURenderer.mountains-scale 60.0)
-          (set! WGPURenderer.mountains-offset -30.0)
-          (set! WGPURenderer.seed-offset 0.0)
-          (set! WGPURenderer.global-frequency 1.0)
-          (set! WGPURenderer.lacunarity 2.0)
-          (set! WGPURenderer.gain 0.5)
-          (set! WGPURenderer.cache-initialized false)
-          (World.dirty-all-chunks! (Engine.world-data eng-ref))
-          (Engine.set-voxel-dirty! eng-ref true)
-          (Engine.set-grid-dirty! eng-ref true)))
+          (Pointer.set sim-open-ptr next-sim-open)
+          (when next-sim-open
+            (do
+              (let [vsdf (Pointer.to-value vsdf-ptr)
+                    btn-label (if vsdf "Volumetric SDF: ON" "Volumetric SDF: OFF")]
+                (do
+                  (when (Context.button gui-ctx-ref "vol_sdf_btn" (copy btn-label))
+                    (do
+                      (Pointer.set vsdf-ptr (not vsdf))
+                      (Engine.set-volumetric-sdf! eng-ref (not vsdf))
+                      (Engine.set-grid-dirty! eng-ref true)))
+                  (Context.tooltip gui-ctx-ref "Render volumetric shadows and smoke SDF effects.")))
+                  
+              (let [sdl (Pointer.to-value sdl-ptr)
+                    btn-label (if sdl "Debug Lines: ON" "Debug Lines: OFF")]
+                (do
+                  (when (Context.button gui-ctx-ref "dbg_lines_btn" (copy btn-label))
+                    (do
+                      (Pointer.set sdl-ptr (not sdl))
+                      (Engine.set-show-debug-lines! eng-ref (not sdl))))
+                  (Context.tooltip gui-ctx-ref "Draw physical bounding boxes and ray vectors.")))
 
-      (when (Context.button gui-ctx-ref "rebake_terrain_btn" (copy "Rebake/Regen Terrain"))
+              (let [fixed-dt (Pointer.to-value fdt-ptr)]
+                (do
+                  (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))
+                    (Maybe.Just nv)
+                      (do
+                        (Pointer.set fdt-ptr nv)
+                        (Settings.set-fixed-dt! cfg-ref (Double.from-float nv))
+                        (Engine.set-settings! eng-ref @cfg-ref))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Time increment step for physics simulation update.")))))))
+
+      (Gui.separator gui-ctx-ref)
+      (let [ray-open (Pointer.to-value ray-open-ptr)
+            next-ray-open (Context.collapsing-header gui-ctx-ref "ray_header" (copy "Raymarcher Settings") ray-open)]
         (do
-          (set! WGPURenderer.cache-initialized false)
-          (World.dirty-all-chunks! (Engine.world-data eng-ref))
-          (Engine.set-voxel-dirty! eng-ref true)
-          (Engine.set-grid-dirty! eng-ref true)))
+          (Pointer.set ray-open-ptr next-ray-open)
+          (when next-ray-open
+            (do
+              (let [ray-steps (Pointer.to-value rst-ptr)]
+                (do
+                  (match (Context.slider gui-ctx-ref "ray_steps_slider" ray-steps 20.0f 150.0f (copy "Ray Steps"))
+                    (Maybe.Just nv)
+                      (do
+                        (Pointer.set rst-ptr nv)
+                        (Settings.set-ray-steps! cfg-ref (Double.to-int (Double.from-float nv)))
+                        (Engine.set-settings! eng-ref @cfg-ref))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Max steps for rendering primary camera rays.")))
 
+              (let [shadow-steps (Pointer.to-value sst-ptr)]
+                (do
+                  (match (Context.slider gui-ctx-ref "shadow_steps_slider" shadow-steps 4.0f 32.0f (copy "Shadow Steps"))
+                    (Maybe.Just nv)
+                      (do
+                        (Pointer.set sst-ptr nv)
+                        (Settings.set-shadow-steps! cfg-ref (Double.to-int (Double.from-float nv)))
+                        (Engine.set-settings! eng-ref @cfg-ref))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Max steps for shadow tracing calculations.")))))))
+
+      (Gui.separator gui-ctx-ref)
+      (let [terrain-open (Pointer.to-value terrain-open-ptr)
+            next-terrain-open (Context.collapsing-header gui-ctx-ref "terrain_header" (copy "Terrain Generation") terrain-open)]
+        (do
+          (Pointer.set terrain-open-ptr next-terrain-open)
+          (when next-terrain-open
+            (do
+              (let [ps (Double.to-float WGPURenderer.plains-scale)]
+                (do
+                  (match (Context.slider gui-ctx-ref "plains_scale_slider" ps 0.0f 50.0f (copy "Plains Scale"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.plains-scale (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Scale value for noise plains.")))
+
+              (let [po (Double.to-float WGPURenderer.plains-offset)]
+                (do
+                  (match (Context.slider gui-ctx-ref "plains_offset_slider" po -50.0f 50.0f (copy "Plains Offset"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.plains-offset (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Height offset offset for noise plains.")))
+
+              (let [cs (Double.to-float WGPURenderer.canyons-scale)]
+                (do
+                  (match (Context.slider gui-ctx-ref "canyons_scale_slider" cs 0.0f 100.0f (copy "Canyons Scale"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.canyons-scale (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Scale value for canyon formations.")))
+
+              (let [co (Double.to-float WGPURenderer.canyons-offset)]
+                (do
+                  (match (Context.slider gui-ctx-ref "canyons_offset_slider" co -100.0f 50.0f (copy "Canyons Offset"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.canyons-offset (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Depth offset value for canyons.")))
+
+              (let [ms (Double.to-float WGPURenderer.mountains-scale)]
+                (do
+                  (match (Context.slider gui-ctx-ref "mountains_scale_slider" ms 0.0f 150.0f (copy "Mtns Scale"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.mountains-scale (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Scale value for mountain heights.")))
+
+              (let [mo (Double.to-float WGPURenderer.mountains-offset)]
+                (do
+                  (match (Context.slider gui-ctx-ref "mountains_offset_slider" mo -150.0f 50.0f (copy "Mtns Offset"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.mountains-offset (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Height offset value for mountains.")))
+
+              (let [so (Double.to-float WGPURenderer.seed-offset)]
+                (do
+                  (match (Context.slider gui-ctx-ref "seed_offset_slider" so 0.0f 1000.0f (copy "Terrain Seed"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.seed-offset (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Seed offset for terrain noise.")))
+
+              (let [gf (Double.to-float WGPURenderer.global-frequency)]
+                (do
+                  (match (Context.slider gui-ctx-ref "global_freq_slider" gf 0.1f 5.0f (copy "Global Freq"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.global-frequency (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Base frequency of terrain noise.")))
+
+              (let [lac (Double.to-float WGPURenderer.lacunarity)]
+                (do
+                  (match (Context.slider gui-ctx-ref "lacunarity_slider" lac 1.2f 4.0f (copy "Lacunarity"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.lacunarity (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Frequency multiplier per fractal octave.")))
+
+              (let [g (Double.to-float WGPURenderer.gain)]
+                (do
+                  (match (Context.slider gui-ctx-ref "gain_slider" g 0.1f 0.9f (copy "Fractal Gain"))
+                    (Maybe.Just nv)
+                      (do
+                        (set! WGPURenderer.gain (Double.from-float nv))
+                        (set! WGPURenderer.cache-initialized false)
+                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                        (Engine.set-voxel-dirty! eng-ref true)
+                        (Engine.set-grid-dirty! eng-ref true))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Amplitude multiplier per fractal octave.")))
+
+              (when (Context.button gui-ctx-ref "reset_terrain_btn" (copy "Reset Terrain Config"))
+                (do
+                  (set! WGPURenderer.plains-scale 12.0)
+                  (set! WGPURenderer.plains-offset -18.0)
+                  (set! WGPURenderer.canyons-scale 45.0)
+                  (set! WGPURenderer.canyons-offset -25.0)
+                  (set! WGPURenderer.mountains-scale 60.0)
+                  (set! WGPURenderer.mountains-offset -30.0)
+                  (set! WGPURenderer.seed-offset 0.0)
+                  (set! WGPURenderer.global-frequency 1.0)
+                  (set! WGPURenderer.lacunarity 2.0)
+                  (set! WGPURenderer.gain 0.5)
+                  (set! WGPURenderer.cache-initialized false)
+                  (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                  (Engine.set-voxel-dirty! eng-ref true)
+                  (Engine.set-grid-dirty! eng-ref true)))
+              (Context.tooltip gui-ctx-ref "Reset all terrain noise parameters to defaults.")
+
+              (when (Context.button gui-ctx-ref "rebake_terrain_btn" (copy "Rebake/Regen Terrain"))
+                (do
+                  (set! WGPURenderer.cache-initialized false)
+                  (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                  (Engine.set-voxel-dirty! eng-ref true)
+                  (Engine.set-grid-dirty! eng-ref true)))
+              (Context.tooltip gui-ctx-ref "Force regenerates all terrain chunks from the seed.")))))
+
+      (Gui.separator gui-ctx-ref)
       (when (Context.button gui-ctx-ref "bake_grid_btn" (copy "Bake Voxel Grid"))
         (do
           (Engine.set-voxel-dirty! eng-ref true)
           (Engine.set-grid-dirty! eng-ref true)))
+      (Context.tooltip gui-ctx-ref "Build the sparse voxel grid buffer mapping physical volumes.")
 
       (when (Context.button gui-ctx-ref "close_editor_btn" (copy "Close Editor [TAB]"))
         (do
           (Engine.close-ui! eng-ref)
           (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
+      (Context.tooltip gui-ctx-ref "Return to game viewport with captured mouse focus.")
 
       (Context.end-panel gui-ctx-ref)
       
@@ -330,6 +387,22 @@
                       (do
                         (Context.begin-panel gui-ctx-ref (copy "field_panel") (- (Float.from-int win-w) 270.0f) 10.0f 260.0f (- (Float.from-int fb-h) 20.0f) (copy "Field Source Properties"))
                         (Context.label gui-ctx-ref (copy "--- Properties ---"))
+                        
+                        ;; Dropdown menu to customize primitive shape type
+                        (Context.label gui-ctx-ref (copy "Shape Primitive:"))
+                        (let [shape-options [@"Sphere" @"Box" @"Cylinder" @"Capsule" @"Torus" @"Cone"]
+                              current-shape-type @(FieldInstance.shape-type fi)
+                              current-shape-idx (dec current-shape-type)]
+                          (match (Context.combo gui-ctx-ref "shape_combo" &shape-options current-shape-idx)
+                            (Maybe.Just new-idx)
+                              (do
+                                (FieldInstance.set-shape-type! fi (inc new-idx))
+                                (Engine.set-grid-dirty! eng-ref true)
+                                (Engine.set-voxel-dirty! eng-ref true))
+                            (Maybe.Nothing) ()))
+                        (Context.tooltip gui-ctx-ref "Change the CSG/SDF primitive geometry shape of this field source.")
+                        (Gui.separator gui-ctx-ref)
+                        
                         (let [controls (UiPanel.controls &panel)]
                           (do
                             (let [ctrl (Array.unsafe-nth controls 0)
@@ -342,6 +415,8 @@
                                       (FieldInstance.set-humidity! fi d-nv)
                                       (Engine.apply-control-value! eng-ref @(UiPanel.target &panel) 0 d-nv)))
                                 (Maybe.Nothing) ()))
+                            (Context.tooltip gui-ctx-ref "Change volumetric sphere radius or box bounds scale.")
+                            
                             (let [ctrl (Array.unsafe-nth controls 1)
                                   curr-val (Double.to-float @(UiControl.value ctrl))]
                               (match (Context.slider gui-ctx-ref "grav_slider" curr-val 0.0f 1.0f (copy "Gravity"))
@@ -352,6 +427,8 @@
                                       (FieldInstance.set-pressure! fi d-nv)
                                       (Engine.apply-control-value! eng-ref @(UiPanel.target &panel) 1 d-nv)))
                                 (Maybe.Nothing) ()))
+                            (Context.tooltip gui-ctx-ref "Gravity acceleration pull strength exerted on simulation particles.")
+                            
                             (let [ctrl (Array.unsafe-nth controls 2)
                                   curr-val (Double.to-float @(UiControl.value ctrl))
                                   cv @(Color.v color)
@@ -365,6 +442,8 @@
                                       (Color.set-v! color (Vector3.init d-nv cy cz))
                                       (Engine.apply-control-value! eng-ref @(UiPanel.target &panel) 2 d-nv)))
                                 (Maybe.Nothing) ()))
+                            (Context.tooltip gui-ctx-ref "Thermal field value mapped to RED shader color channel.")
+                            
                             (let [ctrl (Array.unsafe-nth controls 3)
                                   curr-val (Double.to-float @(UiControl.value ctrl))
                                   cv @(Color.v color)
@@ -378,6 +457,8 @@
                                       (Color.set-v! color (Vector3.init cx d-nv cz))
                                       (Engine.apply-control-value! eng-ref @(UiPanel.target &panel) 3 d-nv)))
                                 (Maybe.Nothing) ()))
+                            (Context.tooltip gui-ctx-ref "Electro-static charge field value mapped to GREEN shader color channel.")
+                            
                             (let [ctrl (Array.unsafe-nth controls 4)
                                   curr-val (Double.to-float @(UiControl.value ctrl))
                                   cv @(Color.v color)
@@ -391,10 +472,14 @@
                                       (Color.set-v! color (Vector3.init cx cy d-nv))
                                       (Engine.apply-control-value! eng-ref @(UiPanel.target &panel) 4 d-nv)))
                                 (Maybe.Nothing) ()))
+                            (Context.tooltip gui-ctx-ref "Physical decay radius modifier of force/collision calculations.")
+                            
+                            (Gui.separator gui-ctx-ref)
                             (when (Context.button gui-ctx-ref "close_panel_btn" (copy "Dismiss Panel"))
                               (do
                                 (Engine.close-ui! eng-ref)
                                 (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
+                            (Context.tooltip gui-ctx-ref "Close properties window and capture mouse cursor.")
                             (Context.end-panel gui-ctx-ref))))))))))
 
       (let [pvx (Pointer.to-value pvx-ptr)
@@ -507,7 +592,13 @@
                         pvw 0.0f
                         pvh 0.0f
                         gui-flat-verts []
-                        gui-num-verts (Uint32.from-long 0l)]
+                        gui-num-verts (Uint32.from-long 0l)
+                        sim-open-val true
+                        ray-open-val true
+                        terrain-open-val false
+                        gui-time-val 0.0
+                        gui-cmd-val 0
+                        gui-vert-val 0]
                     (while (= (GLFW.window-should-close win) 0)
                       (do
                         (let [t-start (System.nanotime)
@@ -550,17 +641,26 @@
                              (do
                                (set! gui-flat-verts [])
                                (set! gui-num-verts (Uint32.from-long 0l))
-                                (if editor-mode
-                                  (do
-                                     (draw-editor-ui! win &eng &gui-ctx dt-frame &cfg
-                                                      (Pointer.address &pvx) (Pointer.address &pvy) (Pointer.address &pvw) (Pointer.address &pvh)
-                                                      (Pointer.address &left-was-down) (Pointer.address &right-was-down)
-                                                      (Pointer.address &volumetric-sdf-val) (Pointer.address &show-debug-lines-val)
-                                                      (Pointer.address &fixed-dt-val) (Pointer.address &ray-steps-val) (Pointer.address &shadow-steps-val))
-                                    (IO.println &(str* "UI Draw commands count: " (Int.str (Array.length (Context.draw-commands &gui-ctx)))))
-                                    (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
-                                    (IO.println &(str* "UI Flat Verts count: " (Int.str (Array.length &gui-flat-verts))))
-                                    (set! gui-num-verts (Uint32.from-long (Long.from-int (/ (Array.length &gui-flat-verts) 8)))))
+                                 (if editor-mode
+                                    (do
+                                       (let [diag (Engine.diagnostics &eng)]
+                                         (Diagnostics.start-zone! diag "GUI Update & Layout"))
+                                       (let [t-gui-start (System.nanotime)]
+                                         (do
+                                           (draw-editor-ui! win &eng &gui-ctx dt-frame &cfg
+                                                            (Pointer.address &pvx) (Pointer.address &pvy) (Pointer.address &pvw) (Pointer.address &pvh)
+                                                            (Pointer.address &left-was-down) (Pointer.address &right-was-down)
+                                                            (Pointer.address &volumetric-sdf-val) (Pointer.address &show-debug-lines-val)
+                                                            (Pointer.address &fixed-dt-val) (Pointer.address &ray-steps-val) (Pointer.address &shadow-steps-val)
+                                                            (Pointer.address &sim-open-val) (Pointer.address &ray-open-val) (Pointer.address &terrain-open-val)
+                                                            gui-time-val gui-cmd-val gui-vert-val)
+                                           (set! gui-cmd-val (Array.length (Context.draw-commands &gui-ctx)))
+                                           (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
+                                           (set! gui-vert-val (/ (Array.length &gui-flat-verts) 12))
+                                           (set! gui-num-verts (Uint32.from-long (Long.from-int gui-vert-val)))
+                                           (set! gui-time-val (/ (Double.from-long (Uint64.to-long (Uint64.- (System.nanotime) t-gui-start))) 1000000.0))))
+                                       (let [diag (Engine.diagnostics &eng)]
+                                         (Diagnostics.end-zone! diag "GUI Update & Layout")))
                                   (let [w-fb 0
                                         h-fb 0
                                         _ (GLFW.get-framebuffer-size win (Pointer.address &w-fb) (Pointer.address &h-fb))]
