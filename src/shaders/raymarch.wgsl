@@ -25,6 +25,7 @@ struct PointInstance {
           shadow_ao_quality: vec4<f32>,
           terrain_params1: vec4<f32>,
           terrain_params2: vec4<f32>,
+          terrain_params3: vec4<f32>,
           instances: array<PointInstance, {{LIMIT}}>
       }
       struct CsgNode {
@@ -1162,6 +1163,31 @@ struct PointInstance {
             if (rd.y < 0.0) {
                 let ground_color = vec3<f32>(0.1, 0.04, 0.12);
                 color = mix(horizon_color, ground_color, clamp(-rd.y * 3.0, 0.0, 1.0));
+            }
+            
+            if (rd.y > 0.01) {
+                let H = 150.0;
+                let t = H / rd.y;
+                let cloud_pos = u.cam_pos.xz + rd.xz * t;
+                
+                let plains_scale = u.terrain_params1.x;
+                let plains_offset = u.terrain_params1.y;
+                let canyons_scale = u.terrain_params1.z;
+                let canyons_offset = u.terrain_params1.w;
+                let mountains_scale = u.terrain_params2.x;
+                let mountains_offset = u.terrain_params2.y;
+                let seed_offset = u.terrain_params2.z;
+                let global_frequency = u.terrain_params2.w;
+                let lacunarity = u.terrain_params3.x;
+                let gain = u.terrain_params3.y;
+
+                let sx = cloud_pos.x + seed_offset + u.time * 2.0;
+                let sz = cloud_pos.y + seed_offset;
+                
+                let cloud_val = fbm2d(sx * 0.004 * global_frequency, sz * 0.004 * global_frequency);
+                let cloud_density = clamp((cloud_val - 0.45) * 4.0, 0.0, 1.0);
+                let cloud_color = mix(vec3<f32>(0.9, 0.4, 0.45), vec3<f32>(1.0, 0.95, 0.98), rd.y);
+                color = mix(color, cloud_color, cloud_density * 0.65);
             }
             let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
             let sun_dot = max(dot(rd, light_dir), 0.0);
