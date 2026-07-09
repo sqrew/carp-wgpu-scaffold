@@ -1768,14 +1768,101 @@ struct PointInstance {
                    let glow = mix(vec3<f32>(1.0, 0.15, 0.0), vec3<f32>(1.0, 0.9, 0.25), exp_n_col);
                    color = mix(color, base_col + glow * 2.0, exp_temp_factor * (0.3 + 0.7 * exp_n_col));
                }
-
-                if (edge > 0.0) {
+               
+               if (edge > 0.0) {
                    let glow_col = base_col * 2.5 + vec3<f32>(0.25);
                    color = mix(color, glow_col, edge);
                }
-           }
+            }
 
-           let transmittance = exp(-fog_optical_depth);
+            // 3. Volumetric Raymarched Cloud Layer
+            let cloud_min_y = 60.0;
+            let cloud_max_y = 90.0;
+            
+            var t_entry = 0.0;
+            var t_exit = 0.0;
+            
+            if (abs(rd.y) > 0.0001) {
+                let t1 = (cloud_min_y - ro.y) / rd.y;
+                let t2 = (cloud_max_y - ro.y) / rd.y;
+                t_entry = max(min(t1, t2), 0.0);
+                t_exit = min(max(t1, t2), t);
+            } else {
+                if (ro.y >= cloud_min_y && ro.y <= cloud_max_y) {
+                    t_entry = 0.0;
+                    t_exit = t;
+                } else {
+                    t_entry = 9999.0;
+                    t_exit = -9999.0;
+                }
+            }
+            
+            if (t_entry < t_exit) {
+                var cloud_color_accum = vec3<f32>(0.0);
+                var cloud_transmittance = 1.0;
+                
+                let steps = 40;
+                let step_size = (t_exit - t_entry) / f32(steps);
+                
+                var curr_t = t_entry + step_size * dither_threshold;
+                
+                let light_dir = normalize(u.light_dir.xyz);
+                let alt = light_dir.y;
+                
+                var sun_col = vec3<f32>(1.0, 0.95, 0.85);
+                var ambient_col = vec3<f32>(0.15, 0.25, 0.35);
+                if (alt > 0.0) {
+                    let t_day = clamp(alt * 4.0, 0.0, 1.0);
+                    sun_col = mix(vec3<f32>(1.0, 0.4, 0.1), sun_col, t_day);
+                    ambient_col = mix(vec3<f32>(0.15, 0.08, 0.22), ambient_col, t_day);
+                } else {
+                    let t_night = clamp(-alt * 4.0, 0.0, 1.0);
+                    sun_col = vec3<f32>(0.0);
+                    ambient_col = mix(vec3<f32>(0.15, 0.08, 0.22), vec3<f32>(0.005, 0.006, 0.015), t_night);
+                }
+                
+                for (var i = 0; i < steps; i = i + 1) {
+                    let p = ro + rd * curr_t;
+                    
+                    let wind_offset = vec3<f32>(u.time * 0.8, 0.0, u.time * 0.2);
+                    let sample_p = (p + wind_offset) * 0.015;
+                    
+                    let noise_val = evaluateFbm(sample_p);
+                    
+                    let height_fraction = (p.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
+                    let height_fade = 4.0 * height_fraction * (1.0 - height_fraction);
+                    
+                    let density = max(0.0, noise_val + 0.15) * height_fade * 0.18;
+                    
+                    if (density > 0.0) {
+                        var shadow_density = 0.0;
+                        let shadow_step = 5.0;
+                        for (var j = 1; j <= 3; j = j + 1) {
+                            let sp = p + light_dir * (f32(j) * shadow_step);
+                            let s_noise = evaluateFbm((sp + wind_offset) * 0.015);
+                            let s_fraction = (sp.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
+                            let s_fade = clamp(4.0 * s_fraction * (1.0 - s_fraction), 0.0, 1.0);
+                            shadow_density += max(0.0, s_noise + 0.15) * s_fade;
+                        }
+                        
+                        let light_transmission = exp(-shadow_density * 0.35);
+                        let scattering_color = ambient_col + sun_col * (0.2 + 0.8 * light_transmission);
+                        
+                        let alpha = 1.0 - exp(-density * step_size);
+                        cloud_color_accum += cloud_transmittance * scattering_color * alpha;
+                        cloud_transmittance *= (1.0 - alpha);
+                        
+                        if (cloud_transmittance < 0.01) {
+                            cloud_transmittance = 0.0;
+                            break;
+                        }
+                    }
+                    curr_t += step_size;
+                }
+                color = color * cloud_transmittance + cloud_color_accum;
+            }
+
+            let transmittance = exp(-fog_optical_depth);
            color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
            let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
            color += vec3<f32>(dither_noise) * (1.0 / 255.0);
