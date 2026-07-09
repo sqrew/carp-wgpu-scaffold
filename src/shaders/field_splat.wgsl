@@ -18,6 +18,10 @@ struct Uniforms {
     grid_dims: vec4<f32>,
     grid_origin: vec4<f32>,
     shadow_ao_quality: vec4<f32>,
+    terrain_params1: vec4<f32>,
+    terrain_params2: vec4<f32>,
+    terrain_params3: vec4<f32>,
+    light_dir: vec4<f32>,
     instances: array<PointInstance, 512>,
 }
 

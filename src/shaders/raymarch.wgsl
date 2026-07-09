@@ -26,6 +26,7 @@ struct PointInstance {
           terrain_params1: vec4<f32>,
           terrain_params2: vec4<f32>,
           terrain_params3: vec4<f32>,
+          light_dir: vec4<f32>,
           instances: array<PointInstance, {{LIMIT}}>
       }
       struct CsgNode {
@@ -248,7 +249,7 @@ struct PointInstance {
               let h_dz = get_terrain_height(px, pz + 1.0) - final_h;
               let terrain_normal = normalize(vec3<f32>(-h_dx, 1.0, -h_dz));
               
-              let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+              let light_dir = normalize(u.light_dir.xyz);
               let shadow_factor = dot(terrain_normal, light_dir);
               let fallback_shadow = clamp(0.2 + 0.8 * smoothstep(-0.2, 0.2, shadow_factor), 0.2, 1.0);
               let fallback_ao = clamp(0.3 + 0.7 * terrain_normal.y, 0.1, 1.0);
@@ -1167,12 +1168,36 @@ struct PointInstance {
         }
 
         fn getSkyColor(rd: vec3<f32>) -> vec3<f32> {
-            let zenith_color = vec3<f32>(0.15, 0.02, 0.22);
-            let horizon_color = vec3<f32>(0.9, 0.1, 0.35);
+            let light_dir = normalize(u.light_dir.xyz);
+            let alt = light_dir.y;
+            
+            // Base colors based on sun altitude
+            var zenith_color = vec3<f32>(0.05, 0.1, 0.25);
+            var horizon_color = vec3<f32>(0.4, 0.65, 0.85);
+            var ground_color = vec3<f32>(0.1, 0.08, 0.12);
+            
+            if (alt > 0.0) {
+                let t_day = clamp(alt * 5.0, 0.0, 1.0);
+                let zenith_noon = vec3<f32>(0.1, 0.3, 0.75);
+                let horizon_noon = vec3<f32>(0.55, 0.75, 0.95);
+                let zenith_sunset = vec3<f32>(0.15, 0.02, 0.22);
+                let horizon_sunset = vec3<f32>(0.9, 0.15, 0.35);
+                zenith_color = mix(zenith_sunset, zenith_noon, t_day);
+                horizon_color = mix(horizon_sunset, horizon_noon, t_day);
+            } else {
+                let t_night = clamp(-alt * 5.0, 0.0, 1.0);
+                let zenith_sunset = vec3<f32>(0.15, 0.02, 0.22);
+                let horizon_sunset = vec3<f32>(0.9, 0.15, 0.35);
+                let zenith_night = vec3<f32>(0.005, 0.005, 0.02);
+                let horizon_night = vec3<f32>(0.015, 0.02, 0.05);
+                ground_color = vec3<f32>(0.01, 0.008, 0.012);
+                zenith_color = mix(zenith_sunset, zenith_night, t_night);
+                horizon_color = mix(horizon_sunset, horizon_night, t_night);
+            }
+            
             let h_factor = max(0.0, rd.y);
             var color = mix(horizon_color, zenith_color, pow(h_factor, 0.6));
             if (rd.y < 0.0) {
-                let ground_color = vec3<f32>(0.1, 0.04, 0.12);
                 color = mix(horizon_color, ground_color, clamp(-rd.y * 3.0, 0.0, 1.0));
             }
             
@@ -1198,14 +1223,18 @@ struct PointInstance {
                 let cloud_val = fbm2d(sx * 0.004 * global_frequency, sz * 0.004 * global_frequency);
                 let cloud_density = clamp((cloud_val - 0.45) * 4.0, 0.0, 1.0);
                 let cloud_color = mix(vec3<f32>(0.9, 0.4, 0.45), vec3<f32>(1.0, 0.95, 0.98), rd.y);
-                color = mix(color, cloud_color, cloud_density * 0.65);
+                
+                // Dim clouds at night
+                let cloud_light = mix(0.15, 1.0, clamp(alt * 5.0, 0.0, 1.0));
+                color = mix(color, cloud_color * cloud_light, cloud_density * 0.65);
             }
-            let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+            
             let sun_dot = max(dot(rd, light_dir), 0.0);
             let sun_disk = pow(sun_dot, 600.0);
             let sun_glow = pow(sun_dot, 12.0);
-            color += sun_disk * vec3<f32>(0.15, 0.55, 1.5) * 3.0;
-            color += sun_glow * vec3<f32>(0.6, 0.05, 1.0) * 1.2;
+            let sun_fade = clamp((alt + 0.1) * 5.0, 0.0, 1.0);
+            color += sun_disk * vec3<f32>(1.0, 0.95, 0.8) * 3.0 * sun_fade;
+            color += sun_glow * vec3<f32>(0.9, 0.35, 0.1) * 1.2 * sun_fade;
             return color;
         }
 
@@ -1311,7 +1340,7 @@ struct PointInstance {
               var color = getSkyColor(rd);
              if (t <= 800.0 && !is_volumetric) {
                 let p = ro + rd * t;
-                let light_dir = normalize(vec3<f32>(0.5, 1.0, 0.3));
+                let light_dir = normalize(u.light_dir.xyz);
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
                 var is_sphere = false;
                 var is_metaball = false;
@@ -1447,10 +1476,24 @@ struct PointInstance {
                     ao = voxel_val.w;
                 }
 
-                // Hemispherical ambient skylight (cool blueish sky, warm dark grey ground bounce)
-                let sky_color = vec3<f32>(0.15, 0.35, 0.25);
-                let ground_color = vec3<f32>(0.06, 0.05, 0.05);
-                let ambient = mix(ground_color, sky_color, normal.y * 0.5 + 0.5) * sky_visibility;
+                // Dynamic ambient skylight and sun direct colors
+                let alt = light_dir.y;
+                var sun_color = vec3<f32>(1.0, 0.95, 0.85);
+                var ambient_sky = vec3<f32>(0.15, 0.25, 0.35);
+                var ground_bounce = vec3<f32>(0.06, 0.05, 0.05);
+                
+                if (alt > 0.0) {
+                    let t = clamp(alt * 4.0, 0.0, 1.0);
+                    sun_color = mix(vec3<f32>(1.0, 0.4, 0.1), sun_color, t);
+                    ambient_sky = mix(vec3<f32>(0.15, 0.1, 0.2), ambient_sky, t);
+                } else {
+                    let t = clamp(-alt * 4.0, 0.0, 1.0);
+                    sun_color = vec3<f32>(0.0);
+                    ambient_sky = mix(vec3<f32>(0.15, 0.1, 0.2), vec3<f32>(0.01, 0.015, 0.03), t);
+                    ground_bounce = mix(ground_bounce, vec3<f32>(0.002, 0.002, 0.004), t);
+                }
+
+                let ambient = mix(ground_bounce, ambient_sky, normal.y * 0.5 + 0.5) * sky_visibility;
 
                 let view_dir = normalize(u.cam_pos.xyz - p);
                 let half_dir = normalize(light_dir + view_dir);
@@ -1471,7 +1514,7 @@ struct PointInstance {
                 }
 
                 // Combine direct diffuse lighting, hemispherical ambient, and SSS scatter bloom
-                var lighting = shadow * diffuse * vec3<f32>(1.0) + ambient + sss * vec3<f32>(0.85, 0.38, 0.22);
+                var lighting = shadow * diffuse * sun_color + ambient + sss * vec3<f32>(0.85, 0.38, 0.22) * clamp(alt * 5.0, 0.0, 1.0);
 
                 var specular = 0.0;
                 if (is_wet) {
