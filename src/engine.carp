@@ -216,8 +216,8 @@
             grid
             world
             (Vector3.init 0.1 0.1 0.1)
-            [(Sun.init (Vector3.init 0.5 1.0 0.3) (Vector3.init 1.0 0.95 0.85) 10.0 true 0.2 0.0)
-             (Sun.init (Vector3.init -0.5 1.0 -0.3) (Vector3.init 0.5 0.8 1.0) 22.0 true 0.2 3.14159)]
+            [(Sun.init (Vector3.init 0.5 1.0 0.3) (Vector3.init 1.0 0.95 0.85) 10.0 true 0.2 0.0 1.0 1.0 1.0)
+             (Sun.init (Vector3.init -0.5 1.0 -0.3) (Vector3.init 0.5 0.8 1.0) 22.0 true 0.2 3.14159 0.6 1.5 2.0)]
             0.0
             coord
             world-data
@@ -1021,25 +1021,32 @@
           (Array.aset! u-data 49 0.0f)
           (Array.aset! u-data 50 0.0f)
           (Array.aset! u-data 51 0.0f)))
-      ;; suns array starting at float index 52
+      ;; suns array starting at float index 52 (stride = 12 floats)
       (let [num-to-pack (let [n (Array.length suns)] (if (> n 8) 8 n))]
         (do
           (for [i 0 num-to-pack]
             (let [sun (Array.unsafe-nth suns i)
                   s-dir (Sun.dir sun)
                   s-col (Sun.color sun)
-                  base-idx (+ 52 (* i 8))]
+                  s-int @(Sun.intensity sun)
+                  s-size @(Sun.size sun)
+                  s-gas @(Sun.gassiness sun)
+                  base-idx (+ 52 (* i 12))]
               (do
                 (Array.aset! u-data base-idx (Double.to-float @(Vector3.x s-dir)))
                 (Array.aset! u-data (+ base-idx 1) (Double.to-float @(Vector3.y s-dir)))
                 (Array.aset! u-data (+ base-idx 2) (Double.to-float @(Vector3.z s-dir)))
-                (Array.aset! u-data (+ base-idx 3) 1.0f)
+                (Array.aset! u-data (+ base-idx 3) (Double.to-float s-int))
                 (Array.aset! u-data (+ base-idx 4) (Double.to-float @(Vector3.x s-col)))
                 (Array.aset! u-data (+ base-idx 5) (Double.to-float @(Vector3.y s-col)))
                 (Array.aset! u-data (+ base-idx 6) (Double.to-float @(Vector3.z s-col)))
-                (Array.aset! u-data (+ base-idx 7) 1.0f))))
+                (Array.aset! u-data (+ base-idx 7) (Double.to-float s-size))
+                (Array.aset! u-data (+ base-idx 8) (Double.to-float s-gas))
+                (Array.aset! u-data (+ base-idx 9) 0.0f)
+                (Array.aset! u-data (+ base-idx 10) 0.0f)
+                (Array.aset! u-data (+ base-idx 11) 0.0f))))
           (for [i num-to-pack 8]
-            (let [base-idx (+ 52 (* i 8))]
+            (let [base-idx (+ 52 (* i 12))]
               (do
                 (Array.aset! u-data base-idx 0.0f)
                 (Array.aset! u-data (+ base-idx 1) 0.0f)
@@ -1048,7 +1055,11 @@
                 (Array.aset! u-data (+ base-idx 4) 0.0f)
                 (Array.aset! u-data (+ base-idx 5) 0.0f)
                 (Array.aset! u-data (+ base-idx 6) 0.0f)
-                (Array.aset! u-data (+ base-idx 7) 0.0f))))))))
+                (Array.aset! u-data (+ base-idx 7) 0.0f)
+                (Array.aset! u-data (+ base-idx 8) 0.0f)
+                (Array.aset! u-data (+ base-idx 9) 0.0f)
+                (Array.aset! u-data (+ base-idx 10) 0.0f)
+                (Array.aset! u-data (+ base-idx 11) 0.0f))))))))
 
   (defn pack-instances! [world db u-data csg-data csg-dirty]
     (let [next-csg-node-idx 0]
@@ -1596,6 +1607,7 @@
             struct SunData {
                 dir: vec4<f32>,
                 color: vec4<f32>,
+                params: vec4<f32>,
             }
 
             struct Uniforms {

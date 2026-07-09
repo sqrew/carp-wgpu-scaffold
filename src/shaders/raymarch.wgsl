@@ -13,6 +13,7 @@ struct PointInstance {
       struct SunData {
           dir: vec4<f32>,
           color: vec4<f32>,
+          params: vec4<f32>,
       }
       struct Uniforms { 
           time: f32, 
@@ -1253,12 +1254,27 @@ struct PointInstance {
             for (var i = 0u; i < num_suns; i = i + 1u) {
                 let sun_dir = normalize(u.suns[i].dir.xyz);
                 let sun_col = u.suns[i].color.rgb;
+                let intensity = u.suns[i].dir.w;
+                let size = u.suns[i].color.w;
+                let gassiness = u.suns[i].params.x;
+
                 let sun_dot = max(dot(rd, sun_dir), 0.0);
-                let sun_disk = pow(sun_dot, 600.0);
-                let sun_glow = pow(sun_dot, 12.0);
+                
+                // Exponent for sun disk: size maps from 1.0 (small) to 100.0 (huge).
+                // Let's use: exponent = 600.0 / size.
+                let disk_exponent = max(1.0, 600.0 / max(0.01, size));
+                let sun_disk = pow(sun_dot, disk_exponent);
+
+                // Exponent for sun glow: gassiness maps from 1.0 to 10.0.
+                // Let's use: exponent = 12.0 / gassiness.
+                let glow_exponent = max(1.0, 12.0 / max(0.01, gassiness));
+                let sun_glow = pow(sun_dot, glow_exponent);
+
                 let sun_fade = clamp((sun_dir.y + 0.1) * 5.0, 0.0, 1.0);
-                color += sun_disk * sun_col * 3.0 * sun_fade;
-                color += sun_glow * sun_col * mix(vec3<f32>(0.9, 0.35, 0.1), vec3<f32>(1.0), clamp(sun_dir.y * 3.0, 0.0, 1.0)) * 1.2 * sun_fade;
+                
+                // Scale disk and glow by intensity!
+                color += sun_disk * sun_col * 3.0 * sun_fade * intensity;
+                color += sun_glow * sun_col * mix(vec3<f32>(0.9, 0.35, 0.1), vec3<f32>(1.0), clamp(sun_dir.y * 3.0, 0.0, 1.0)) * 1.2 * sun_fade * intensity;
             }
             
             return color;
@@ -1474,6 +1490,7 @@ struct PointInstance {
                 for (var i = 0u; i < num_suns; i = i + 1u) {
                     let sun_dir = normalize(u.suns[i].dir.xyz);
                     let sun_col = u.suns[i].color.rgb;
+                    let intensity = u.suns[i].dir.w;
                     let diffuse = max(dot(normal, sun_dir), 0.0);
 
                     // Track dominant/max altitudes
@@ -1503,22 +1520,22 @@ struct PointInstance {
                         shadow = voxel_val.z;
                     }
 
-                    // Accumulate diffuse lighting
+                    // Accumulate diffuse lighting scaled by intensity
                     if (sun_dir.y > 0.0) {
                         let t_day = clamp(sun_dir.y * 4.0, 0.0, 1.0);
                         let final_sun_color = mix(vec3<f32>(1.0, 0.4, 0.1), sun_col, t_day);
-                        direct_lighting += shadow * diffuse * final_sun_color;
+                        direct_lighting += shadow * diffuse * final_sun_color * intensity;
                     }
 
-                    // Accumulate specular highlights
+                    // Accumulate specular highlights scaled by intensity
                     let view_dir = normalize(u.cam_pos.xyz - p);
                     let half_dir = normalize(sun_dir + view_dir);
                     if (is_wet) {
                         let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
                         let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
-                        specular += pow(max(dot(normal, half_dir), 0.0), 120.0) * 2.0 * fresnel * shadow * h;
+                        specular += pow(max(dot(normal, half_dir), 0.0), 120.0) * 2.0 * fresnel * shadow * h * intensity;
                     } else {
-                        specular += pow(max(dot(normal, half_dir), 0.0), 16.0) * 0.08 * shadow;
+                        specular += pow(max(dot(normal, half_dir), 0.0), 16.0) * 0.08 * shadow * intensity;
                     }
                 }
 
@@ -1896,6 +1913,7 @@ struct PointInstance {
                         for (var s = 0u; s < num_suns; s = s + 1u) {
                             let sun_dir = normalize(u.suns[s].dir.xyz);
                             let sun_col = u.suns[s].color.rgb;
+                            let intensity = u.suns[s].dir.w;
                             
                             if (sun_dir.y > 0.0) {
                                 let t_day = clamp(sun_dir.y * 4.0, 0.0, 1.0);
@@ -1912,7 +1930,7 @@ struct PointInstance {
                                 }
                                 
                                 let light_transmission = exp(-shadow_density * 0.35);
-                                scattering_color += final_sun_color * (0.2 + 0.8 * light_transmission);
+                                scattering_color += final_sun_color * (0.2 + 0.8 * light_transmission) * intensity;
                             }
                         }
                         

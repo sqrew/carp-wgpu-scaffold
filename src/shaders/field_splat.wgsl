@@ -8,6 +8,7 @@ struct PointInstance {
 struct SunData {
     dir: vec4<f32>,
     color: vec4<f32>,
+    params: vec4<f32>,
 }
 
 struct Uniforms {
