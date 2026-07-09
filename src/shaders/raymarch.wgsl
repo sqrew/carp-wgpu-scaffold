@@ -552,6 +552,11 @@ struct PointInstance {
           return min(a, b) - h * h * h * k * (1.0 / 6.0);
       }
 
+      fn smax(a: f32, b: f32, k: f32) -> f32 {
+          let h = max(k - abs(a - b), 0.0) / k;
+          return max(a, b) + h * h * h * k * (1.0 / 6.0);
+      }
+
        struct InterpolatedData {
             fields: vec4<f32>,
             color: vec3<f32>,
@@ -1023,6 +1028,32 @@ struct PointInstance {
                           var local_dist = 10000.0;
                           let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                           let csg_root_idx = i32(round(s_data.color_csg.w));
+                          if (csg_root_idx == -10) {
+                              let singularity_r = raw_w;
+                              let accretion_r = max(s_data.sph_fields.x, 0.1);
+                              let accretion_h = max(s_data.sph_fields.y, 0.01);
+                              let k1 = max(s_data.sph_fields.z, 0.01);
+                              let k2 = max(s_data.sph_fields.w, 0.01);
+                              
+                              let dist_to_center = length(p - s_data.pos_scale.xyz);
+                              let d_singularity = dist_to_center - singularity_r;
+                              
+                              let to_center = p - s_data.pos_scale.xyz;
+                              let local_to_center = rotateVector(to_center, q_inv(s_data.rot));
+                              let d_accretion = sdTorus(local_to_center, vec2<f32>(accretion_r, accretion_h));
+                              
+                               let orig_dx = d.x;
+                               let blended_terrain = smin(d.x, d_accretion, k1);
+                               d.x = smax(blended_terrain, -d_singularity, k2);
+                               
+                               if (d_accretion < orig_dx) {
+                                   d = vec2<f32>(d.x, f32(s_idx));
+                               }
+                               if (d_singularity < d.x) {
+                                   d = vec2<f32>(d_singularity, f32(s_idx));
+                               }
+                              continue;
+                          }
                           if (csg_root_idx == -5) {
                                let width = s_data.sph_fields.x;
                                let height = s_data.sph_fields.y;
@@ -1281,7 +1312,25 @@ struct PointInstance {
             let aspect = u.width / u.height;
             let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
             let ro = u.cam_pos.xyz;
-            let rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
+            var rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
+            
+            // Apply gravitational lensing from black hole
+            for(var i = 0u; i < 128u; i = i + 1u) {
+                let s_data = u.instances[i];
+                if (s_data.pos_scale.w != 0.0 && i32(round(s_data.color_csg.w)) == -10) {
+                    let to_singularity = s_data.pos_scale.xyz - ro;
+                    let projection = dot(to_singularity, rd);
+                    if (projection > 0.0) {
+                        let closest_p = ro + rd * projection;
+                        let to_ray = s_data.pos_scale.xyz - closest_p;
+                        let min_dist = length(to_ray);
+                        
+                        let gravity = max(s_data.sph_fields.w * 0.45, 0.05);
+                        let deflection = normalize(to_ray) * (gravity / (min_dist * min_dist + 0.08));
+                        rd = normalize(rd + deflection);
+                    }
+                }
+            }
             let dither_threshold = getDitherThreshold(frag_in.position.xy);
             let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, SHADOW_STEPS);
            
@@ -1757,9 +1806,22 @@ struct PointInstance {
                         exp_temp_factor = temp_factor;
                         exp_n_col = n_col;
                     } else {
-                        base_col = s_data.color_csg.rgb;
-                        if (s_data.color_csg.w < 0.0) {
-                            edge = get_wireframe_edge(lp, s_data.pos_scale.w, 0.08);
+                        let csg_root_idx = i32(round(s_data.color_csg.w));
+                        if (csg_root_idx == -10) {
+                            let dist_to_sing = length(p - s_data.pos_scale.xyz);
+                            if (dist_to_sing < s_data.pos_scale.w + 0.15) {
+                                base_col = vec3<f32>(0.0);
+                            } else {
+                                base_col = s_data.color_csg.rgb * 4.5;
+                                is_exp = true;
+                                exp_temp_factor = 1.0;
+                                exp_n_col = 0.5;
+                            }
+                        } else {
+                            base_col = s_data.color_csg.rgb;
+                            if (s_data.color_csg.w < 0.0) {
+                                edge = get_wireframe_edge(lp, s_data.pos_scale.w, 0.08);
+                            }
                         }
                     }
                 } else {
