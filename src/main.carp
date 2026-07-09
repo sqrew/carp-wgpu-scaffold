@@ -167,89 +167,87 @@
           (Pointer.set lighting-open-ptr next-lighting-open)
           (when next-lighting-open
             (do
-              ;; Sun 1 Active Toggle
-              (let [sun-active1 @(Engine.sun-cycle-active1 eng-ref)
-                    btn-label1 (if sun-active1 "Sun 1 Cycle: ACTIVE" "Sun 1 Cycle: PAUSED")]
+              (let [suns-arr (Engine.suns eng-ref)
+                    num-suns (Array.length suns-arr)]
                 (do
-                  (when (Context.button gui-ctx-ref "sun_cycle_btn1" (copy btn-label1))
-                    (Engine.set-sun-cycle-active1! eng-ref (not sun-active1)))
-                  (Context.tooltip gui-ctx-ref "Toggle Sun 1 day/night cycle animation.")))
-
-              ;; Sun 1 Time Slider
-              (let [sun-time1 (Double.to-float @(Engine.sun-time1 eng-ref))]
-                (do
-                  (match (Context.slider gui-ctx-ref "sun_time_slider1" sun-time1 0.0f 24.0f (copy "Sun 1 Time"))
-                    (Maybe.Just nv)
-                      (do
-                        (Engine.set-sun-time1! eng-ref (Double.from-float nv))
-                        (when (not @(Engine.sun-cycle-active1 eng-ref))
-                          (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
-                                lx (Double.cos angle)
-                                ly (Double.sin angle)
-                                lz 0.3
-                                ldir (Vector3.init lx ly lz)]
-                            (Engine.set-light-dir1! eng-ref ldir))))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Manually adjust time of day for Sun 1.")))
-
-              ;; Sun 2 Active Toggle
-              (let [sun-active2 @(Engine.sun-cycle-active2 eng-ref)
-                    btn-label2 (if sun-active2 "Sun 2 Cycle: ACTIVE" "Sun 2 Cycle: PAUSED")]
-                (do
-                  (when (Context.button gui-ctx-ref "sun_cycle_btn2" (copy btn-label2))
-                    (Engine.set-sun-cycle-active2! eng-ref (not sun-active2)))
-                  (Context.tooltip gui-ctx-ref "Toggle Sun 2 day/night cycle animation.")))
-
-              ;; Sun 2 Time Slider
-              (let [sun-time2 (Double.to-float @(Engine.sun-time2 eng-ref))]
-                (do
-                  (match (Context.slider gui-ctx-ref "sun_time_slider2" sun-time2 0.0f 24.0f (copy "Sun 2 Time"))
-                    (Maybe.Just nv)
-                      (do
-                        (Engine.set-sun-time2! eng-ref (Double.from-float nv))
-                        (when (not @(Engine.sun-cycle-active2 eng-ref))
-                          (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
-                                lx (Double.cos angle)
-                                ly (Double.sin angle)
-                                lz -0.3
-                                ldir (Vector3.init lx ly lz)]
-                            (Engine.set-light-dir2! eng-ref ldir))))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Manually adjust time of day for Sun 2.")))
-
-              ;; Sun 1 Color R, G, B
-              (let [col1 (Engine.light-color1 eng-ref)
-                    cr1 (Double.to-float @(Vector3.x col1))
-                    cg1 (Double.to-float @(Vector3.y col1))
-                    cb1 (Double.to-float @(Vector3.z col1))]
-                (do
-                  (match (Context.slider gui-ctx-ref "sun_color1_r" cr1 0.0f 1.0f (copy "Sun 1 Color R"))
-                    (Maybe.Just nv) (Engine.set-light-color1! eng-ref (Vector3.init (Double.from-float nv) @(Vector3.y col1) @(Vector3.z col1)))
-                    (Maybe.Nothing) ())
-                  (match (Context.slider gui-ctx-ref "sun_color1_g" cg1 0.0f 1.0f (copy "Sun 1 Color G"))
-                    (Maybe.Just nv) (Engine.set-light-color1! eng-ref (Vector3.init @(Vector3.x col1) (Double.from-float nv) @(Vector3.z col1)))
-                    (Maybe.Nothing) ())
-                  (match (Context.slider gui-ctx-ref "sun_color1_b" cb1 0.0f 1.0f (copy "Sun 1 Color B"))
-                    (Maybe.Just nv) (Engine.set-light-color1! eng-ref (Vector3.init @(Vector3.x col1) @(Vector3.y col1) (Double.from-float nv)))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Adjust RGB color channels of Sun 1.")))
-
-              ;; Sun 2 Color R, G, B
-              (let [col2 (Engine.light-color2 eng-ref)
-                    cr2 (Double.to-float @(Vector3.x col2))
-                    cg2 (Double.to-float @(Vector3.y col2))
-                    cb2 (Double.to-float @(Vector3.z col2))]
-                (do
-                  (match (Context.slider gui-ctx-ref "sun_color2_r" cr2 0.0f 1.0f (copy "Sun 2 Color R"))
-                    (Maybe.Just nv) (Engine.set-light-color2! eng-ref (Vector3.init (Double.from-float nv) @(Vector3.y col2) @(Vector3.z col2)))
-                    (Maybe.Nothing) ())
-                  (match (Context.slider gui-ctx-ref "sun_color2_g" cg2 0.0f 1.0f (copy "Sun 2 Color G"))
-                    (Maybe.Just nv) (Engine.set-light-color2! eng-ref (Vector3.init @(Vector3.x col2) (Double.from-float nv) @(Vector3.z col2)))
-                    (Maybe.Nothing) ())
-                  (match (Context.slider gui-ctx-ref "sun_color2_b" cb2 0.0f 1.0f (copy "Sun 2 Color B"))
-                    (Maybe.Just nv) (Engine.set-light-color2! eng-ref (Vector3.init @(Vector3.x col2) @(Vector3.y col2) (Double.from-float nv)))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Adjust RGB color channels of Sun 2.")))))))
+                  (Context.label gui-ctx-ref (str* "Active Suns: " (Int.str num-suns)))
+                  (when (< num-suns 8)
+                    (when (Context.button gui-ctx-ref "add_sun_btn" (copy "[+] Spawn Another Sun"))
+                      (Array.push-back! (Engine.suns eng-ref) 
+                        (Sun.init (Vector3.init 0.0 1.0 0.0)
+                                  (Vector3.init 1.0 1.0 1.0)
+                                  12.0
+                                  true
+                                  0.2
+                                  (* (Double.random) (* 2.0 3.1415926))))))
+                  (when (> num-suns 0)
+                    (do
+                      (when (Context.button gui-ctx-ref "rem_sun_btn" (copy "[-] Despawn Last Sun"))
+                        (let [dummy (Array.pop-back! (Engine.suns eng-ref))] ()))
+                      (Gui.separator gui-ctx-ref)
+                      (for [i 0 num-suns]
+                        (let [sun (Array.unsafe-nth suns-arr i)
+                              id-str (Int.str i)
+                              cycle-btn-id (str* "sun_cycle_" &id-str)
+                              time-sld-id (str* "sun_time_" &id-str)
+                              orbit-sld-id (str* "sun_orbit_" &id-str)
+                              r-sld-id (str* "sun_r_" &id-str)
+                              g-sld-id (str* "sun_g_" &id-str)
+                              b-sld-id (str* "sun_b_" &id-str)
+                              
+                              active @(Sun.cycle-active sun)
+                              btn-label (if active (str* "Sun #" &id-str " Cycle: ACTIVE") (str* "Sun #" &id-str " Cycle: PAUSED"))
+                              time-val (Double.to-float @(Sun.time sun))
+                              orbit-val (Double.to-float @(Sun.orbit-angle sun))
+                              col @(Sun.color sun)
+                              cr (Double.to-float @(Vector3.x &col))
+                              cg (Double.to-float @(Vector3.y &col))
+                              cb (Double.to-float @(Vector3.z &col))]
+                          (do
+                            (Context.label gui-ctx-ref (str* "--- Sun " &id-str " ---"))
+                            
+                            ;; Cycle Toggle
+                            (when (Context.button gui-ctx-ref &cycle-btn-id (copy &btn-label))
+                              (Sun.set-cycle-active! sun (not active)))
+                            
+                            ;; Time Slider
+                            (match (Context.slider gui-ctx-ref &time-sld-id time-val 0.0f 24.0f (copy "Time (Hours)"))
+                              (Maybe.Just nv)
+                                (do
+                                  (Sun.set-time! sun (Double.from-float nv))
+                                  (when (not @(Sun.cycle-active sun))
+                                    (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
+                                          orbit @(Sun.orbit-angle sun)
+                                          lx (* (Double.cos angle) (Double.cos orbit))
+                                          ly (Double.sin angle)
+                                          lz (* (Double.cos angle) (Double.sin orbit))]
+                                      (Sun.set-dir! sun (Vector3.init lx ly lz)))))
+                              (Maybe.Nothing) ())
+                              
+                            ;; Orbit Angle Slider
+                            (match (Context.slider gui-ctx-ref &orbit-sld-id orbit-val 0.0f 6.28318f (copy "Orbit Angle"))
+                              (Maybe.Just nv)
+                                (do
+                                  (Sun.set-orbit-angle! sun (Double.from-float nv))
+                                  (when (not @(Sun.cycle-active sun))
+                                    (let [angle (* (/ @(Sun.time sun) 24.0) (* 2.0 3.1415926535))
+                                          lx (* (Double.cos angle) (Double.cos (Double.from-float nv)))
+                                          ly (Double.sin angle)
+                                          lz (* (Double.cos angle) (Double.sin (Double.from-float nv)))]
+                                      (Sun.set-dir! sun (Vector3.init lx ly lz)))))
+                              (Maybe.Nothing) ())
+                              
+                            ;; Color Sliders
+                            (match (Context.slider gui-ctx-ref &r-sld-id cr 0.0f 1.0f (copy "Color R"))
+                              (Maybe.Just nv) (Sun.set-color! sun (Vector3.init (Double.from-float nv) @(Vector3.y &col) @(Vector3.z &col)))
+                              (Maybe.Nothing) ())
+                            (match (Context.slider gui-ctx-ref &g-sld-id cg 0.0f 1.0f (copy "Color G"))
+                              (Maybe.Just nv) (Sun.set-color! sun (Vector3.init @(Vector3.x &col) (Double.from-float nv) @(Vector3.z &col)))
+                              (Maybe.Nothing) ())
+                            (match (Context.slider gui-ctx-ref &b-sld-id cb 0.0f 1.0f (copy "Color B"))
+                              (Maybe.Just nv) (Sun.set-color! sun (Vector3.init @(Vector3.x &col) @(Vector3.y &col) (Double.from-float nv)))
+                              (Maybe.Nothing) ())
+                            (Gui.separator gui-ctx-ref))))))))))))
 
       (Gui.separator gui-ctx-ref)
       (let [ray-open (Pointer.to-value ray-open-ptr)

@@ -10,6 +10,10 @@ struct PointInstance {
           header: vec4<f32>,
           ids: array<f32, {{MAX_IDS}}>,
       }
+      struct SunData {
+          dir: vec4<f32>,
+          color: vec4<f32>,
+      }
       struct Uniforms { 
           time: f32, 
           width: f32, 
@@ -26,10 +30,8 @@ struct PointInstance {
           terrain_params1: vec4<f32>,
           terrain_params2: vec4<f32>,
           terrain_params3: vec4<f32>,
-          light_dir1: vec4<f32>,
-          light_dir2: vec4<f32>,
-          light_color1: vec4<f32>,
-          light_color2: vec4<f32>,
+          light_params: vec4<f32>,
+          suns: array<SunData, 8>,
           instances: array<PointInstance, {{LIMIT}}>
       }
       struct CsgNode {
@@ -252,9 +254,15 @@ struct PointInstance {
               let h_dz = get_terrain_height(px, pz + 1.0) - final_h;
               let terrain_normal = normalize(vec3<f32>(-h_dx, 1.0, -h_dz));
               
-              let light_dir1 = normalize(u.light_dir1.xyz);
-              let light_dir2 = normalize(u.light_dir2.xyz);
-              let shadow_factor = max(dot(terrain_normal, light_dir1), dot(terrain_normal, light_dir2));
+              let num_suns = u32(round(u.light_params.x));
+              var shadow_factor = -1.0;
+              for (var i = 0u; i < num_suns; i = i + 1u) {
+                  let light_dir = normalize(u.suns[i].dir.xyz);
+                  let dot_val = dot(terrain_normal, light_dir);
+                  if (dot_val > shadow_factor) {
+                      shadow_factor = dot_val;
+                  }
+              }
               let fallback_shadow = clamp(0.2 + 0.8 * smoothstep(-0.2, 0.2, shadow_factor), 0.2, 1.0);
               let fallback_ao = clamp(0.3 + 0.7 * terrain_normal.y, 0.1, 1.0);
               
@@ -1172,9 +1180,16 @@ struct PointInstance {
         }
 
         fn getSkyColor(rd: vec3<f32>) -> vec3<f32> {
-            let light_dir1 = normalize(u.light_dir1.xyz);
-            let light_dir2 = normalize(u.light_dir2.xyz);
-            let alt = max(light_dir1.y, light_dir2.y);
+            let num_suns = u32(round(u.light_params.x));
+            
+            // Find max altitude to drive zenith/horizon background colors
+            var alt = -1.0;
+            for (var i = 0u; i < num_suns; i = i + 1u) {
+                let sun_dir = normalize(u.suns[i].dir.xyz);
+                if (sun_dir.y > alt) {
+                    alt = sun_dir.y;
+                }
+            }
             
             // Base colors based on sun altitude
             var zenith_color = vec3<f32>(0.05, 0.1, 0.25);
@@ -1234,21 +1249,17 @@ struct PointInstance {
                 color = mix(color, cloud_color * cloud_light, cloud_density * 0.65);
             }
             
-            // Sun 1 Disk and Glow
-            let sun_dot1 = max(dot(rd, light_dir1), 0.0);
-            let sun_disk1 = pow(sun_dot1, 600.0);
-            let sun_glow1 = pow(sun_dot1, 12.0);
-            let sun_fade1 = clamp((light_dir1.y + 0.1) * 5.0, 0.0, 1.0);
-            color += sun_disk1 * u.light_color1.rgb * 3.0 * sun_fade1;
-            color += sun_glow1 * u.light_color1.rgb * vec3<f32>(0.9, 0.35, 0.1) * 1.2 * sun_fade1;
-            
-            // Sun 2 Disk and Glow
-            let sun_dot2 = max(dot(rd, light_dir2), 0.0);
-            let sun_disk2 = pow(sun_dot2, 600.0);
-            let sun_glow2 = pow(sun_dot2, 12.0);
-            let sun_fade2 = clamp((light_dir2.y + 0.1) * 5.0, 0.0, 1.0);
-            color += sun_disk2 * u.light_color2.rgb * 3.0 * sun_fade2;
-            color += sun_glow2 * u.light_color2.rgb * vec3<f32>(0.1, 0.35, 0.9) * 1.2 * sun_fade2;
+            // Draw all active sun disks and glows
+            for (var i = 0u; i < num_suns; i = i + 1u) {
+                let sun_dir = normalize(u.suns[i].dir.xyz);
+                let sun_col = u.suns[i].color.rgb;
+                let sun_dot = max(dot(rd, sun_dir), 0.0);
+                let sun_disk = pow(sun_dot, 600.0);
+                let sun_glow = pow(sun_dot, 12.0);
+                let sun_fade = clamp((sun_dir.y + 0.1) * 5.0, 0.0, 1.0);
+                color += sun_disk * sun_col * 3.0 * sun_fade;
+                color += sun_glow * sun_col * mix(vec3<f32>(0.9, 0.35, 0.1), vec3<f32>(1.0), clamp(sun_dir.y * 3.0, 0.0, 1.0)) * 1.2 * sun_fade;
+            }
             
             return color;
         }
@@ -1448,41 +1459,73 @@ struct PointInstance {
                     normal = normalize(normal + (vec3<f32>(rx, ry, rz) + ripples) * h);
                 }
 
-                let light_dir1 = normalize(u.light_dir1.xyz);
-                let light_dir2 = normalize(u.light_dir2.xyz);
-
-                let diffuse1 = max(dot(normal, light_dir1), 0.0);
-                let diffuse2 = max(dot(normal, light_dir2), 0.0);
-
-                var shadow1 = 1.0;
-                var shadow2 = 1.0;
+                let num_suns = u32(round(u.light_params.x));
+                var direct_lighting = vec3<f32>(0.0);
+                var specular = 0.0;
+                var dominant_alt = -1.0;
+                var dominant_light_dir = vec3<f32>(0.0, 1.0, 0.0);
+                var max_alt = -1.0;
                 var sky_visibility = 1.0;
                 var ao = 1.0;
 
                 let dist_to_cam = length(p - u.cam_pos.xyz);
                 let blend_factor = smoothstep(32.0, 48.0, dist_to_cam);
 
+                for (var i = 0u; i < num_suns; i = i + 1u) {
+                    let sun_dir = normalize(u.suns[i].dir.xyz);
+                    let sun_col = u.suns[i].color.rgb;
+                    let diffuse = max(dot(normal, sun_dir), 0.0);
+
+                    // Track dominant/max altitudes
+                    if (sun_dir.y > dominant_alt) {
+                        dominant_alt = sun_dir.y;
+                        dominant_light_dir = sun_dir;
+                    }
+                    if (sun_dir.y > max_alt) {
+                        max_alt = sun_dir.y;
+                    }
+
+                    // Shadow lookup for this light source
+                    var shadow = 1.0;
+                    if (blend_factor < 1.0) {
+                        var rt_shadow = 1.0;
+                        if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                            if (diffuse <= 0.0) {
+                                rt_shadow = 0.0;
+                            } else {
+                                let max_steps = select(SHADOW_STEPS, SHADOW_STEPS * 3 / 5, u.shadow_ao_quality.x == 1.0);
+                                let shadow_dist = select(120.0, 250.0, t > 200.0);
+                                rt_shadow = getShadow(p + normal * 0.02, sun_dir, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
+                            }
+                        }
+                        shadow = mix(rt_shadow, voxel_val.z, blend_factor);
+                    } else {
+                        shadow = voxel_val.z;
+                    }
+
+                    // Accumulate diffuse lighting
+                    if (sun_dir.y > 0.0) {
+                        let t_day = clamp(sun_dir.y * 4.0, 0.0, 1.0);
+                        let final_sun_color = mix(vec3<f32>(1.0, 0.4, 0.1), sun_col, t_day);
+                        direct_lighting += shadow * diffuse * final_sun_color;
+                    }
+
+                    // Accumulate specular highlights
+                    let view_dir = normalize(u.cam_pos.xyz - p);
+                    let half_dir = normalize(sun_dir + view_dir);
+                    if (is_wet) {
+                        let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
+                        let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
+                        specular += pow(max(dot(normal, half_dir), 0.0), 120.0) * 2.0 * fresnel * shadow * h;
+                    } else {
+                        specular += pow(max(dot(normal, half_dir), 0.0), 16.0) * 0.08 * shadow;
+                    }
+                }
+
+                // AO and sky visibility are calculated once
                 if (blend_factor < 1.0) {
-                    var rt_shadow1 = 1.0;
-                    var rt_shadow2 = 1.0;
                     var rt_ao = 1.0;
                     var rt_sky_vis = 1.0;
-                    if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
-                        if (diffuse1 <= 0.0) {
-                            rt_shadow1 = 0.0;
-                        } else {
-                            let max_steps = select(SHADOW_STEPS, SHADOW_STEPS * 3 / 5, u.shadow_ao_quality.x == 1.0);
-                            let shadow_dist = select(120.0, 250.0, t > 200.0);
-                            rt_shadow1 = getShadow(p + normal * 0.02, light_dir1, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
-                        }
-                        if (diffuse2 <= 0.0) {
-                            rt_shadow2 = 0.0;
-                        } else {
-                            let max_steps = select(SHADOW_STEPS, SHADOW_STEPS * 3 / 5, u.shadow_ao_quality.x == 1.0);
-                            let shadow_dist = select(120.0, 250.0, t > 200.0);
-                            rt_shadow2 = getShadow(p + normal * 0.02, light_dir2, 0.02, shadow_dist, 16.0, dither_threshold, max_steps);
-                        }
-                    }
                     if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
                         if (hitId == -1.0) {
                             rt_ao = voxel_val.w;
@@ -1493,35 +1536,14 @@ struct PointInstance {
                     if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
                         rt_sky_vis = rt_ao;
                     }
-                    
-                    shadow1 = mix(rt_shadow1, voxel_val.z, blend_factor);
-                    shadow2 = mix(rt_shadow2, voxel_val.z, blend_factor);
                     ao = mix(rt_ao, voxel_val.w, blend_factor);
                     sky_visibility = mix(rt_sky_vis, voxel_val.z, blend_factor);
                 } else {
-                    shadow1 = voxel_val.z;
-                    shadow2 = voxel_val.z;
                     sky_visibility = voxel_val.z;
                     ao = voxel_val.w;
                 }
 
-                // Dynamic ambient skylight and sun direct colors
-                let alt1 = light_dir1.y;
-                let alt2 = light_dir2.y;
-                let max_alt = max(alt1, alt2);
-                
-                var sun_color1 = vec3<f32>(0.0);
-                if (alt1 > 0.0) {
-                    let t_day1 = clamp(alt1 * 4.0, 0.0, 1.0);
-                    sun_color1 = mix(vec3<f32>(1.0, 0.4, 0.1), u.light_color1.rgb, t_day1);
-                }
-                
-                var sun_color2 = vec3<f32>(0.0);
-                if (alt2 > 0.0) {
-                    let t_day2 = clamp(alt2 * 4.0, 0.0, 1.0);
-                    sun_color2 = mix(vec3<f32>(1.0, 0.4, 0.1), u.light_color2.rgb, t_day2);
-                }
-                
+                // Dynamic ambient skylight based on maximum sun altitude
                 var ambient_sky = vec3<f32>(0.15, 0.25, 0.35);
                 var ground_bounce = vec3<f32>(0.06, 0.05, 0.05);
                 
@@ -1536,14 +1558,10 @@ struct PointInstance {
 
                 let ambient = mix(ground_bounce, ambient_sky, normal.y * 0.5 + 0.5) * sky_visibility;
 
-                let view_dir = normalize(u.cam_pos.xyz - p);
-                
-                let dominant_light_dir = select(light_dir2, light_dir1, alt1 > alt2);
-                let dominant_alt = max(alt1, alt2);
-
-                // Clay/wax subsurface scattering (SSS) for translucent organic look
+                // Subsurface scattering (SSS) evaluated once along dominant light direction
                 var sss = 0.0;
-                if (!is_wet) {
+                let view_dir = normalize(u.cam_pos.xyz - p);
+                if (!is_wet && dominant_alt > 0.0) {
                     let sss_steps = 4;
                     var sss_thickness = 0.0;
                     let sss_step_size = 0.15;
@@ -1556,25 +1574,7 @@ struct PointInstance {
                     sss = exp(-sss_thickness * 2.0) * sss_dot * 0.4;
                 }
 
-                // Combine direct diffuse lighting, hemispherical ambient, and SSS scatter bloom
-                let direct_lighting = shadow1 * diffuse1 * sun_color1 + shadow2 * diffuse2 * sun_color2;
                 var lighting = direct_lighting + ambient + sss * vec3<f32>(0.85, 0.38, 0.22) * clamp(dominant_alt * 5.0, 0.0, 1.0);
-
-                let half_dir1 = normalize(light_dir1 + view_dir);
-                let half_dir2 = normalize(light_dir2 + view_dir);
-
-                var specular = 0.0;
-                if (is_wet) {
-                    let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
-                    let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
-                    let spec1 = pow(max(dot(normal, half_dir1), 0.0), 120.0) * 2.0 * fresnel * shadow1 * h;
-                    let spec2 = pow(max(dot(normal, half_dir2), 0.0), 120.0) * 2.0 * fresnel * shadow2 * h;
-                    specular = spec1 + spec2;
-                } else {
-                    let spec1 = pow(max(dot(normal, half_dir1), 0.0), 16.0) * 0.08 * shadow1;
-                    let spec2 = pow(max(dot(normal, half_dir2), 0.0), 16.0) * 0.08 * shadow2;
-                    specular = spec1 + spec2;
-                }
 
                 // Determine the base terrain color at p using dynamic biome blending
                 let mat_id = i32(round(voxel_val.y));
@@ -1856,24 +1856,17 @@ struct PointInstance {
                 
                 var curr_t = t_entry + step_size * dither_threshold;
                 
-                let light_dir1 = normalize(u.light_dir1.xyz);
-                let light_dir2 = normalize(u.light_dir2.xyz);
+                let num_suns = u32(round(u.light_params.x));
                 
-                // Accumulate direct sun contribution from both suns
-                var sun_col1 = vec3<f32>(0.0);
-                var sun_col2 = vec3<f32>(0.0);
-                
-                if (light_dir1.y > 0.0) {
-                    let t_day1 = clamp(light_dir1.y * 4.0, 0.0, 1.0);
-                    sun_col1 = mix(vec3<f32>(1.0, 0.4, 0.1), u.light_color1.rgb, t_day1);
-                }
-                if (light_dir2.y > 0.0) {
-                    let t_day2 = clamp(light_dir2.y * 4.0, 0.0, 1.0);
-                    sun_col2 = mix(vec3<f32>(1.0, 0.4, 0.1), u.light_color2.rgb, t_day2);
+                // Track maximum sun altitude for clouds ambient lighting
+                var alt = -1.0;
+                for (var i = 0u; i < num_suns; i = i + 1u) {
+                    let sun_dir = normalize(u.suns[i].dir.xyz);
+                    if (sun_dir.y > alt) {
+                        alt = sun_dir.y;
+                    }
                 }
                 
-                // Ambient is driven by the maximum sun altitude
-                let alt = max(light_dir1.y, light_dir2.y);
                 var ambient_col = vec3<f32>(0.15, 0.25, 0.35);
                 if (alt > 0.0) {
                     let t_day = clamp(alt * 4.0, 0.0, 1.0);
@@ -1897,38 +1890,31 @@ struct PointInstance {
                     let density = max(0.0, noise_val + 0.15) * height_fade * 0.18;
                     
                     if (density > 0.0) {
-                        // Light 1 shadow
-                        var shadow_density1 = 0.0;
-                        if (light_dir1.y > 0.0) {
-                            let shadow_step = 5.0;
-                            for (var j = 1; j <= 3; j = j + 1) {
-                                let sp = p + light_dir1 * (f32(j) * shadow_step);
-                                let s_noise = evaluateFbm((sp + wind_offset) * 0.015);
-                                let s_fraction = (sp.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
-                                let s_fade = clamp(4.0 * s_fraction * (1.0 - s_fraction), 0.0, 1.0);
-                                shadow_density1 += max(0.0, s_noise + 0.15) * s_fade;
+                        var scattering_color = ambient_col;
+                        
+                        // Accumulate lighting and self-shadowing from all active suns
+                        for (var s = 0u; s < num_suns; s = s + 1u) {
+                            let sun_dir = normalize(u.suns[s].dir.xyz);
+                            let sun_col = u.suns[s].color.rgb;
+                            
+                            if (sun_dir.y > 0.0) {
+                                let t_day = clamp(sun_dir.y * 4.0, 0.0, 1.0);
+                                let final_sun_color = mix(vec3<f32>(1.0, 0.4, 0.1), sun_col, t_day);
+                                
+                                var shadow_density = 0.0;
+                                let shadow_step = 5.0;
+                                for (var j = 1; j <= 3; j = j + 1) {
+                                    let sp = p + sun_dir * (f32(j) * shadow_step);
+                                    let s_noise = evaluateFbm((sp + wind_offset) * 0.015);
+                                    let s_fraction = (sp.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
+                                    let s_fade = clamp(4.0 * s_fraction * (1.0 - s_fraction), 0.0, 1.0);
+                                    shadow_density += max(0.0, s_noise + 0.15) * s_fade;
+                                }
+                                
+                                let light_transmission = exp(-shadow_density * 0.35);
+                                scattering_color += final_sun_color * (0.2 + 0.8 * light_transmission);
                             }
                         }
-                        
-                        // Light 2 shadow
-                        var shadow_density2 = 0.0;
-                        if (light_dir2.y > 0.0) {
-                            let shadow_step = 5.0;
-                            for (var j = 1; j <= 3; j = j + 1) {
-                                let sp = p + light_dir2 * (f32(j) * shadow_step);
-                                let s_noise = evaluateFbm((sp + wind_offset) * 0.015);
-                                let s_fraction = (sp.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
-                                let s_fade = clamp(4.0 * s_fraction * (1.0 - s_fraction), 0.0, 1.0);
-                                shadow_density2 += max(0.0, s_noise + 0.15) * s_fade;
-                            }
-                        }
-                        
-                        let light_transmission1 = exp(-shadow_density1 * 0.35);
-                        let light_transmission2 = exp(-shadow_density2 * 0.35);
-                        
-                        let scattering_color = ambient_col + 
-                                               sun_col1 * (0.2 + 0.8 * light_transmission1) + 
-                                               sun_col2 * (0.2 + 0.8 * light_transmission2);
                         
                         let alpha = 1.0 - exp(-density * step_size);
                         cloud_color_accum += cloud_transmittance * scattering_color * alpha;

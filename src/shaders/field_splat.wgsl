@@ -5,6 +5,11 @@ struct PointInstance {
     sph_fields: vec4<f32>,
 }
 
+struct SunData {
+    dir: vec4<f32>,
+    color: vec4<f32>,
+}
+
 struct Uniforms {
     time: f32,
     width: f32,
@@ -21,10 +26,8 @@ struct Uniforms {
     terrain_params1: vec4<f32>,
     terrain_params2: vec4<f32>,
     terrain_params3: vec4<f32>,
-    light_dir1: vec4<f32>,
-    light_dir2: vec4<f32>,
-    light_color1: vec4<f32>,
-    light_color2: vec4<f32>,
+    light_params: vec4<f32>,
+    suns: array<SunData, 8>,
     instances: array<PointInstance, 512>,
 }
 

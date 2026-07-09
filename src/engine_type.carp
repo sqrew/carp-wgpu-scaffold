@@ -1,5 +1,14 @@
 ;; src/engine_type.carp
 
+(deftype Sun [
+  dir (Vector3 Double)
+  color (Vector3 Double)
+  time Double
+  cycle-active Bool
+  speed Double
+  orbit-angle Double
+])
+
 (defmodule Engine
   (deftype Engine [
     camera Camera
@@ -8,14 +17,7 @@
     grid (SpatialGrid Uint32)
     world GameWorld
     bg-color (Vector3 Double)
-    light-dir1 (Vector3 Double)
-    light-dir2 (Vector3 Double)
-    light-color1 (Vector3 Double)
-    light-color2 (Vector3 Double)
-    sun-time1 Double
-    sun-time2 Double
-    sun-cycle-active1 Bool
-    sun-cycle-active2 Bool
+    suns (Array Sun)
     accumulator Double
     coordinator Coordinator
     world-data World
