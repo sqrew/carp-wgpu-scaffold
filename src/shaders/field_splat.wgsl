@@ -21,7 +21,10 @@ struct Uniforms {
     terrain_params1: vec4<f32>,
     terrain_params2: vec4<f32>,
     terrain_params3: vec4<f32>,
-    light_dir: vec4<f32>,
+    light_dir1: vec4<f32>,
+    light_dir2: vec4<f32>,
+    light_color1: vec4<f32>,
+    light_color2: vec4<f32>,
     instances: array<PointInstance, 512>,
 }
 

@@ -217,7 +217,12 @@
             world
             (Vector3.init 0.1 0.1 0.1)
             (Vector3.init 0.5 1.0 0.3)
+            (Vector3.init -0.5 1.0 -0.3)
+            (Vector3.init 1.0 0.95 0.85)
+            (Vector3.init 0.7 0.85 1.0)
             10.0
+            22.0
+            true
             true
             0.0
             coord
@@ -968,7 +973,8 @@
   (defn pack-uniform-header! [u-data cam-pos cam-dir cam-right cam-up bg-color
                               cell-size cols rows layers metaball-k origin
                               view-mode shadow-quality volumetric-sdf show-debug
-                              light-dir-ref lacunarity gain]
+                              light-dir1 light-dir2 light-col1 light-col2
+                              lacunarity gain]
     (do
       (Array.aset! u-data 3 (Double.to-float cell-size))
       (Array.aset! u-data 4 (Double.to-float @(Vector3.x cam-pos)))
@@ -1015,10 +1021,26 @@
       (Array.aset! u-data 45 (Double.to-float gain))
       (Array.aset! u-data 46 0.0f)
       (Array.aset! u-data 47 0.0f)
-      (Array.aset! u-data 48 (Double.to-float @(Vector3.x light-dir-ref)))
-      (Array.aset! u-data 49 (Double.to-float @(Vector3.y light-dir-ref)))
-      (Array.aset! u-data 50 (Double.to-float @(Vector3.z light-dir-ref)))
-      (Array.aset! u-data 51 0.0f)))
+      ;; light_dir1 at 48-51
+      (Array.aset! u-data 48 (Double.to-float @(Vector3.x light-dir1)))
+      (Array.aset! u-data 49 (Double.to-float @(Vector3.y light-dir1)))
+      (Array.aset! u-data 50 (Double.to-float @(Vector3.z light-dir1)))
+      (Array.aset! u-data 51 1.0f)
+      ;; light_dir2 at 52-55
+      (Array.aset! u-data 52 (Double.to-float @(Vector3.x light-dir2)))
+      (Array.aset! u-data 53 (Double.to-float @(Vector3.y light-dir2)))
+      (Array.aset! u-data 54 (Double.to-float @(Vector3.z light-dir2)))
+      (Array.aset! u-data 55 1.0f)
+      ;; light_color1 at 56-59
+      (Array.aset! u-data 56 (Double.to-float @(Vector3.x light-col1)))
+      (Array.aset! u-data 57 (Double.to-float @(Vector3.y light-col1)))
+      (Array.aset! u-data 58 (Double.to-float @(Vector3.z light-col1)))
+      (Array.aset! u-data 59 1.0f)
+      ;; light_color2 at 60-63
+      (Array.aset! u-data 60 (Double.to-float @(Vector3.x light-col2)))
+      (Array.aset! u-data 61 (Double.to-float @(Vector3.y light-col2)))
+      (Array.aset! u-data 62 (Double.to-float @(Vector3.z light-col2)))
+      (Array.aset! u-data 63 1.0f)))
 
   (defn pack-instances! [world db u-data csg-data csg-dirty]
     (let [next-csg-node-idx 0]
@@ -1433,15 +1455,18 @@
             (array-zero-floats! u-data)
             (array-zero-floats! flat-grid)))
 
-        ;; 1. Pack Uniform Header (indices 0 to 51)
+        ;; 1. Pack Uniform Header (indices 0 to 63)
         (Diagnostics.start-zone! diag "Sync: Pack Uniforms")
         (let [lac WGPURenderer.lacunarity
               gn WGPURenderer.gain
-              ldir (Engine.light-dir e)]
+              ldir1 (Engine.light-dir1 e)
+              ldir2 (Engine.light-dir2 e)
+              lcol1 (Engine.light-color1 e)
+              lcol2 (Engine.light-color2 e)]
           (Engine.pack-uniform-header! u-data cam-pos cam-dir cam-right cam-up &bg-color
                                        cell-size cols rows layers metaball-k origin
                                        view-mode shadow-quality @(Engine.volumetric-sdf e) show-debug
-                                       ldir lac gn))
+                                       ldir1 ldir2 lcol1 lcol2 lac gn))
         (Diagnostics.end-zone! diag "Sync: Pack Uniforms")
 
         ;; 2. Pack CSG Node Hierarchies & Active Instances (index >= 36)
@@ -1579,7 +1604,10 @@
                 terrain_params1: vec4<f32>,
                 terrain_params2: vec4<f32>,
                 terrain_params3: vec4<f32>,
-                light_dir: vec4<f32>,
+                light_dir1: vec4<f32>,
+                light_dir2: vec4<f32>,
+                light_color1: vec4<f32>,
+                light_color2: vec4<f32>,
                 instances: array<PointInstance, 512>,
             }
 
@@ -1878,19 +1906,33 @@
       (do
         (Diagnostics.start-zone! diag "Total Frame Time")
         (Clock.tick! (Engine.clock e))
-        (when @(Engine.sun-cycle-active e)
-          (let [speed 0.2 ;; speed of sun cycle (hours per second)
-                new-time (let [t (+ @(Engine.sun-time e) (* speed dt))]
+        (when @(Engine.sun-cycle-active1 e)
+          (let [speed 0.2 ;; speed of sun cycle 1 (hours per second)
+                new-time (let [t (+ @(Engine.sun-time1 e) (* speed dt))]
                            (if (>= t 24.0) (- t 24.0) t))]
             (do
-              (Engine.set-sun-time! e new-time)
+              (Engine.set-sun-time1! e new-time)
               (let [angle (* (/ new-time 24.0) (* 2.0 3.1415926535))
                     lx (Double.cos angle)
                     ly (Double.sin angle)
                     lz 0.3
                     ldir (Vector3.init lx ly lz)]
-                (Engine.set-light-dir! e ldir)))))
-        (let [alt @(Vector3.y (Engine.light-dir e))]
+                (Engine.set-light-dir1! e ldir)))))
+        (when @(Engine.sun-cycle-active2 e)
+          (let [speed 0.2 ;; speed of sun cycle 2 (hours per second)
+                new-time (let [t (+ @(Engine.sun-time2 e) (* speed dt))]
+                           (if (>= t 24.0) (- t 24.0) t))]
+            (do
+              (Engine.set-sun-time2! e new-time)
+              (let [angle (* (/ new-time 24.0) (* 2.0 3.1415926535))
+                    lx (Double.cos angle)
+                    ly (Double.sin angle)
+                    lz -0.3
+                    ldir (Vector3.init lx ly lz)]
+                (Engine.set-light-dir2! e ldir)))))
+        (let [alt1 @(Vector3.y (Engine.light-dir1 e))
+              alt2 @(Vector3.y (Engine.light-dir2 e))
+              alt (if (> alt1 alt2) alt1 alt2)]
           (if (> alt 0.0)
             (let [t (let [val (* alt 4.0)] (if (< val 0.0) 0.0 (if (> val 1.0) 1.0 val)))
                   r (+ 0.45 (* t (- 0.1 0.45)))

@@ -81,7 +81,7 @@
 (defn draw-editor-ui! [win eng-ref gui-ctx-ref dt-frame cfg-ref
                        pvx-ptr pvy-ptr pvw-ptr pvh-ptr lwd-ptr rwd-ptr
                        vsdf-ptr sdl-ptr fdt-ptr rst-ptr sst-ptr
-                       sim-open-ptr ray-open-ptr terrain-open-ptr
+                       sim-open-ptr ray-open-ptr terrain-open-ptr lighting-open-ptr
                        gui-time-val gui-cmd-val gui-vert-val]
   (let [win-w 0
         win-h 0
@@ -149,29 +149,6 @@
                       (Engine.set-show-debug-lines! eng-ref (not sdl))))
                   (Context.tooltip gui-ctx-ref "Draw physical bounding boxes and ray vectors.")))
 
-              (let [sun-active @(Engine.sun-cycle-active eng-ref)
-                    btn-label (if sun-active "Sun Cycle: ACTIVE" "Sun Cycle: PAUSED")]
-                (do
-                  (when (Context.button gui-ctx-ref "sun_cycle_btn" (copy btn-label))
-                    (Engine.set-sun-cycle-active! eng-ref (not sun-active)))
-                  (Context.tooltip gui-ctx-ref "Toggle daylight day/night cycle animation.")))
-
-              (let [sun-time (Double.to-float @(Engine.sun-time eng-ref))]
-                (do
-                  (match (Context.slider gui-ctx-ref "sun_time_slider" sun-time 0.0f 24.0f (copy "Sun Time"))
-                    (Maybe.Just nv)
-                      (do
-                        (Engine.set-sun-time! eng-ref (Double.from-float nv))
-                        (when (not @(Engine.sun-cycle-active eng-ref))
-                          (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
-                                lx (Double.cos angle)
-                                ly (Double.sin angle)
-                                lz 0.3
-                                ldir (Vector3.init lx ly lz)]
-                            (Engine.set-light-dir! eng-ref ldir))))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Manually adjust time of day (0 to 24 hours).")))
-
               (let [fixed-dt (Pointer.to-value fdt-ptr)]
                 (do
                   (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))
@@ -182,6 +159,97 @@
                         (Engine.set-settings! eng-ref @cfg-ref))
                     (Maybe.Nothing) ())
                   (Context.tooltip gui-ctx-ref "Time increment step for physics simulation update.")))))))
+
+      (Gui.separator gui-ctx-ref)
+      (let [lighting-open (Pointer.to-value lighting-open-ptr)
+            next-lighting-open (Context.collapsing-header gui-ctx-ref "lighting_header" (copy "Lighting Settings") lighting-open)]
+        (do
+          (Pointer.set lighting-open-ptr next-lighting-open)
+          (when next-lighting-open
+            (do
+              ;; Sun 1 Active Toggle
+              (let [sun-active1 @(Engine.sun-cycle-active1 eng-ref)
+                    btn-label1 (if sun-active1 "Sun 1 Cycle: ACTIVE" "Sun 1 Cycle: PAUSED")]
+                (do
+                  (when (Context.button gui-ctx-ref "sun_cycle_btn1" (copy btn-label1))
+                    (Engine.set-sun-cycle-active1! eng-ref (not sun-active1)))
+                  (Context.tooltip gui-ctx-ref "Toggle Sun 1 day/night cycle animation.")))
+
+              ;; Sun 1 Time Slider
+              (let [sun-time1 (Double.to-float @(Engine.sun-time1 eng-ref))]
+                (do
+                  (match (Context.slider gui-ctx-ref "sun_time_slider1" sun-time1 0.0f 24.0f (copy "Sun 1 Time"))
+                    (Maybe.Just nv)
+                      (do
+                        (Engine.set-sun-time1! eng-ref (Double.from-float nv))
+                        (when (not @(Engine.sun-cycle-active1 eng-ref))
+                          (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
+                                lx (Double.cos angle)
+                                ly (Double.sin angle)
+                                lz 0.3
+                                ldir (Vector3.init lx ly lz)]
+                            (Engine.set-light-dir1! eng-ref ldir))))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Manually adjust time of day for Sun 1.")))
+
+              ;; Sun 2 Active Toggle
+              (let [sun-active2 @(Engine.sun-cycle-active2 eng-ref)
+                    btn-label2 (if sun-active2 "Sun 2 Cycle: ACTIVE" "Sun 2 Cycle: PAUSED")]
+                (do
+                  (when (Context.button gui-ctx-ref "sun_cycle_btn2" (copy btn-label2))
+                    (Engine.set-sun-cycle-active2! eng-ref (not sun-active2)))
+                  (Context.tooltip gui-ctx-ref "Toggle Sun 2 day/night cycle animation.")))
+
+              ;; Sun 2 Time Slider
+              (let [sun-time2 (Double.to-float @(Engine.sun-time2 eng-ref))]
+                (do
+                  (match (Context.slider gui-ctx-ref "sun_time_slider2" sun-time2 0.0f 24.0f (copy "Sun 2 Time"))
+                    (Maybe.Just nv)
+                      (do
+                        (Engine.set-sun-time2! eng-ref (Double.from-float nv))
+                        (when (not @(Engine.sun-cycle-active2 eng-ref))
+                          (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
+                                lx (Double.cos angle)
+                                ly (Double.sin angle)
+                                lz -0.3
+                                ldir (Vector3.init lx ly lz)]
+                            (Engine.set-light-dir2! eng-ref ldir))))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Manually adjust time of day for Sun 2.")))
+
+              ;; Sun 1 Color R, G, B
+              (let [col1 (Engine.light-color1 eng-ref)
+                    cr1 (Double.to-float @(Vector3.x col1))
+                    cg1 (Double.to-float @(Vector3.y col1))
+                    cb1 (Double.to-float @(Vector3.z col1))]
+                (do
+                  (match (Context.slider gui-ctx-ref "sun_color1_r" cr1 0.0f 1.0f (copy "Sun 1 Color R"))
+                    (Maybe.Just nv) (Engine.set-light-color1! eng-ref (Vector3.init (Double.from-float nv) @(Vector3.y col1) @(Vector3.z col1)))
+                    (Maybe.Nothing) ())
+                  (match (Context.slider gui-ctx-ref "sun_color1_g" cg1 0.0f 1.0f (copy "Sun 1 Color G"))
+                    (Maybe.Just nv) (Engine.set-light-color1! eng-ref (Vector3.init @(Vector3.x col1) (Double.from-float nv) @(Vector3.z col1)))
+                    (Maybe.Nothing) ())
+                  (match (Context.slider gui-ctx-ref "sun_color1_b" cb1 0.0f 1.0f (copy "Sun 1 Color B"))
+                    (Maybe.Just nv) (Engine.set-light-color1! eng-ref (Vector3.init @(Vector3.x col1) @(Vector3.y col1) (Double.from-float nv)))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Adjust RGB color channels of Sun 1.")))
+
+              ;; Sun 2 Color R, G, B
+              (let [col2 (Engine.light-color2 eng-ref)
+                    cr2 (Double.to-float @(Vector3.x col2))
+                    cg2 (Double.to-float @(Vector3.y col2))
+                    cb2 (Double.to-float @(Vector3.z col2))]
+                (do
+                  (match (Context.slider gui-ctx-ref "sun_color2_r" cr2 0.0f 1.0f (copy "Sun 2 Color R"))
+                    (Maybe.Just nv) (Engine.set-light-color2! eng-ref (Vector3.init (Double.from-float nv) @(Vector3.y col2) @(Vector3.z col2)))
+                    (Maybe.Nothing) ())
+                  (match (Context.slider gui-ctx-ref "sun_color2_g" cg2 0.0f 1.0f (copy "Sun 2 Color G"))
+                    (Maybe.Just nv) (Engine.set-light-color2! eng-ref (Vector3.init @(Vector3.x col2) (Double.from-float nv) @(Vector3.z col2)))
+                    (Maybe.Nothing) ())
+                  (match (Context.slider gui-ctx-ref "sun_color2_b" cb2 0.0f 1.0f (copy "Sun 2 Color B"))
+                    (Maybe.Just nv) (Engine.set-light-color2! eng-ref (Vector3.init @(Vector3.x col2) @(Vector3.y col2) (Double.from-float nv)))
+                    (Maybe.Nothing) ())
+                  (Context.tooltip gui-ctx-ref "Adjust RGB color channels of Sun 2.")))))))
 
       (Gui.separator gui-ctx-ref)
       (let [ray-open (Pointer.to-value ray-open-ptr)
@@ -619,6 +687,7 @@
                         sim-open-val true
                         ray-open-val true
                         terrain-open-val false
+                        lighting-open-val true
                         gui-time-val 0.0
                         gui-cmd-val 0
                         gui-vert-val 0]
@@ -675,7 +744,7 @@
                                                             (Pointer.address &left-was-down) (Pointer.address &right-was-down)
                                                             (Pointer.address &volumetric-sdf-val) (Pointer.address &show-debug-lines-val)
                                                             (Pointer.address &fixed-dt-val) (Pointer.address &ray-steps-val) (Pointer.address &shadow-steps-val)
-                                                            (Pointer.address &sim-open-val) (Pointer.address &ray-open-val) (Pointer.address &terrain-open-val)
+                                                            (Pointer.address &sim-open-val) (Pointer.address &ray-open-val) (Pointer.address &terrain-open-val) (Pointer.address &lighting-open-val)
                                                             gui-time-val gui-cmd-val gui-vert-val)
                                            (set! gui-cmd-val (Array.length (Context.draw-commands &gui-ctx)))
                                            (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
