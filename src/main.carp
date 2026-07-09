@@ -124,383 +124,359 @@
         (Context.label gui-ctx-ref pos-str))
       (Gui.separator gui-ctx-ref)
 
-      (let [sim-open (Pointer.to-value sim-open-ptr)
-            next-sim-open (Context.collapsing-header gui-ctx-ref "sim_header" (copy "Visuals & Sim") sim-open)]
+      ;; Tab Selector buttons
+      (Context.label gui-ctx-ref (copy "--- Category ---"))
+      (let [curr-tab WGPURenderer.active-tab]
         (do
-          (Pointer.set sim-open-ptr next-sim-open)
-          (when next-sim-open
-            (do
-              (let [vsdf (Pointer.to-value vsdf-ptr)
-                    btn-label (if vsdf "Volumetric SDF: ON" "Volumetric SDF: OFF")]
-                (do
-                  (when (Context.button gui-ctx-ref "vol_sdf_btn" (copy btn-label))
-                    (do
-                      (Pointer.set vsdf-ptr (not vsdf))
-                      (Engine.set-volumetric-sdf! eng-ref (not vsdf))
-                      (Engine.set-grid-dirty! eng-ref true)))
-                  (Context.tooltip gui-ctx-ref "Render volumetric shadows and smoke SDF effects.")))
-                  
-              (let [sdl (Pointer.to-value sdl-ptr)
-                    btn-label (if sdl "Debug Lines: ON" "Debug Lines: OFF")]
-                (do
-                  (when (Context.button gui-ctx-ref "dbg_lines_btn" (copy btn-label))
-                    (do
-                      (Pointer.set sdl-ptr (not sdl))
-                      (Engine.set-show-debug-lines! eng-ref (not sdl))))
-                  (Context.tooltip gui-ctx-ref "Draw physical bounding boxes and ray vectors.")))
+          (when (Context.button gui-ctx-ref "tab_visuals_btn" (copy (if (= curr-tab 0) ">> Visuals & Sim <<" "   Visuals & Sim   ")))
+            (set! WGPURenderer.active-tab 0))
+          (when (Context.button gui-ctx-ref "tab_terrain_btn" (copy (if (= curr-tab 1) ">> Terrain Param <<" "   Terrain Param   ")))
+            (set! WGPURenderer.active-tab 1))
+          (when (Context.button gui-ctx-ref "tab_lighting_btn" (copy (if (= curr-tab 2) ">> Lighting & Sky <<" "   Lighting & Sky   ")))
+            (set! WGPURenderer.active-tab 2))
+          (when (Context.button gui-ctx-ref "tab_quality_btn" (copy (if (= curr-tab 3) ">> Renderer Quality <<" "   Renderer Quality   ")))
+            (set! WGPURenderer.active-tab 3))
+          (Gui.separator gui-ctx-ref)
 
-              (let [fixed-dt (Pointer.to-value fdt-ptr)]
-                (do
-                  (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))
-                    (Maybe.Just nv)
+          (cond
+            (= curr-tab 0)
+              (do
+                (let [vsdf (Pointer.to-value vsdf-ptr)
+                      btn-label (if vsdf "Volumetric SDF: ON" "Volumetric SDF: OFF")]
+                  (do
+                    (when (Context.button gui-ctx-ref "vol_sdf_btn" (copy btn-label))
                       (do
-                        (Pointer.set fdt-ptr nv)
-                        (Settings.set-fixed-dt! cfg-ref (Double.from-float nv))
-                        (Engine.set-settings! eng-ref @cfg-ref))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Time increment step for physics simulation update.")))))))
+                        (Pointer.set vsdf-ptr (not vsdf))
+                        (Engine.set-volumetric-sdf! eng-ref (not vsdf))
+                        (Engine.set-grid-dirty! eng-ref true)))
+                    (Context.tooltip gui-ctx-ref "Render volumetric shadows and smoke SDF effects.")))
+                    
+                (let [sdl (Pointer.to-value sdl-ptr)
+                      btn-label (if sdl "Debug Lines: ON" "Debug Lines: OFF")]
+                  (do
+                    (when (Context.button gui-ctx-ref "dbg_lines_btn" (copy btn-label))
+                      (do
+                        (Pointer.set sdl-ptr (not sdl))
+                        (Engine.set-show-debug-lines! eng-ref (not sdl))))
+                    (Context.tooltip gui-ctx-ref "Draw physical bounding boxes and ray vectors.")))
 
-      (Gui.separator gui-ctx-ref)
-      (let [lighting-open (Pointer.to-value lighting-open-ptr)
-            next-lighting-open (Context.collapsing-header gui-ctx-ref "lighting_header" (copy "Lighting Settings") lighting-open)]
-        (do
-          (Pointer.set lighting-open-ptr next-lighting-open)
-          (when next-lighting-open
-            (do
-              (let [suns-arr (Engine.suns eng-ref)
-                    num-suns (Array.length suns-arr)]
-                (do
-                  (Context.label gui-ctx-ref (str* "Active Suns: " (Int.str num-suns)))
-                  (when (< num-suns 8)
-                    (when (Context.button gui-ctx-ref "add_sun_btn" (copy "[+] Spawn Another Sun"))
-                      (Array.push-back! (Engine.suns eng-ref) 
-                        (Sun.init (Vector3.init 0.0 1.0 0.0)
-                                  (Vector3.init 1.0 1.0 1.0)
-                                  12.0
-                                  true
-                                  0.2
-                                  (* (Double.random) (* 2.0 3.1415926))
-                                  1.0
-                                  1.0
-                                  1.0))))
-                  (when (> num-suns 0)
-                    (do
-                      (when (Context.button gui-ctx-ref "rem_sun_btn" (copy "[-] Despawn Last Sun"))
-                        (let [dummy (Array.pop-back! (Engine.suns eng-ref))] ()))
-                      (Gui.separator gui-ctx-ref)
-                      (for [i 0 num-suns]
-                        (let [sun (Array.unsafe-nth suns-arr i)
-                              id-str (Int.str i)
-                              cycle-btn-id (str* "sun_cycle_" &id-str)
-                              time-sld-id (str* "sun_time_" &id-str)
-                              orbit-sld-id (str* "sun_orbit_" &id-str)
-                              r-sld-id (str* "sun_r_" &id-str)
-                              g-sld-id (str* "sun_g_" &id-str)
-                              b-sld-id (str* "sun_b_" &id-str)
-                              intensity-sld-id (str* "sun_intensity_" &id-str)
-                              size-sld-id (str* "sun_size_" &id-str)
-                              gassiness-sld-id (str* "sun_gassiness_" &id-str)
+                (let [fixed-dt (Pointer.to-value fdt-ptr)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))
+                      (Maybe.Just nv)
+                        (do
+                          (Pointer.set fdt-ptr nv)
+                          (Settings.set-fixed-dt! cfg-ref (Double.from-float nv))
+                          (Engine.set-settings! eng-ref @cfg-ref))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Time increment step for physics simulation update."))))
+
+            (= curr-tab 1)
+              (do
+                (let [ps (Double.to-float WGPURenderer.plains-scale)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "plains_scale_slider" ps 0.0f 50.0f (copy "Plains Scale"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.plains-scale (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Scale value for noise plains.")))
+
+                (let [po (Double.to-float WGPURenderer.plains-offset)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "plains_offset_slider" po -50.0f 50.0f (copy "Plains Offset"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.plains-offset (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Height offset offset for noise plains.")))
+
+                (let [cs (Double.to-float WGPURenderer.canyons-scale)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "canyons_scale_slider" cs 0.0f 100.0f (copy "Canyons Scale"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.canyons-scale (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Scale value for canyon formations.")))
+
+                (let [co (Double.to-float WGPURenderer.canyons-offset)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "canyons_offset_slider" co -100.0f 50.0f (copy "Canyons Offset"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.canyons-offset (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Depth offset value for canyons.")))
+
+                (let [ms (Double.to-float WGPURenderer.mountains-scale)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "mountains_scale_slider" ms 0.0f 150.0f (copy "Mtns Scale"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.mountains-scale (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Scale value for mountain heights.")))
+
+                (let [mo (Double.to-float WGPURenderer.mountains-offset)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "mountains_offset_slider" mo -150.0f 50.0f (copy "Mtns Offset"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.mountains-offset (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Height offset value for mountains.")))
+
+                (let [so (Double.to-float WGPURenderer.seed-offset)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "seed_offset_slider" so 0.0f 1000.0f (copy "Terrain Seed"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.seed-offset (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Seed offset for terrain noise.")))
+
+                (let [gf (Double.to-float WGPURenderer.global-frequency)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "global_freq_slider" gf 0.1f 5.0f (copy "Global Freq"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.global-frequency (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Base frequency of terrain noise.")))
+
+                (let [lac (Double.to-float WGPURenderer.lacunarity)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "lacunarity_slider" lac 1.2f 4.0f (copy "Lacunarity"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.lacunarity (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Frequency multiplier per fractal octave.")))
+
+                (let [g (Double.to-float WGPURenderer.gain)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "gain_slider" g 0.1f 0.9f (copy "Fractal Gain"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.gain (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Amplitude multiplier per fractal octave.")))
+
+                (when (Context.button gui-ctx-ref "reset_terrain_btn" (copy "Reset Terrain Config"))
+                  (do
+                    (set! WGPURenderer.plains-scale 12.0)
+                    (set! WGPURenderer.plains-offset -18.0)
+                    (set! WGPURenderer.canyons-scale 45.0)
+                    (set! WGPURenderer.canyons-offset -25.0)
+                    (set! WGPURenderer.mountains-scale 60.0)
+                    (set! WGPURenderer.mountains-offset -30.0)
+                    (set! WGPURenderer.seed-offset 0.0)
+                    (set! WGPURenderer.global-frequency 1.0)
+                    (set! WGPURenderer.lacunarity 2.0)
+                    (set! WGPURenderer.gain 0.5)
+                    (set! WGPURenderer.cache-initialized false)
+                    (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                    (Engine.set-voxel-dirty! eng-ref true)
+                    (Engine.set-grid-dirty! eng-ref true)))
+                (Context.tooltip gui-ctx-ref "Reset all terrain noise parameters to defaults.")
+
+                (when (Context.button gui-ctx-ref "rebake_terrain_btn" (copy "Rebake/Regen Terrain"))
+                  (do
+                    (set! WGPURenderer.cache-initialized false)
+                    (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                    (Engine.set-voxel-dirty! eng-ref true)
+                    (Engine.set-grid-dirty! eng-ref true)))
+                (Context.tooltip gui-ctx-ref "Force regenerates all terrain chunks from the seed."))
+
+            (= curr-tab 2)
+              (do
+                (let [suns-arr (Engine.suns eng-ref)
+                      num-suns (Array.length suns-arr)]
+                  (do
+                    (Context.label gui-ctx-ref (str* "Active Suns: " (Int.str num-suns)))
+                    (when (< num-suns 8)
+                      (when (Context.button gui-ctx-ref "add_sun_btn" (copy "[+] Spawn Another Sun"))
+                        (Array.push-back! (Engine.suns eng-ref) 
+                          (Sun.init (Vector3.init 0.0 1.0 0.0)
+                                    (Vector3.init 1.0 1.0 1.0)
+                                    12.0
+                                    true
+                                    0.2
+                                    (* (Double.random) (* 2.0 3.1415926))
+                                    1.0
+                                    1.0
+                                    1.0))))
+                    (when (> num-suns 0)
+                      (do
+                        (when (Context.button gui-ctx-ref "rem_sun_btn" (copy "[-] Despawn Last Sun"))
+                          (let [dummy (Array.pop-back! (Engine.suns eng-ref))]
+                            ()))
+                        (for [i 0 num-suns]
+                          (let [sun (Array.unsafe-nth (Engine.suns eng-ref) i)
+                                id-str (Int.str i)
+                                cycle-btn-id (str* "sun_cycle_" &id-str)
+                                time-sld-id (str* "sun_time_" &id-str)
+                                orbit-sld-id (str* "sun_orbit_" &id-str)
+                                r-sld-id (str* "sun_r_" &id-str)
+                                g-sld-id (str* "sun_g_" &id-str)
+                                b-sld-id (str* "sun_b_" &id-str)
+                                intensity-sld-id (str* "sun_intensity_" &id-str)
+                                size-sld-id (str* "sun_size_" &id-str)
+                                gassiness-sld-id (str* "sun_gassiness_" &id-str)
+                                
+                                active @(Sun.cycle-active sun)
+                                btn-label (if active (str* "Sun #" &id-str " Cycle: ACTIVE") (str* "Sun #" &id-str " Cycle: PAUSED"))
+                                time-val (Double.to-float @(Sun.time sun))
+                                orbit-val (Double.to-float @(Sun.orbit-angle sun))
+                                intensity-val (Double.to-float @(Sun.intensity sun))
+                                size-val (Double.to-float @(Sun.size sun))
+                                gassiness-val (Double.to-float @(Sun.gassiness sun))
+                                col @(Sun.color sun)
+                                cr (Double.to-float @(Vector3.x &col))
+                                cg (Double.to-float @(Vector3.y &col))
+                                cb (Double.to-float @(Vector3.z &col))]
+                            (do
+                              (Context.label gui-ctx-ref (str* "--- Sun " &id-str " ---"))
+                              (when (Context.button gui-ctx-ref &cycle-btn-id (copy &btn-label))
+                                (Sun.set-cycle-active! sun (not active)))
+                              (match (Context.slider gui-ctx-ref &time-sld-id time-val 0.0f 24.0f (copy "Time (Hours)"))
+                                (Maybe.Just nv) (Sun.set-time! sun (Double.from-float nv))
+                                (Maybe.Nothing) ())
+                              (match (Context.slider gui-ctx-ref &orbit-sld-id orbit-val 0.0f 6.28318f (copy "Orbit Angle"))
+                                (Maybe.Just nv) (Sun.set-orbit-angle! sun (Double.from-float nv))
+                                (Maybe.Nothing) ())
+                              (match (Context.slider gui-ctx-ref &r-sld-id cr 0.0f 1.0f (copy "Color R"))
+                                (Maybe.Just nv) (Sun.set-color! sun (Vector3.init (Double.from-float nv) @(Vector3.y &col) @(Vector3.z &col)))
+                                (Maybe.Nothing) ())
+                              (match (Context.slider gui-ctx-ref &g-sld-id cg 0.0f 1.0f (copy "Color G"))
+                                (Maybe.Just nv) (Sun.set-color! sun (Vector3.init @(Vector3.x &col) (Double.from-float nv) @(Vector3.z &col)))
+                                (Maybe.Nothing) ())
+                              (match (Context.slider gui-ctx-ref &b-sld-id cb 0.0f 1.0f (copy "Color B"))
+                                (Maybe.Just nv) (Sun.set-color! sun (Vector3.init @(Vector3.x &col) @(Vector3.y &col) (Double.from-float nv)))
+                                (Maybe.Nothing) ())
+
+                              ;; Intensity Slider
+                              (match (Context.slider gui-ctx-ref &intensity-sld-id intensity-val 0.0f 5.0f (copy "Intensity"))
+                                (Maybe.Just nv) (Sun.set-intensity! sun (Double.from-float nv))
+                                (Maybe.Nothing) ())
+
+                              ;; Size Slider
+                              (match (Context.slider gui-ctx-ref &size-sld-id size-val 1.0f 100.0f (copy "Disk Size"))
+                                (Maybe.Just nv) (Sun.set-size! sun (Double.from-float nv))
+                                (Maybe.Nothing) ())
+
+                              ;; Gassiness Slider
+                              (match (Context.slider gui-ctx-ref &gassiness-sld-id gassiness-val 1.0f 10.0f (copy "Gassiness"))
+                                (Maybe.Just nv) (Sun.set-gassiness! sun (Double.from-float nv))
+                                (Maybe.Nothing) ())
+                              (Gui.separator gui-ctx-ref))))))))
                               
-                              active @(Sun.cycle-active sun)
-                              btn-label (if active (str* "Sun #" &id-str " Cycle: ACTIVE") (str* "Sun #" &id-str " Cycle: PAUSED"))
-                              time-val (Double.to-float @(Sun.time sun))
-                              orbit-val (Double.to-float @(Sun.orbit-angle sun))
-                              intensity-val (Double.to-float @(Sun.intensity sun))
-                              size-val (Double.to-float @(Sun.size sun))
-                              gassiness-val (Double.to-float @(Sun.gassiness sun))
-                              col @(Sun.color sun)
-                              cr (Double.to-float @(Vector3.x &col))
-                              cg (Double.to-float @(Vector3.y &col))
-                              cb (Double.to-float @(Vector3.z &col))]
-                          (do
-                            (Context.label gui-ctx-ref (str* "--- Sun " &id-str " ---"))
-                            
-                            ;; Cycle Toggle
-                            (when (Context.button gui-ctx-ref &cycle-btn-id (copy &btn-label))
-                              (Sun.set-cycle-active! sun (not active)))
-                            
-                            ;; Time Slider
-                            (match (Context.slider gui-ctx-ref &time-sld-id time-val 0.0f 24.0f (copy "Time (Hours)"))
-                              (Maybe.Just nv)
-                                (do
-                                  (Sun.set-time! sun (Double.from-float nv))
-                                  (when (not @(Sun.cycle-active sun))
-                                    (let [angle (* (/ (Double.from-float nv) 24.0) (* 2.0 3.1415926535))
-                                          orbit @(Sun.orbit-angle sun)
-                                          lx (* (Double.cos angle) (Double.cos orbit))
-                                          ly (Double.sin angle)
-                                          lz (* (Double.cos angle) (Double.sin orbit))]
-                                      (Sun.set-dir! sun (Vector3.init lx ly lz)))))
-                              (Maybe.Nothing) ())
-                              
-                            ;; Orbit Angle Slider
-                            (match (Context.slider gui-ctx-ref &orbit-sld-id orbit-val 0.0f 6.28318f (copy "Orbit Angle"))
-                              (Maybe.Just nv)
-                                (do
-                                  (Sun.set-orbit-angle! sun (Double.from-float nv))
-                                  (when (not @(Sun.cycle-active sun))
-                                    (let [angle (* (/ @(Sun.time sun) 24.0) (* 2.0 3.1415926535))
-                                          lx (* (Double.cos angle) (Double.cos (Double.from-float nv)))
-                                          ly (Double.sin angle)
-                                          lz (* (Double.cos angle) (Double.sin (Double.from-float nv)))]
-                                      (Sun.set-dir! sun (Vector3.init lx ly lz)))))
-                              (Maybe.Nothing) ())
-                              
-                            ;; Color Sliders
-                            (match (Context.slider gui-ctx-ref &r-sld-id cr 0.0f 1.0f (copy "Color R"))
-                              (Maybe.Just nv) (Sun.set-color! sun (Vector3.init (Double.from-float nv) @(Vector3.y &col) @(Vector3.z &col)))
-                              (Maybe.Nothing) ())
-                            (match (Context.slider gui-ctx-ref &g-sld-id cg 0.0f 1.0f (copy "Color G"))
-                              (Maybe.Just nv) (Sun.set-color! sun (Vector3.init @(Vector3.x &col) (Double.from-float nv) @(Vector3.z &col)))
-                              (Maybe.Nothing) ())
-                            (match (Context.slider gui-ctx-ref &b-sld-id cb 0.0f 1.0f (copy "Color B"))
-                              (Maybe.Just nv) (Sun.set-color! sun (Vector3.init @(Vector3.x &col) @(Vector3.y &col) (Double.from-float nv)))
-                              (Maybe.Nothing) ())
+                (Gui.separator gui-ctx-ref)
+                
+                ;; Cloud & Sky Settings
+                (Gui.separator gui-ctx-ref)
+                (Context.label gui-ctx-ref (copy "--- Cloud & Sky Settings ---"))
+                (let [cd (Double.to-float WGPURenderer.cloud-density)]
+                  (match (Context.slider gui-ctx-ref "cloud_density_slider" cd 0.0f 1.0f (copy "Cloud Density"))
+                    (Maybe.Just nv) (set! WGPURenderer.cloud-density (Double.from-float nv))
+                    (Maybe.Nothing) ()))
+                (let [cs (Double.to-float WGPURenderer.cloud-speed)]
+                  (match (Context.slider gui-ctx-ref "cloud_speed_slider" cs 0.0f 10.0f (copy "Wind Speed"))
+                    (Maybe.Just nv) (set! WGPURenderer.cloud-speed (Double.from-float nv))
+                    (Maybe.Nothing) ()))
+                (let [cmin (Double.to-float WGPURenderer.cloud-min-y)]
+                  (match (Context.slider gui-ctx-ref "cloud_min_y_slider" cmin 10.0f 200.0f (copy "Cloud Min Y"))
+                    (Maybe.Just nv) (set! WGPURenderer.cloud-min-y (Double.from-float nv))
+                    (Maybe.Nothing) ()))
+                (let [cmax (Double.to-float WGPURenderer.cloud-max-y)]
+                  (match (Context.slider gui-ctx-ref "cloud_max_y_slider" cmax 20.0f 300.0f (copy "Cloud Max Y"))
+                    (Maybe.Just nv) (set! WGPURenderer.cloud-max-y (Double.from-float nv))
+                    (Maybe.Nothing) ()))
+                (let [ccr (Double.to-float WGPURenderer.cloud-color-r)
+                      ccg (Double.to-float WGPURenderer.cloud-color-g)
+                      ccb (Double.to-float WGPURenderer.cloud-color-b)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "cloud_r_slider" ccr 0.0f 1.0f (copy "Cloud R"))
+                      (Maybe.Just nv) (set! WGPURenderer.cloud-color-r (Double.from-float nv))
+                      (Maybe.Nothing) ())
+                    (match (Context.slider gui-ctx-ref "cloud_g_slider" ccg 0.0f 1.0f (copy "Cloud G"))
+                      (Maybe.Just nv) (set! WGPURenderer.cloud-color-g (Double.from-float nv))
+                      (Maybe.Nothing) ())
+                    (match (Context.slider gui-ctx-ref "cloud_b_slider" ccb 0.0f 1.0f (copy "Cloud B"))
+                      (Maybe.Just nv) (set! WGPURenderer.cloud-color-b (Double.from-float nv))
+                      (Maybe.Nothing) ())))
+                (let [cns (Double.to-float WGPURenderer.cloud-noise-scale)]
+                  (match (Context.slider gui-ctx-ref "cloud_noise_scale_slider" cns 0.0005f 0.02f (copy "Noise Scale"))
+                    (Maybe.Just nv) (set! WGPURenderer.cloud-noise-scale (Double.from-float nv))
+                    (Maybe.Nothing) ())))
 
-                            ;; Intensity Slider
-                            (match (Context.slider gui-ctx-ref &intensity-sld-id intensity-val 0.0f 5.0f (copy "Intensity"))
-                              (Maybe.Just nv) (Sun.set-intensity! sun (Double.from-float nv))
-                              (Maybe.Nothing) ())
+            (= curr-tab 3)
+              (do
+                (let [ray-steps (Pointer.to-value rst-ptr)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "ray_steps_slider" ray-steps 20.0f 150.0f (copy "Ray Steps"))
+                      (Maybe.Just nv)
+                        (do
+                          (Pointer.set rst-ptr nv)
+                          (Settings.set-ray-steps! cfg-ref (Double.to-int (Double.from-float nv)))
+                          (Engine.set-settings! eng-ref @cfg-ref))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Max steps for rendering primary camera rays.")))
 
-                            ;; Size Slider
-                            (match (Context.slider gui-ctx-ref &size-sld-id size-val 1.0f 100.0f (copy "Disk Size"))
-                              (Maybe.Just nv) (Sun.set-size! sun (Double.from-float nv))
-                              (Maybe.Nothing) ())
+                (let [shadow-steps (Pointer.to-value sst-ptr)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "shadow_steps_slider" shadow-steps 4.0f 32.0f (copy "Shadow Steps"))
+                      (Maybe.Just nv)
+                        (do
+                          (Pointer.set sst-ptr nv)
+                          (Settings.set-shadow-steps! cfg-ref (Double.to-int (Double.from-float nv)))
+                          (Engine.set-settings! eng-ref @cfg-ref))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Max steps for shadow tracing calculations."))))
+            ())))
 
-                            ;; Gassiness Slider
-                            (match (Context.slider gui-ctx-ref &gassiness-sld-id gassiness-val 1.0f 10.0f (copy "Gassiness"))
-                              (Maybe.Just nv) (Sun.set-gassiness! sun (Double.from-float nv))
-                              (Maybe.Nothing) ())
-                             (Gui.separator gui-ctx-ref)
-                             
-                             ;; Cloud & Sky Settings
-                             (Gui.separator gui-ctx-ref)
-                             (Context.label gui-ctx-ref (copy "--- Cloud & Sky Settings ---"))
-                             (let [cd (Double.to-float WGPURenderer.cloud-density)]
-                               (match (Context.slider gui-ctx-ref "cloud_density_slider" cd 0.0f 1.0f (copy "Cloud Density"))
-                                 (Maybe.Just nv) (set! WGPURenderer.cloud-density (Double.from-float nv))
-                                 (Maybe.Nothing) ()))
-                             (let [cs (Double.to-float WGPURenderer.cloud-speed)]
-                               (match (Context.slider gui-ctx-ref "cloud_speed_slider" cs 0.0f 10.0f (copy "Wind Speed"))
-                                 (Maybe.Just nv) (set! WGPURenderer.cloud-speed (Double.from-float nv))
-                                 (Maybe.Nothing) ()))
-                             (let [cmin (Double.to-float WGPURenderer.cloud-min-y)]
-                               (match (Context.slider gui-ctx-ref "cloud_min_y_slider" cmin 10.0f 200.0f (copy "Cloud Min Y"))
-                                 (Maybe.Just nv) (set! WGPURenderer.cloud-min-y (Double.from-float nv))
-                                 (Maybe.Nothing) ()))
-                             (let [cmax (Double.to-float WGPURenderer.cloud-max-y)]
-                               (match (Context.slider gui-ctx-ref "cloud_max_y_slider" cmax 20.0f 300.0f (copy "Cloud Max Y"))
-                                 (Maybe.Just nv) (set! WGPURenderer.cloud-max-y (Double.from-float nv))
-                                 (Maybe.Nothing) ()))
-                             (let [ccr (Double.to-float WGPURenderer.cloud-color-r)
-                                   ccg (Double.to-float WGPURenderer.cloud-color-g)
-                                   ccb (Double.to-float WGPURenderer.cloud-color-b)]
-                               (do
-                                 (match (Context.slider gui-ctx-ref "cloud_r_slider" ccr 0.0f 1.0f (copy "Cloud R"))
-                                   (Maybe.Just nv) (set! WGPURenderer.cloud-color-r (Double.from-float nv))
-                                   (Maybe.Nothing) ())
-                                 (match (Context.slider gui-ctx-ref "cloud_g_slider" ccg 0.0f 1.0f (copy "Cloud G"))
-                                   (Maybe.Just nv) (set! WGPURenderer.cloud-color-g (Double.from-float nv))
-                                   (Maybe.Nothing) ())
-                                 (match (Context.slider gui-ctx-ref "cloud_b_slider" ccb 0.0f 1.0f (copy "Cloud B"))
-                                   (Maybe.Just nv) (set! WGPURenderer.cloud-color-b (Double.from-float nv))
-                                   (Maybe.Nothing) ())))
-                             (let [cns (Double.to-float WGPURenderer.cloud-noise-scale)]
-                               (match (Context.slider gui-ctx-ref "cloud_noise_scale_slider" cns 0.0005f 0.02f (copy "Noise Scale"))
-                                 (Maybe.Just nv) (set! WGPURenderer.cloud-noise-scale (Double.from-float nv))
-                                 (Maybe.Nothing) ())))))))))))))
 
-      (Gui.separator gui-ctx-ref)
-      (let [ray-open (Pointer.to-value ray-open-ptr)
-            next-ray-open (Context.collapsing-header gui-ctx-ref "ray_header" (copy "Raymarcher Settings") ray-open)]
-        (do
-          (Pointer.set ray-open-ptr next-ray-open)
-          (when next-ray-open
-            (do
-              (let [ray-steps (Pointer.to-value rst-ptr)]
-                (do
-                  (match (Context.slider gui-ctx-ref "ray_steps_slider" ray-steps 20.0f 150.0f (copy "Ray Steps"))
-                    (Maybe.Just nv)
-                      (do
-                        (Pointer.set rst-ptr nv)
-                        (Settings.set-ray-steps! cfg-ref (Double.to-int (Double.from-float nv)))
-                        (Engine.set-settings! eng-ref @cfg-ref))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Max steps for rendering primary camera rays.")))
-
-              (let [shadow-steps (Pointer.to-value sst-ptr)]
-                (do
-                  (match (Context.slider gui-ctx-ref "shadow_steps_slider" shadow-steps 4.0f 32.0f (copy "Shadow Steps"))
-                    (Maybe.Just nv)
-                      (do
-                        (Pointer.set sst-ptr nv)
-                        (Settings.set-shadow-steps! cfg-ref (Double.to-int (Double.from-float nv)))
-                        (Engine.set-settings! eng-ref @cfg-ref))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Max steps for shadow tracing calculations.")))))))
-
-      (Gui.separator gui-ctx-ref)
-      (let [terrain-open (Pointer.to-value terrain-open-ptr)
-            next-terrain-open (Context.collapsing-header gui-ctx-ref "terrain_header" (copy "Terrain Generation") terrain-open)]
-        (do
-          (Pointer.set terrain-open-ptr next-terrain-open)
-          (when next-terrain-open
-            (do
-              (let [ps (Double.to-float WGPURenderer.plains-scale)]
-                (do
-                  (match (Context.slider gui-ctx-ref "plains_scale_slider" ps 0.0f 50.0f (copy "Plains Scale"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.plains-scale (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Scale value for noise plains.")))
-
-              (let [po (Double.to-float WGPURenderer.plains-offset)]
-                (do
-                  (match (Context.slider gui-ctx-ref "plains_offset_slider" po -50.0f 50.0f (copy "Plains Offset"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.plains-offset (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Height offset offset for noise plains.")))
-
-              (let [cs (Double.to-float WGPURenderer.canyons-scale)]
-                (do
-                  (match (Context.slider gui-ctx-ref "canyons_scale_slider" cs 0.0f 100.0f (copy "Canyons Scale"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.canyons-scale (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Scale value for canyon formations.")))
-
-              (let [co (Double.to-float WGPURenderer.canyons-offset)]
-                (do
-                  (match (Context.slider gui-ctx-ref "canyons_offset_slider" co -100.0f 50.0f (copy "Canyons Offset"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.canyons-offset (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Depth offset value for canyons.")))
-
-              (let [ms (Double.to-float WGPURenderer.mountains-scale)]
-                (do
-                  (match (Context.slider gui-ctx-ref "mountains_scale_slider" ms 0.0f 150.0f (copy "Mtns Scale"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.mountains-scale (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Scale value for mountain heights.")))
-
-              (let [mo (Double.to-float WGPURenderer.mountains-offset)]
-                (do
-                  (match (Context.slider gui-ctx-ref "mountains_offset_slider" mo -150.0f 50.0f (copy "Mtns Offset"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.mountains-offset (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Height offset value for mountains.")))
-
-              (let [so (Double.to-float WGPURenderer.seed-offset)]
-                (do
-                  (match (Context.slider gui-ctx-ref "seed_offset_slider" so 0.0f 1000.0f (copy "Terrain Seed"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.seed-offset (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Seed offset for terrain noise.")))
-
-              (let [gf (Double.to-float WGPURenderer.global-frequency)]
-                (do
-                  (match (Context.slider gui-ctx-ref "global_freq_slider" gf 0.1f 5.0f (copy "Global Freq"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.global-frequency (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Base frequency of terrain noise.")))
-
-              (let [lac (Double.to-float WGPURenderer.lacunarity)]
-                (do
-                  (match (Context.slider gui-ctx-ref "lacunarity_slider" lac 1.2f 4.0f (copy "Lacunarity"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.lacunarity (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Frequency multiplier per fractal octave.")))
-
-              (let [g (Double.to-float WGPURenderer.gain)]
-                (do
-                  (match (Context.slider gui-ctx-ref "gain_slider" g 0.1f 0.9f (copy "Fractal Gain"))
-                    (Maybe.Just nv)
-                      (do
-                        (set! WGPURenderer.gain (Double.from-float nv))
-                        (set! WGPURenderer.cache-initialized false)
-                        (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                        (Engine.set-voxel-dirty! eng-ref true)
-                        (Engine.set-grid-dirty! eng-ref true))
-                    (Maybe.Nothing) ())
-                  (Context.tooltip gui-ctx-ref "Amplitude multiplier per fractal octave.")))
-
-              (when (Context.button gui-ctx-ref "reset_terrain_btn" (copy "Reset Terrain Config"))
-                (do
-                  (set! WGPURenderer.plains-scale 12.0)
-                  (set! WGPURenderer.plains-offset -18.0)
-                  (set! WGPURenderer.canyons-scale 45.0)
-                  (set! WGPURenderer.canyons-offset -25.0)
-                  (set! WGPURenderer.mountains-scale 60.0)
-                  (set! WGPURenderer.mountains-offset -30.0)
-                  (set! WGPURenderer.seed-offset 0.0)
-                  (set! WGPURenderer.global-frequency 1.0)
-                  (set! WGPURenderer.lacunarity 2.0)
-                  (set! WGPURenderer.gain 0.5)
-                  (set! WGPURenderer.cache-initialized false)
-                  (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                  (Engine.set-voxel-dirty! eng-ref true)
-                  (Engine.set-grid-dirty! eng-ref true)))
-              (Context.tooltip gui-ctx-ref "Reset all terrain noise parameters to defaults.")
-
-              (when (Context.button gui-ctx-ref "rebake_terrain_btn" (copy "Rebake/Regen Terrain"))
-                (do
-                  (set! WGPURenderer.cache-initialized false)
-                  (World.dirty-all-chunks! (Engine.world-data eng-ref))
-                  (Engine.set-voxel-dirty! eng-ref true)
-                  (Engine.set-grid-dirty! eng-ref true)))
-              (Context.tooltip gui-ctx-ref "Force regenerates all terrain chunks from the seed.")))))
 
       (Gui.separator gui-ctx-ref)
       (when (Context.button gui-ctx-ref "bake_grid_btn" (copy "Bake Voxel Grid"))
