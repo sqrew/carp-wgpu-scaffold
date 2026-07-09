@@ -12,6 +12,15 @@
   (def lacunarity 2.0)
   (def gain 0.5)
 
+  (def cloud-density 0.45)
+  (def cloud-speed 2.0)
+  (def cloud-min-y 60.0)
+  (def cloud-max-y 90.0)
+  (def cloud-color-r 0.9)
+  (def cloud-color-g 0.4)
+  (def cloud-color-b 0.45)
+  (def cloud-noise-scale 0.004)
+
   (defn hash2d [x z]
     (let [s (Double.sin (+ (* x 12.9898) (* z 78.233)))
           mult (* s 43758.5453123)]

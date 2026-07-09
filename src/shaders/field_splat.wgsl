@@ -27,6 +27,8 @@ struct Uniforms {
     terrain_params1: vec4<f32>,
     terrain_params2: vec4<f32>,
     terrain_params3: vec4<f32>,
+    cloud_params1: vec4<f32>,
+    cloud_params2: vec4<f32>,
     light_params: vec4<f32>,
     suns: array<SunData, 8>,
     instances: array<PointInstance, 512>,

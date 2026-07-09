@@ -271,7 +271,44 @@
                             (match (Context.slider gui-ctx-ref &gassiness-sld-id gassiness-val 1.0f 10.0f (copy "Gassiness"))
                               (Maybe.Just nv) (Sun.set-gassiness! sun (Double.from-float nv))
                               (Maybe.Nothing) ())
-                            (Gui.separator gui-ctx-ref))))))))))))
+                             (Gui.separator gui-ctx-ref)
+                             
+                             ;; Cloud & Sky Settings
+                             (Gui.separator gui-ctx-ref)
+                             (Context.label gui-ctx-ref (copy "--- Cloud & Sky Settings ---"))
+                             (let [cd (Double.to-float WGPURenderer.cloud-density)]
+                               (match (Context.slider gui-ctx-ref "cloud_density_slider" cd 0.0f 1.0f (copy "Cloud Density"))
+                                 (Maybe.Just nv) (set! WGPURenderer.cloud-density (Double.from-float nv))
+                                 (Maybe.Nothing) ()))
+                             (let [cs (Double.to-float WGPURenderer.cloud-speed)]
+                               (match (Context.slider gui-ctx-ref "cloud_speed_slider" cs 0.0f 10.0f (copy "Wind Speed"))
+                                 (Maybe.Just nv) (set! WGPURenderer.cloud-speed (Double.from-float nv))
+                                 (Maybe.Nothing) ()))
+                             (let [cmin (Double.to-float WGPURenderer.cloud-min-y)]
+                               (match (Context.slider gui-ctx-ref "cloud_min_y_slider" cmin 10.0f 200.0f (copy "Cloud Min Y"))
+                                 (Maybe.Just nv) (set! WGPURenderer.cloud-min-y (Double.from-float nv))
+                                 (Maybe.Nothing) ()))
+                             (let [cmax (Double.to-float WGPURenderer.cloud-max-y)]
+                               (match (Context.slider gui-ctx-ref "cloud_max_y_slider" cmax 20.0f 300.0f (copy "Cloud Max Y"))
+                                 (Maybe.Just nv) (set! WGPURenderer.cloud-max-y (Double.from-float nv))
+                                 (Maybe.Nothing) ()))
+                             (let [ccr (Double.to-float WGPURenderer.cloud-color-r)
+                                   ccg (Double.to-float WGPURenderer.cloud-color-g)
+                                   ccb (Double.to-float WGPURenderer.cloud-color-b)]
+                               (do
+                                 (match (Context.slider gui-ctx-ref "cloud_r_slider" ccr 0.0f 1.0f (copy "Cloud R"))
+                                   (Maybe.Just nv) (set! WGPURenderer.cloud-color-r (Double.from-float nv))
+                                   (Maybe.Nothing) ())
+                                 (match (Context.slider gui-ctx-ref "cloud_g_slider" ccg 0.0f 1.0f (copy "Cloud G"))
+                                   (Maybe.Just nv) (set! WGPURenderer.cloud-color-g (Double.from-float nv))
+                                   (Maybe.Nothing) ())
+                                 (match (Context.slider gui-ctx-ref "cloud_b_slider" ccb 0.0f 1.0f (copy "Cloud B"))
+                                   (Maybe.Just nv) (set! WGPURenderer.cloud-color-b (Double.from-float nv))
+                                   (Maybe.Nothing) ())))
+                             (let [cns (Double.to-float WGPURenderer.cloud-noise-scale)]
+                               (match (Context.slider gui-ctx-ref "cloud_noise_scale_slider" cns 0.0005f 0.02f (copy "Noise Scale"))
+                                 (Maybe.Just nv) (set! WGPURenderer.cloud-noise-scale (Double.from-float nv))
+                                 (Maybe.Nothing) ())))))))))))))
 
       (Gui.separator gui-ctx-ref)
       (let [ray-open (Pointer.to-value ray-open-ptr)

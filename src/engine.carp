@@ -1008,20 +1008,30 @@
       (Array.aset! u-data 39 (Double.to-float WGPURenderer.canyons-offset))
       (Array.aset! u-data 40 (Double.to-float WGPURenderer.mountains-scale))
       (Array.aset! u-data 41 (Double.to-float WGPURenderer.mountains-offset))
-      (Array.aset! u-data 42 0.0f)
-      (Array.aset! u-data 43 0.0f)
+      (Array.aset! u-data 42 (Double.to-float WGPURenderer.seed-offset))
+      (Array.aset! u-data 43 (Double.to-float WGPURenderer.global-frequency))
       (Array.aset! u-data 44 (Double.to-float lacunarity))
       (Array.aset! u-data 45 (Double.to-float gain))
       (Array.aset! u-data 46 0.0f)
       (Array.aset! u-data 47 0.0f)
-      ;; light_params at 48-51
+      ;; cloud_params1 at 48-51
+      (Array.aset! u-data 48 (Double.to-float WGPURenderer.cloud-density))
+      (Array.aset! u-data 49 (Double.to-float WGPURenderer.cloud-speed))
+      (Array.aset! u-data 50 (Double.to-float WGPURenderer.cloud-min-y))
+      (Array.aset! u-data 51 (Double.to-float WGPURenderer.cloud-max-y))
+      ;; cloud_params2 at 52-55
+      (Array.aset! u-data 52 (Double.to-float WGPURenderer.cloud-color-r))
+      (Array.aset! u-data 53 (Double.to-float WGPURenderer.cloud-color-g))
+      (Array.aset! u-data 54 (Double.to-float WGPURenderer.cloud-color-b))
+      (Array.aset! u-data 55 (Double.to-float WGPURenderer.cloud-noise-scale))
+      ;; light_params at 56-59
       (let [num-suns (Array.length suns)]
         (do
-          (Array.aset! u-data 48 (Double.to-float (Double.from-int num-suns)))
-          (Array.aset! u-data 49 0.0f)
-          (Array.aset! u-data 50 0.0f)
-          (Array.aset! u-data 51 0.0f)))
-      ;; suns array starting at float index 52 (stride = 12 floats)
+          (Array.aset! u-data 56 (Double.to-float (Double.from-int num-suns)))
+          (Array.aset! u-data 57 0.0f)
+          (Array.aset! u-data 58 0.0f)
+          (Array.aset! u-data 59 0.0f)))
+      ;; suns array starting at float index 60 (stride = 12 floats)
       (let [num-to-pack (let [n (Array.length suns)] (if (> n 8) 8 n))]
         (do
           (for [i 0 num-to-pack]
@@ -1031,7 +1041,7 @@
                   s-int @(Sun.intensity sun)
                   s-size @(Sun.size sun)
                   s-gas @(Sun.gassiness sun)
-                  base-idx (+ 52 (* i 12))]
+                  base-idx (+ 60 (* i 12))]
               (do
                 (Array.aset! u-data base-idx (Double.to-float @(Vector3.x s-dir)))
                 (Array.aset! u-data (+ base-idx 1) (Double.to-float @(Vector3.y s-dir)))
@@ -1046,7 +1056,7 @@
                 (Array.aset! u-data (+ base-idx 10) 0.0f)
                 (Array.aset! u-data (+ base-idx 11) 0.0f))))
           (for [i num-to-pack 8]
-            (let [base-idx (+ 52 (* i 12))]
+            (let [base-idx (+ 60 (* i 12))]
               (do
                 (Array.aset! u-data base-idx 0.0f)
                 (Array.aset! u-data (+ base-idx 1) 0.0f)
@@ -1626,10 +1636,10 @@
                 terrain_params1: vec4<f32>,
                 terrain_params2: vec4<f32>,
                 terrain_params3: vec4<f32>,
-                light_dir1: vec4<f32>,
-                light_dir2: vec4<f32>,
-                light_color1: vec4<f32>,
-                light_color2: vec4<f32>,
+                cloud_params1: vec4<f32>,
+                cloud_params2: vec4<f32>,
+                light_params: vec4<f32>,
+                suns: array<SunData, 8>,
                 instances: array<PointInstance, 512>,
             }
 

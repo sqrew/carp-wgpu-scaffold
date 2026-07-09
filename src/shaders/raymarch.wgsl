@@ -31,6 +31,8 @@ struct PointInstance {
           terrain_params1: vec4<f32>,
           terrain_params2: vec4<f32>,
           terrain_params3: vec4<f32>,
+          cloud_params1: vec4<f32>,
+          cloud_params2: vec4<f32>,
           light_params: vec4<f32>,
           suns: array<SunData, 8>,
           instances: array<PointInstance, {{LIMIT}}>
@@ -1223,27 +1225,19 @@ struct PointInstance {
             }
             
             if (rd.y > 0.01) {
-                let H = 150.0;
+                let H = u.cloud_params1.z; // cloud_min_y used as plane height
                 let t = H / rd.y;
                 let cloud_pos = u.cam_pos.xz + rd.xz * t;
                 
-                let plains_scale = u.terrain_params1.x;
-                let plains_offset = u.terrain_params1.y;
-                let canyons_scale = u.terrain_params1.z;
-                let canyons_offset = u.terrain_params1.w;
-                let mountains_scale = u.terrain_params2.x;
-                let mountains_offset = u.terrain_params2.y;
                 let seed_offset = u.terrain_params2.z;
                 let global_frequency = u.terrain_params2.w;
-                let lacunarity = u.terrain_params3.x;
-                let gain = u.terrain_params3.y;
 
-                let sx = cloud_pos.x + seed_offset + u.time * 2.0;
+                let sx = cloud_pos.x + seed_offset + u.time * u.cloud_params1.y;
                 let sz = cloud_pos.y + seed_offset;
                 
-                let cloud_val = fbm2d(sx * 0.004 * global_frequency, sz * 0.004 * global_frequency);
-                let cloud_density = clamp((cloud_val - 0.45) * 4.0, 0.0, 1.0);
-                let cloud_color = mix(vec3<f32>(0.9, 0.4, 0.45), vec3<f32>(1.0, 0.95, 0.98), rd.y);
+                let cloud_val = fbm2d(sx * u.cloud_params2.w * global_frequency, sz * u.cloud_params2.w * global_frequency);
+                let cloud_density = clamp((cloud_val - u.cloud_params1.x) * 4.0, 0.0, 1.0);
+                let cloud_color = mix(u.cloud_params2.xyz, vec3<f32>(1.0, 0.95, 0.98), rd.y);
                 
                 // Dim clouds at night
                 let cloud_light = mix(0.15, 1.0, clamp(alt * 5.0, 0.0, 1.0));
@@ -1896,18 +1890,20 @@ struct PointInstance {
                 for (var i = 0; i < steps; i = i + 1) {
                     let p = ro + rd * curr_t;
                     
-                    let wind_offset = vec3<f32>(u.time * 0.8, 0.0, u.time * 0.2);
-                    let sample_p = (p + wind_offset) * 0.015;
+                    let wind_offset = vec3<f32>(u.time * 0.4 * u.cloud_params1.y, 0.0, u.time * 0.1 * u.cloud_params1.y);
+                    let sample_p = (p + wind_offset) * (u.cloud_params2.w * 3.75);
                     
                     let noise_val = evaluateFbm(sample_p);
                     
                     let height_fraction = (p.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
                     let height_fade = 4.0 * height_fraction * (1.0 - height_fraction);
                     
-                    let density = max(0.0, noise_val + 0.15) * height_fade * 0.18;
+                    let density_offset = 0.6 - u.cloud_params1.x;
+                    let density_scale = u.cloud_params1.x * 0.4;
+                    let density = max(0.0, noise_val + density_offset) * height_fade * density_scale;
                     
                     if (density > 0.0) {
-                        var scattering_color = ambient_col;
+                        var sun_light_accum = vec3<f32>(0.0);
                         
                         // Accumulate lighting and self-shadowing from all active suns
                         for (var s = 0u; s < num_suns; s = s + 1u) {
@@ -1923,16 +1919,19 @@ struct PointInstance {
                                 let shadow_step = 5.0;
                                 for (var j = 1; j <= 3; j = j + 1) {
                                     let sp = p + sun_dir * (f32(j) * shadow_step);
-                                    let s_noise = evaluateFbm((sp + wind_offset) * 0.015);
+                                    let s_noise = evaluateFbm((sp + wind_offset) * (u.cloud_params2.w * 3.75));
                                     let s_fraction = (sp.y - cloud_min_y) / (cloud_max_y - cloud_min_y);
                                     let s_fade = clamp(4.0 * s_fraction * (1.0 - s_fraction), 0.0, 1.0);
                                     shadow_density += max(0.0, s_noise + 0.15) * s_fade;
                                 }
                                 
                                 let light_transmission = exp(-shadow_density * 0.35);
-                                scattering_color += final_sun_color * (0.2 + 0.8 * light_transmission) * intensity;
+                                sun_light_accum += final_sun_color * (0.2 + 0.8 * light_transmission) * intensity;
                             }
                         }
+                        
+                        let cloud_base_color = mix(u.cloud_params2.xyz, vec3<f32>(1.0, 0.95, 0.98), rd.y * 0.5 + 0.5);
+                        let scattering_color = (ambient_col + sun_light_accum) * cloud_base_color;
                         
                         let alpha = 1.0 - exp(-density * step_size);
                         cloud_color_accum += cloud_transmittance * scattering_color * alpha;
