@@ -3,6 +3,7 @@ struct PointInstance {
     rot: vec4<f32>,
     color_csg: vec4<f32>,
     sph_fields: vec4<f32>,
+    shape_info: vec4<f32>,
 }
 
 struct SunData {

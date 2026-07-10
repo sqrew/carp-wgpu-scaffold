@@ -33,7 +33,7 @@
   (defn create [grid-ref max-ids]
     (let [max-spheres 512
           header-size 624
-          sphere-data-size 64
+          sphere-data-size 80
           max-csg-nodes 1024
           csg-node-size 64
           u-size (+ header-size (* max-spheres sphere-data-size))

@@ -5,6 +5,7 @@ struct PointInstance {
           rot: vec4<f32>,
           color_csg: vec4<f32>,
           sph_fields: vec4<f32>,
+          shape_info: vec4<f32>,
       }
       struct Cell {
           header: vec4<f32>,
@@ -916,44 +917,44 @@ struct PointInstance {
            let s_data = u.instances[s_idx];
            let raw_w = s_data.pos_scale.w;
            let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-           let csg_root_idx = i32(round(s_data.color_csg.w));
-           if (csg_root_idx >= 0) {
-               return evaluateCsgTree(local_p, csg_root_idx);
-           } else {
-               if (raw_w > 0.0 && raw_w < 500.0) {
-                   return sdSphere(local_p, raw_w);
-               } else if (raw_w < 0.0 && raw_w > -1000.0) {
-                   let size = -raw_w;
-                   return sdBox(local_p, vec3<f32>(size));
-               } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
-                   let size = -raw_w - 1000.0;
-                   return sdCapsule(local_p, size, size);
-               } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
-                   let size = raw_w - 1000.0;
-                   return sdCylinder(local_p, size, size);
-               } else if (raw_w >= 2000.0) {
-                   let size = raw_w - 2000.0;
-                   return sdTorus(local_p, vec2<f32>(size, 0.25 * size));
+           let inst_type = i32(round(s_data.shape_info.y));
+           if (inst_type == 0) {
+               let csg_root_idx = i32(round(s_data.shape_info.z));
+               if (csg_root_idx >= 0) {
+                   return evaluateCsgTree(local_p, csg_root_idx);
                } else {
-                   let size = -raw_w - 2000.0;
-                   return sdOctahedron(local_p, size);
+                   let shape_type = u32(round(s_data.shape_info.x));
+                   var d = 10000.0;
+                   if (shape_type == 1u) {
+                       d = sdSphere(local_p, raw_w);
+                   } else if (shape_type == 2u) {
+                       d = sdBox(local_p, vec3<f32>(raw_w));
+                   } else if (shape_type == 3u) {
+                       d = sdCylinder(local_p, raw_w, raw_w);
+                   } else if (shape_type == 4u) {
+                       d = sdCapsule(local_p, raw_w, raw_w);
+                   } else if (shape_type == 5u) {
+                       d = sdTorus(local_p, vec2<f32>(raw_w, 0.25 * raw_w));
+                   } else if (shape_type == 6u) {
+                       d = sdOctahedron(local_p, raw_w);
+                   }
+                   return d;
                }
            }
+           return 10000.0;
        }
 
-       fn get_wireframe_edge(lp: vec3<f32>, raw_w: f32, thickness: f32) -> f32 {
-          if (raw_w > 0.0 && raw_w < 500.0) {
+       fn get_wireframe_edge(lp: vec3<f32>, shape_type: u32, size: f32, thickness: f32) -> f32 {
+          if (shape_type == 1u) {
               let rx = smoothstep(thickness, thickness - 0.01, abs(lp.x));
               let ry = smoothstep(thickness, thickness - 0.01, abs(lp.y));
               let rz = smoothstep(thickness, thickness - 0.01, abs(lp.z));
               return max(rx, max(ry, rz));
-          } else if (raw_w < 0.0 && raw_w > -1000.0) {
-              let size = -raw_w;
+          } else if (shape_type == 2u) {
               let q = abs(lp) - vec3<f32>(size);
               let second_max = max(min(q.x, q.y), max(min(q.x, q.z), min(q.y, q.z)));
               return smoothstep(-thickness, -thickness + 0.01, second_max);
-          } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
-              let size = -raw_w - 1000.0;
+          } else if (shape_type == 4u) { // Capsule
               let r = size;
               let h = size;
               let angle = atan2(lp.z, lp.x);
@@ -961,8 +962,7 @@ struct PointInstance {
               let ring_y = smoothstep(thickness, thickness - 0.01, abs(lp.y));
               let ring_cap = smoothstep(thickness, thickness - 0.01, abs(abs(lp.y) - h));
               return max(long_line, max(ring_y, ring_cap));
-          } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
-              let size = raw_w - 1000.0;
+          } else if (shape_type == 3u) { // Cylinder
               let r = size;
               let h = size;
               let rad = length(lp.xz);
@@ -970,8 +970,7 @@ struct PointInstance {
               let angle = atan2(lp.z, lp.x);
               let vertical_line = smoothstep(0.95, 0.98, abs(sin(angle * 6.0))) * step(abs(lp.y), h);
               return max(rim, vertical_line);
-          } else if (raw_w >= 2000.0) {
-              let size = raw_w - 2000.0;
+          } else if (shape_type == 5u) { // Torus
               let R = size;
               let major_angle = atan2(lp.z, lp.x);
               let ring_major = smoothstep(0.95, 0.98, abs(sin(major_angle * 8.0)));
@@ -984,7 +983,7 @@ struct PointInstance {
               let ez = smoothstep(thickness, thickness - 0.01, abs(lp.z));
               return max(ex, max(ey, ez));
           }
-      }
+       }
 
           fn worldSDF(p: vec3<f32>, rd: vec3<f32>, dither_threshold: f32, eval_metaballs: bool) -> vec4<f32> {
               let p_local = p - u.grid_origin.xyz;
@@ -1040,8 +1039,11 @@ struct PointInstance {
                         if (raw_w != 0.0) {
                           var local_dist = 10000.0;
                           let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                          let csg_root_idx = i32(round(s_data.color_csg.w));
-                          if (csg_root_idx == -10) {
+                          let inst_type = i32(round(s_data.shape_info.y));
+                          let csg_root_idx = i32(round(s_data.shape_info.z));
+                          let shape_type = u32(round(s_data.shape_info.x));
+
+                          if (inst_type == 1) { // Black hole
                               let singularity_r = raw_w;
                               let accretion_r = max(s_data.sph_fields.x, 0.1);
                               let accretion_h = max(s_data.sph_fields.y, 0.01);
@@ -1067,7 +1069,7 @@ struct PointInstance {
                                }
                               continue;
                           }
-                          if (csg_root_idx == -5) {
+                          if (inst_type == 2) { // GUI Panel
                                let width = s_data.sph_fields.x;
                                let height = s_data.sph_fields.y;
                                let slider1_val = s_data.sph_fields.z;
@@ -1104,7 +1106,7 @@ struct PointInstance {
                                }
                                continue;
                           }
-                          if (csg_root_idx <= -99) {
+                          if (inst_type == 3) { // Metaballs
                               if (!eval_metaballs) { continue; }
                               var s = f32(-99 - csg_root_idx) / 100.0;
                               if (s < 0.05) { s = 0.6; }
@@ -1116,30 +1118,25 @@ struct PointInstance {
                               metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
                               has_metaballs = true;
                               metaball_idx = f32(s_idx);
-                          } else {
+                          } else if (inst_type == 0) { // CSG tree / shape primitive
                               if (csg_root_idx >= 0) {
                                   local_dist = evaluateCsgTree(local_p, csg_root_idx);
                               } else {
-                                  if (raw_w > 0.0 && raw_w < 500.0) {
+                                  if (shape_type == 1u) {
                                     if (s_data.sph_fields.x != 0.0) {
                                         continue;
                                     }
                                     local_dist = sdSphere(local_p, raw_w);
-                                  } else if (raw_w < 0.0 && raw_w > -1000.0) {
-                                    let size = -raw_w;
-                                    local_dist = sdBox(local_p, vec3<f32>(size));
-                                  } else if (raw_w <= -1000.0 && raw_w > -2000.0) {
-                                    let size = -raw_w - 1000.0;
-                                    local_dist = sdCapsule(local_p, size, size);
-                                  } else if (raw_w >= 1000.0 && raw_w < 2000.0) {
-                                    let size = raw_w - 1000.0;
-                                    local_dist = sdCylinder(local_p, size, size);
-                                  } else if (raw_w >= 2000.0) {
-                                    let size = raw_w - 2000.0;
-                                    local_dist = sdTorus(local_p, vec2<f32>(size, 0.25 * size));
-                                  } else {
-                                    let size = -raw_w - 2000.0;
-                                    local_dist = sdOctahedron(local_p, size);
+                                  } else if (shape_type == 2u) {
+                                    local_dist = sdBox(local_p, vec3<f32>(raw_w));
+                                  } else if (shape_type == 4u) {
+                                    local_dist = sdCapsule(local_p, raw_w, raw_w);
+                                  } else if (shape_type == 3u) {
+                                    local_dist = sdCylinder(local_p, raw_w, raw_w);
+                                  } else if (shape_type == 5u) {
+                                    local_dist = sdTorus(local_p, vec2<f32>(raw_w, 0.25 * raw_w));
+                                  } else if (shape_type == 6u) {
+                                    local_dist = sdOctahedron(local_p, raw_w);
                                   }
                               }
                               if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
@@ -1330,7 +1327,7 @@ struct PointInstance {
             // Apply gravitational lensing from black hole
             for(var i = 0u; i < 128u; i = i + 1u) {
                 let s_data = u.instances[i];
-                if (s_data.pos_scale.w != 0.0 && i32(round(s_data.color_csg.w)) == -10) {
+                if (s_data.pos_scale.w != 0.0 && i32(round(s_data.shape_info.y)) == 1) {
                     let to_singularity = s_data.pos_scale.xyz - ro;
                     let projection = dot(to_singularity, rd);
                     if (projection > 0.0) {
@@ -1449,10 +1446,13 @@ struct PointInstance {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let raw_w = s_data.pos_scale.w;
-                    if (raw_w > 0.0 && raw_w < 500.0 && s_data.color_csg.w < 0.0 && s_data.color_csg.w > -99.0 && s_data.sph_fields.x == 0.0) {
+                    let shape_type = u32(round(s_data.shape_info.x));
+                    let inst_type = i32(round(s_data.shape_info.y));
+                    let csg_root_idx = i32(round(s_data.shape_info.z));
+                    if (shape_type == 1u && inst_type == 0 && csg_root_idx < 0 && s_data.sph_fields.x == 0.0) {
                         is_sphere = true;
                     }
-                    if (s_data.color_csg.w <= -99.0) {
+                    if (inst_type == 3) {
                         is_metaball = true;
                     }
                 }
@@ -1726,8 +1726,9 @@ struct PointInstance {
                 if (hitId != -1.0 && !is_metaball) {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
+                    let inst_type = i32(round(s_data.shape_info.y));
                     let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                    if (s_data.color_csg.w == -5.0) {
+                    if (inst_type == 2) {
                         let width = s_data.sph_fields.x;
                         let height = s_data.sph_fields.y;
                         let slider1_val = s_data.sph_fields.z;
@@ -1824,8 +1825,8 @@ struct PointInstance {
                         exp_temp_factor = temp_factor;
                         exp_n_col = n_col;
                     } else {
-                        let csg_root_idx = i32(round(s_data.color_csg.w));
-                        if (csg_root_idx == -10) {
+                        let inst_type = i32(round(s_data.shape_info.y));
+                        if (inst_type == 1) {
                             let dist_to_sing = length(p - s_data.pos_scale.xyz);
                             if (dist_to_sing < s_data.pos_scale.w + 0.15) {
                                 base_col = vec3<f32>(0.0);
@@ -1837,8 +1838,10 @@ struct PointInstance {
                             }
                         } else {
                             base_col = s_data.color_csg.rgb;
-                            if (s_data.color_csg.w < 0.0) {
-                                edge = get_wireframe_edge(lp, s_data.pos_scale.w, 0.08);
+                            let csg_root_idx = i32(round(s_data.shape_info.z));
+                            if (csg_root_idx < 0) {
+                                let shape_type = u32(round(s_data.shape_info.x));
+                                edge = get_wireframe_edge(lp, shape_type, s_data.pos_scale.w, 0.08);
                             }
                         }
                     }
