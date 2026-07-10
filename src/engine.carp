@@ -247,6 +247,7 @@
             (the String @"")
             (the String @"")
             (the String @"")
+            (the String @"")
             cfg)))))
 
   (defn db [e]
@@ -1457,7 +1458,7 @@
                       had-fields @(Array.unsafe-nth active-slots slot)]
                   (when (or overlaps had-fields)
                     (do
-                      (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances)
+                      (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances (Engine.last-known-field-rule e) (Engine.jit-cache e))
                       (Array.aset! active-slots slot overlaps))))))))
         (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 16)))))
 
@@ -1760,6 +1761,164 @@
             @""
             (str* header-block injection-accum footer-block)))))
 
+  (sig assemble-field-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-field-rule-shader [e world]
+    (let [world-data (Engine.world-data e)
+          res @(World.voxel-resolution world-data)
+          res-str (Int.str res)
+          res-sq-str (Int.str (* res res))
+          total-str (Int.str (* res (* res res)))
+          cell-size-str (Double.str (/ 32.0 (Double.from-int res)))
+          log-res (if (= res 64) 6 5)
+          log-res-str (Int.str log-res)
+          voxel-res-sub-1-str (Int.str (- res 1))
+          slots-per-dim (/ 384 res)
+          slots-per-dim-str (Int.str slots-per-dim)
+          slots-per-dim-sq-str (Int.str (* slots-per-dim slots-per-dim))
+          header-block 
+          (str*
+            "            struct PointInstance {
+                pos_scale: vec4<f32>,
+                rot: vec4<f32>,
+                color_csg: vec4<f32>,
+                sph_fields: vec4<f32>,
+                shape_info: vec4<f32>,
+            }
+
+            struct SunData {
+                dir: vec4<f32>,
+                color: vec4<f32>,
+                params: vec4<f32>,
+            }
+
+            struct Uniforms {
+                time: f32, 
+                width: f32, 
+                height: f32, 
+                cell_size: f32,
+                cam_pos: vec4<f32>, 
+                cam_dir: vec4<f32>,
+                cam_right: vec4<f32>,
+                cam_up: vec4<f32>,
+                bg_color: vec4<f32>,
+                grid_dims: vec4<f32>,
+                grid_origin: vec4<f32>,
+                shadow_ao_quality: vec4<f32>,
+                terrain_params1: vec4<f32>,
+                terrain_params2: vec4<f32>,
+                terrain_params3: vec4<f32>,
+                cloud_params1: vec4<f32>,
+                cloud_params2: vec4<f32>,
+                light_params: vec4<f32>,
+                suns: array<SunData, 8>,
+                instances: array<PointInstance, 512>,
+            }
+
+            struct ChunkLookup {
+                origin: vec4<i32>,
+                slots: array<vec4<i32>, 8192>,
+                skip_grid: array<vec4<i32>, 128>,
+            }
+
+            struct ChunkInfo {
+                origin_slot: vec4<f32>,
+            }
+
+            @group(0) @binding(0) var<storage, read> input_fields: array<vec4<f32>>;
+            @group(0) @binding(1) var<storage, read_write> output_fields: array<vec4<f32>>;
+            @group(0) @binding(2) var<uniform> u: Uniforms;
+            @group(0) @binding(3) var<storage, read> chunk_info: ChunkInfo;
+            @group(0) @binding(4) var<storage, read> chunk_lookup: ChunkLookup;
+            @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
+
+            fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
+                let world_v = vec3<i32>(floor(chunk_info.origin_slot.xyz / u.cell_size)) + vec3<i32>(x, y, z);
+                let qx = world_v.x >> " @&log-res-str "u;
+                let qy = world_v.y >> " @&log-res-str "u;
+                let qz = world_v.z >> " @&log-res-str "u;
+                
+                let lx = world_v.x & " @&voxel-res-sub-1-str "i;
+                let ly = world_v.y & " @&voxel-res-sub-1-str "i;
+                let lz = world_v.z & " @&voxel-res-sub-1-str "i;
+                
+                let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
+                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
+                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                }
+                
+                let mx = u32(local_q.x) >> 2u;
+                let my = u32(local_q.y) >> 2u;
+                let mz = u32(local_q.z) >> 2u;
+                let skip_idx = mx + (my << 3u) + (mz << 6u);
+                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                if (skip_val == 0) {
+                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                }
+                
+                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                if (slot < 0) {
+                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                }
+                
+                let slot_x = slot % " @&slots-per-dim-str "i;
+                let slot_y = (slot / " @&slots-per-dim-str "i) % " @&slots-per-dim-str "i;
+                let slot_z = slot / " @&slots-per-dim-sq-str "i;
+                
+                let atlas_coord = vec3<i32>((slot_x * " @&res-str "i) + lx, (slot_y * " @&res-str "i) + ly, (slot_z * " @&res-str "i) + lz);
+                return textureLoad(voxel_texture, atlas_coord, 0);
+            }
+
+            @compute @workgroup_size(64)
+            fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+                let idx = global_id.x;
+                if (idx >= " @&total-str "u) { return; }
+                
+                let local_x = i32(idx % " @&res-str "u);
+                let local_y = i32((idx / " @&res-str "u) % " @&res-str "u);
+                let local_z = i32(idx / " @&res-sq-str "u);
+                
+                var fields = input_fields[idx];
+                let voxel_pos = chunk_info.origin_slot.xyz + vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * " @&cell-size-str ";
+                let dt = 0.00833;
+                let dummy_use = u.time * 0.0;
+                fields.x += dummy_use;
+                // --- DYNAMIC INJECTIONS LOOP ---")
+            footer-block "
+                output_fields[idx] = fields;
+            }"
+            injection-accum @""]
+      (do
+        (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/field_rule.wgsl")]
+          (match file-res
+            (Result.Success content)
+              (when (Engine.has-active-code? &content)
+                (set! injection-accum (str* injection-accum "\n{\n// === Injected from field_rule.wgsl ===\n" content "\n}\n")))
+            (Result.Error _) ()))
+        (if (String.empty? &injection-accum)
+            @""
+            (str* header-block injection-accum footer-block)))))
+
+  (sig evaluate-field-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-field-rule-hot-reload! [e ctx ren]
+    (let [world (Engine.world e)
+          new-source (Engine.assemble-field-rule-shader e world)]
+      (if (String.empty? &new-source)
+          (when (not (= (Engine.last-known-field-rule e) &new-source))
+            (do
+              (Engine.set-last-known-field-rule! e @&new-source)
+              (IO.println "Environmental field JIT system cleared.")
+              (World.dirty-all-chunks! (Engine.world-data e))))
+          (when (not (= (Engine.last-known-field-rule e) &new-source))
+            (do
+              (Engine.set-last-known-field-rule! e @&new-source)
+              (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
+                (if (WGPU.pipeline-null?- pipe)
+                    ()
+                    (do
+                       (IO.println "Environmental field JIT system reloaded and active.")
+                       (World.dirty-all-chunks! (Engine.world-data e))))))))))
+
   (sig evaluate-jit-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn evaluate-jit-hot-reload! [e ctx ren]
     (let [world (Engine.world e)
@@ -2014,6 +2173,7 @@
         (Engine.evaluate-jit-hot-reload! e ctx ren)
         (Engine.evaluate-render-hot-reload! e ctx ren)
         (Engine.evaluate-carve-hot-reload! e ctx ren)
+        (Engine.evaluate-field-rule-hot-reload! e ctx ren)
         (Diagnostics.end-zone! diag "Sync: JIT Hot Reload")
         (Diagnostics.start-zone! diag "Sync: JIT Physics Loop")
         (Engine.run-jit-physics-loop! e ctx ren)

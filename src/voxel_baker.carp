@@ -216,7 +216,21 @@
                                             (set! d (smax d (- 0.0 d-right) 2.5))))
                                         d)))
                               _ voxel-d)
-                      mat-id (if (< min-d 0.0) 1.0f 0.0f)]
+                      mat-id (if (< min-d 0.0)
+                                 (if (> py 15.0)
+                                     6.0f
+                                     (if (< py -120.0)
+                                         7.0f
+                                         (if (< py -40.0)
+                                             8.0f
+                                             (if (< py -10.0)
+                                                 10.0f
+                                                 (if (and (< py -2.0) (> (noise3d (* px 0.05) 0.0 (* pz 0.05)) 0.0))
+                                                     5.0f
+                                                     (if (> (noise3d (* px 0.02) 0.0 (* pz 0.02)) 0.3)
+                                                         2.0f
+                                                         1.0f))))))
+                                 0.0f)]
                   (do
                     ;; Bake dynamic/static SDF colliders from FieldDatabase
                     (when (> (Array.length &near-indices) 0)
@@ -449,7 +463,7 @@
               @(WGPURenderer.fields-texture ren) 
               ox oy oz 32 32 32)))))
 
-  (defn bake-fields-gpu! [ctx ren chunk num-instances]
+  (defn bake-fields-gpu! [ctx ren chunk num-instances field-script field-cache]
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
@@ -457,6 +471,7 @@
           oy (* (Double.from-int qy) 32.0)
           oz (* (Double.from-int qz) 32.0)
           cell-size 1.0
+          res 32
           params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
                        (Double.to-float cell-size)
                        (Double.to-float num-instances)
@@ -475,5 +490,28 @@
             (do
               (WGPU.dispatch ctx pipe bg 512)
               (WGPU.free-bind-group bg)
+              (when (not (String.empty? field-script))
+                (let [pipe-maybe (Map.get-maybe field-cache field-script)]
+                  (match pipe-maybe
+                    (Maybe.Just field-pipe)
+                      (let [jit-info-b @(WGPURenderer.jit-info-buffer ren)
+                            chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
+                            voxel-tex @(WGPURenderer.voxel-texture ren)
+                            voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+                            qx-f (Double.to-float (* (Double.from-int qx) 32.0))
+                            qy-f (Double.to-float (* (Double.from-int qy) 32.0))
+                            qz-f (Double.to-float (* (Double.from-int qz) 32.0))
+                            slot-f (Float.from-int @(Chunk.atlas-slot chunk))
+                            origin-data [qx-f qy-f qz-f slot-f]]
+                        (do
+                          (WGPU.write-floats ctx jit-info-b &origin-data)
+                          (match (WGPURender.create-jit-bind-group ctx field-pipe f-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex)
+                            (Result.Error err) (IO.println &(str* "Field JIT Bind Group error: " &err))
+                            (Result.Success field-bg)
+                              (do
+                                (WGPU.dispatch ctx field-pipe field-bg 512)
+                                (WGPU.free-bind-group field-bg)
+                                (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b f-scratch-b (* res (* res (* res 16))))))))
+                    _ ())))
               (pack-and-copy-fields-chunk! ctx ren @(Chunk.atlas-slot chunk)))))))
 )

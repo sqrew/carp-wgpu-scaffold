@@ -60,7 +60,7 @@
     (let [v (Vector3.init cx cy cz)
           d (sample-static-world world-data &v)]
       (if (< d 0.0)
-          (let [depth (neg d)
+          (let [depth (min 0.15 (neg d))
                 normal (estimate-sdf-normal world-data &v)]
             (Array.push-back! contacts (Contact.init depth v normal)))
           (Vector3.delete v))))
@@ -74,7 +74,7 @@
         (Vector3.delete local-offset)
         (Vector3.delete world-offset)
         (if (< d rad-val)
-            (let [depth (- rad-val d)
+            (let [depth (min 0.15 (- rad-val d))
                   normal (estimate-sdf-normal world-data &v)]
               (if (= rad-val 0.0)
                   (Array.push-back! contacts (Contact.init depth v normal))
@@ -197,7 +197,7 @@
                         (let [rad @(Sphere.radius s)
                               d (sample-static-world world-data pos)]
                           (when (< d rad)
-                            (let [depth (- rad d)
+                            (let [depth (min 0.15 (- rad d))
                                   normal (estimate-sdf-normal world-data pos)
                                   contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
                               (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))
@@ -294,10 +294,10 @@
                                   rad (if is-bouncy 0.2 0.4)
                                   d (sample-static-world world-data pos)]
                               (when (< d rad)
-                                (let [depth (- rad d)
-                                      normal (estimate-sdf-normal world-data pos)
-                                      contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
-                                  (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))
+                                 (let [depth (min 0.15 (- rad d))
+                                       normal (estimate-sdf-normal world-data pos)
+                                       contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
+                                   (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))
                       _ ())
                     (when (not (Array.empty? &contacts))
                       (let [m (ContactSet.init @(Collidable.handle col1) (get-static-world-handle world) @&contacts)

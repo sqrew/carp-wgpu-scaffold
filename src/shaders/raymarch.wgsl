@@ -741,20 +741,30 @@ struct PointInstance {
            return getInterpolatedFieldsAndColor(p).color;
        }
 
-       fn getVoxelColor(p: vec3<f32>, mat_id: i32) -> vec3<f32> {
-           if (mat_id == 1) {
-               return vec3<f32>(0.22, 0.44, 0.16); // Lush green
-           } else if (mat_id == 2) {
-               return vec3<f32>(0.72, 0.38, 0.22); // Terracotta orange
-           } else if (mat_id == 3) {
-               return vec3<f32>(0.42, 0.42, 0.45); // Stone grey
-           } else if (mat_id == 4) {
-               return vec3<f32>(0.15, 0.35, 0.75); // Water blue
-           } else if (mat_id == 5) {
-               return vec3<f32>(0.76, 0.68, 0.48); // Sand beige
-           }
-           return vec3<f32>(0.4, 0.4, 0.5);
-       }
+        fn getVoxelColor(p: vec3<f32>, mat_id: i32) -> vec3<f32> {
+            if (mat_id == 1) {
+                return vec3<f32>(0.22, 0.44, 0.16); // Lush green
+            } else if (mat_id == 2) {
+                return vec3<f32>(0.72, 0.38, 0.22); // Terracotta orange
+            } else if (mat_id == 3) {
+                return vec3<f32>(0.42, 0.42, 0.45); // Stone grey
+            } else if (mat_id == 4) {
+                return vec3<f32>(0.15, 0.35, 0.75); // Water blue
+            } else if (mat_id == 5) {
+                return vec3<f32>(0.76, 0.68, 0.48); // Sand beige
+            } else if (mat_id == 6) {
+                return vec3<f32>(0.92, 0.94, 0.98); // Snow / Ice
+            } else if (mat_id == 7) {
+                return vec3<f32>(0.08, 0.07, 0.09); // Volcanic Obsidian
+            } else if (mat_id == 8) {
+                return vec3<f32>(0.05, 0.62, 0.54); // Deep Cave Moss
+            } else if (mat_id == 9) {
+                return vec3<f32>(0.55, 0.25, 0.65); // Amethyst Purple Crystal
+            } else if (mat_id == 10) {
+                return vec3<f32>(0.35, 0.25, 0.18); // Clay Brown
+            }
+            return vec3<f32>(0.4, 0.4, 0.5);
+        }
 
       fn getMetaballDist(p: vec3<f32>) -> f32 {
           let p_local = p - u.grid_origin.xyz;
