@@ -22,11 +22,35 @@
   (def cloud-color-b 0.45)
   (def cloud-noise-scale 0.004)
 
-  (defn hash2d [x z]
-    (let [s (Double.sin (+ (* x 12.9898) (* z 78.233)))
-          mult (* s 43758.5453123)]
-      (- mult (Double.floor mult))))
-
+  (deftemplate noise2d-c (Fn [Double Double] Double)
+    "double $NAME(double x, double z)"
+    "$DECL {
+        double fx = floor(x);
+        double fz = floor(z);
+        double tx = x - fx;
+        double tz = z - fz;
+        
+        #define HASH2D(px, pz) ({ \
+            double s = sin((px) * 12.9898 + (pz) * 78.233); \
+            double mult = s * 43758.5453123; \
+            mult - floor(mult); \
+        })
+        
+        double v00 = HASH2D(fx, fz);
+        double v10 = HASH2D(fx + 1.0, fz);
+        double v01 = HASH2D(fx, fz + 1.0);
+        double v11 = HASH2D(fx + 1.0, fz + 1.0);
+        
+        #undef HASH2D
+        
+        double u = tx * tx * (3.0 - 2.0 * tx);
+        double v = tz * tz * (3.0 - 2.0 * tz);
+        
+        double x0 = v00 + u * (v10 - v00);
+        double x1 = v01 + u * (v11 - v01);
+        
+        return x0 + v * (x1 - x0);
+    }")
 
   (defn lerp [a b t]
     (+ a (* t (- b a))))
@@ -35,21 +59,7 @@
     (* (* t t) (- 3.0 (* 2.0 t))))
 
   (defn noise2d [x z]
-    (let [fx (Double.floor x)
-          fz (Double.floor z)
-          tx (- x fx)
-          tz (- z fz)
-          ix (Double.to-int fx)
-          iz (Double.to-int fz)
-          v00 (hash2d (Double.from-int ix) (Double.from-int iz))
-          v10 (hash2d (Double.from-int (inc ix)) (Double.from-int iz))
-          v01 (hash2d (Double.from-int ix) (Double.from-int (inc iz)))
-          v11 (hash2d (Double.from-int (inc ix)) (Double.from-int (inc iz)))
-          u (fade tx)
-          v (fade tz)
-          x0 (lerp v00 v10 u)
-          x1 (lerp v01 v11 u)]
-      (lerp x0 x1 v)))
+    (noise2d-c x z))
 
   (defn fbm2d [x z]
     (let [n1 (noise2d x z)
@@ -88,37 +98,48 @@
           h-mountains (+ (* (rigid-fbm2d (* sx (* 0.01 global-frequency)) (* sz (* 0.01 global-frequency))) mountains-scale) mountains-offset)]
       (+ (* W1 h-plains) (+ (* W2 h-canyons) (* W3 h-mountains)))))
 
-  (defn hash3d [x y z]
-    (let [s (Double.sin (+ (+ (* x 12.9898) (* y 78.233)) (* z 144.7272)))
-          mult (* s 43758.5453123)]
-      (- mult (Double.floor mult))))
+  (deftemplate noise3d-c (Fn [Double Double Double] Double)
+    "double $NAME(double x, double y, double z)"
+    "$DECL {
+        double fx = floor(x);
+        double fy = floor(y);
+        double fz = floor(z);
+        double tx = x - fx;
+        double ty = y - fy;
+        double tz = z - fz;
+        
+        #define HASH3D(px, py, pz) ({ \
+            double s = sin((px) * 12.9898 + (py) * 78.233 + (pz) * 144.7272); \
+            double mult = s * 43758.5453123; \
+            mult - floor(mult); \
+        })
+        
+        double v000 = HASH3D(fx, fy, fz);
+        double v100 = HASH3D(fx + 1.0, fy, fz);
+        double v010 = HASH3D(fx, fy + 1.0, fz);
+        double v110 = HASH3D(fx + 1.0, fy + 1.0, fz);
+        double v001 = HASH3D(fx, fy, fz + 1.0);
+        double v101 = HASH3D(fx + 1.0, fy, fz + 1.0);
+        double v011 = HASH3D(fx, fy + 1.0, fz + 1.0);
+        double v111 = HASH3D(fx + 1.0, fy + 1.0, fz + 1.0);
+        
+        #undef HASH3D
+        
+        double u = tx * tx * (3.0 - 2.0 * tx);
+        double v = ty * ty * (3.0 - 2.0 * ty);
+        double w = tz * tz * (3.0 - 2.0 * tz);
+        
+        double x00 = v000 + u * (v100 - v000);
+        double x10 = v010 + u * (v110 - v010);
+        double x01 = v001 + u * (v101 - v001);
+        double x11 = v011 + u * (v111 - v011);
+        
+        double y0 = x00 + v * (x10 - x00);
+        double y1 = x01 + v * (x11 - x01);
+        
+        return y0 + w * (y1 - y0);
+    }")
 
   (defn noise3d [x y z]
-    (let [fx (Double.floor x)
-          fy (Double.floor y)
-          fz (Double.floor z)
-          tx (- x fx)
-          ty (- y fy)
-          tz (- z fz)
-          ix (Double.to-int fx)
-          iy (Double.to-int fy)
-          iz (Double.to-int fz)
-          v000 (hash3d (Double.from-int ix) (Double.from-int iy) (Double.from-int iz))
-          v100 (hash3d (Double.from-int (inc ix)) (Double.from-int iy) (Double.from-int iz))
-          v010 (hash3d (Double.from-int ix) (Double.from-int (inc iy)) (Double.from-int iz))
-          v110 (hash3d (Double.from-int (inc ix)) (Double.from-int (inc iy)) (Double.from-int iz))
-          v001 (hash3d (Double.from-int ix) (Double.from-int iy) (Double.from-int (inc iz)))
-          v101 (hash3d (Double.from-int (inc ix)) (Double.from-int iy) (Double.from-int (inc iz)))
-          v011 (hash3d (Double.from-int ix) (Double.from-int (inc iy)) (Double.from-int (inc iz)))
-          v111 (hash3d (Double.from-int (inc ix)) (Double.from-int (inc iy)) (Double.from-int (inc iz)))
-          u (fade tx)
-          v (fade ty)
-          w (fade tz)
-          x00 (lerp v000 v100 u)
-          x10 (lerp v010 v110 u)
-          x01 (lerp v001 v101 u)
-          x11 (lerp v011 v111 u)
-          y0 (lerp x00 x10 v)
-          y1 (lerp x01 x11 v)]
-      (lerp y0 y1 w)))
+    (noise3d-c x y z))
 )

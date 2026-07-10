@@ -1136,8 +1136,13 @@
             world (Engine.world e)
             chunks (World.chunks world-data)
             num-chunks (Array.length chunks)
-            lookup-grid (the (Array Bool) (replicate 53361 &false))]
+            lookup-grid (the (Array Bool) (replicate 53361 &false))
+            static-world-sdf (Maybe.Nothing)]
         (do
+          (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf parent-sdf) (set! static-world-sdf (Maybe.Just @parent-sdf))
+              _ ()))
           (for [i 0 num-chunks]
             (let [c (Array.unsafe-nth chunks i)
                   dx (+ @(Chunk.coord-x c) (- 16 cam-qx))
@@ -1219,7 +1224,7 @@
                         qz @(Chunk.coord-z chunk-ref)]
                     (do
                       (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Slice Baking")
-                      (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref world-data current-prog next-prog)
+                      (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref world-data current-prog next-prog &static-world-sdf)
                       (Chunk.set-bake-progress! chunk-ref next-prog)
                       (when (= next-prog res)
                         (do
@@ -1358,29 +1363,34 @@
 
   (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
-      (do
-        (if (Array.empty? craters)
-          (match @(Engine.active-ui-panel e)
-            (Maybe.Just panel-handle)
-              (let [target-handle (the (Handle ()) (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)))
-                    target-pos (Vector3.init 0.0 0.0 0.0)
-                    target-scale 1.0]
-                (do
-                  (ECS.query world [ent (panel UiPanel)]
-                    (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
-                      (set! target-handle @(UiPanel.target panel))))
-                  (ECS.query world [ent (rb RigidBody) (fi FieldInstance)]
-                    (when (= (ECS.Entity.id &ent) (handle-id &target-handle))
-                      (do
-                        (set! target-pos @(RigidBody.position rb))
-                        (set! target-scale @(FieldInstance.scale fi)))))
-                  (let [chunks (World.chunks world-data)
-                        num-chunks (Array.length chunks)]
-                    (for [j 0 num-chunks]
-                      (let [chunk (Array.unsafe-nth chunks j)]
-                        (when (VoxelBaker.chunk-overlaps-sphere? chunk &target-pos (+ target-scale 4.0))
-                          (VoxelBaker.bake-chunk! ctx ren chunk world-data)))))))
-            _ (World.dirty-all-chunks! world-data))
+      (let [static-world-sdf (Maybe.Nothing)]
+        (do
+          (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
+            (match-ref (Collidable.volume col)
+              (Volume.Sdf parent-sdf) (set! static-world-sdf (Maybe.Just @parent-sdf))
+              _ ()))
+          (if (Array.empty? craters)
+            (match @(Engine.active-ui-panel e)
+              (Maybe.Just panel-handle)
+                (let [target-handle (the (Handle ()) (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)))
+                      target-pos (Vector3.init 0.0 0.0 0.0)
+                      target-scale 1.0]
+                  (do
+                    (ECS.query world [ent (panel UiPanel)]
+                      (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
+                        (set! target-handle @(UiPanel.target panel))))
+                    (ECS.query world [ent (rb RigidBody) (fi FieldInstance)]
+                      (when (= (ECS.Entity.id &ent) (handle-id &target-handle))
+                        (do
+                          (set! target-pos @(RigidBody.position rb))
+                          (set! target-scale @(FieldInstance.scale fi)))))
+                    (let [chunks (World.chunks world-data)
+                          num-chunks (Array.length chunks)]
+                      (for [j 0 num-chunks]
+                        (let [chunk (Array.unsafe-nth chunks j)]
+                          (when (VoxelBaker.chunk-overlaps-sphere? chunk &target-pos (+ target-scale 4.0))
+                            (VoxelBaker.bake-chunk! ctx ren chunk world-data &static-world-sdf)))))))
+              _ (World.dirty-all-chunks! world-data))
           (let [chunks (World.chunks world-data)
                 num-chunks (Array.length chunks)
                 num-craters (Array.length craters)
@@ -1417,7 +1427,7 @@
                           (do
                             (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
                             (VoxelBaker.pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res))))))))))
-        (Engine.set-voxel-dirty! e false))))
+        (Engine.set-voxel-dirty! e false)))))
 
   (def field-bake-frame-counter 0)
 

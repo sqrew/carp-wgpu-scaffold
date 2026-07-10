@@ -118,7 +118,7 @@
   (defn build-voxel-grid-gpu! [ctx ren chunk center radius res]
     (run-voxel-action-gpu! ctx ren chunk center radius 1.0 res))
 
-  (defn bake-chunk-slices! [ctx ren chunk world-data start-z end-z]
+  (defn bake-chunk-slices! [ctx ren chunk world-data start-z end-z static-world-sdf]
     (let [voxel-data (Chunk.voxel-data chunk)
           qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
@@ -168,7 +168,7 @@
                       ;; Carve out caves if below terrain height using 3D noise
                       cave-val (if (< terrain-d 0.0)
                                    (noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
-                                   0.0)
+                                    0.0)
                       
                       ;; Compute smooth cave SDF (using optimal 1/0.08 = 12.5 scale factor for correct gradient of 1.0)
                       cave-sdf (if (< terrain-d 0.0)
@@ -178,7 +178,25 @@
                       ;; Combine terrain and cave smoothly
                       voxel-d (if (> cave-sdf terrain-d) cave-sdf terrain-d)
                       
-                      min-d voxel-d
+                      min-d (match-ref static-world-sdf
+                              (Maybe.Just parent-sdf)
+                                (let [d voxel-d
+                                      nodes (SDF.csg-nodes parent-sdf)]
+                                  (do
+                                    (for [i 0 (Array.length nodes)]
+                                      (let [node (Array.unsafe-nth nodes i)
+                                            node-op @(CsgNode.op node)
+                                            child-sdf (Box.peek (CsgNode.shape node))
+                                            child-pos (SDF.position child-sdf)
+                                            diff (Vector3.sub &p child-pos)
+                                            dist-sq (Vector3.mag-sq &diff)]
+                                        (when (= node-op 1)
+                                          (let [d-right (match @(SDF.base child-sdf)
+                                                          (BaseShape.Ball r) (- (sqrt dist-sq) r)
+                                                          _ (SDF.distance-world child-sdf &p))]
+                                            (set! d (smax d (- 0.0 d-right) 2.5))))))
+                                    d))
+                              _ voxel-d)
                       mat-id (if (< min-d 0.0) 1.0f 0.0f)]
                   (do
                     ;; Bake dynamic/static SDF colliders from FieldDatabase
@@ -197,48 +215,56 @@
                         (Array.aset! voxel-data (+ idx 2) 0.0f)
                         (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))))
 
-  (defn compute-chunk-lighting! [chunk res]
-    (let [voxel-data (Chunk.voxel-data chunk)
-          w-dim res
-          h-dim res
-          d-dim res
-          res-sq (* res res)]
-      (do
-        (for [z 0 d-dim]
-          (let [z-offset (* z res-sq)]
-            (for [y 0 h-dim]
-              (let [y-offset (* y res)
-                    zy-offset (+ z-offset y-offset)]
-                (for [x 0 w-dim]
-                  (let [idx (* (+ x zy-offset) 4)
-                        d @(Array.unsafe-nth voxel-data idx)
-                        solid-l (if (>= (dec x) 0) (< @(Array.unsafe-nth voxel-data (* (+ (dec x) zy-offset) 4)) 0.0f) (< d 0.0f))
-                        solid-r (if (< (inc x) res) (< @(Array.unsafe-nth voxel-data (* (+ (inc x) zy-offset) 4)) 0.0f) (< d 0.0f))
-                        solid-d (if (>= (dec y) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res) 4)) 0.0f) (< d 0.0f))
-                        solid-u (if (< (inc y) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res) 4)) 0.0f) (< d 0.0f))
-                        solid-b (if (>= (dec z) 0) (< @(Array.unsafe-nth voxel-data (* (- (+ x zy-offset) res-sq) 4)) 0.0f) (< d 0.0f))
-                        solid-f (if (< (inc z) res) (< @(Array.unsafe-nth voxel-data (* (+ (+ x zy-offset) res-sq) 4)) 0.0f) (< d 0.0f))
-                        
-                        num-solid 0
-                        _1 (when solid-l (set! num-solid (inc num-solid)))
-                        _2 (when solid-r (set! num-solid (inc num-solid)))
-                        _3 (when solid-d (set! num-solid (inc num-solid)))
-                        _4 (when solid-u (set! num-solid (inc num-solid)))
-                        _5 (when solid-b (set! num-solid (inc num-solid)))
-                        _6 (when solid-f (set! num-solid (inc num-solid)))
-                        
-                        ao-val (- 1.0f (* (Float.from-int num-solid) 0.15f))
-                        ao-clamped (if (< ao-val 0.1f) 0.1f (if (> ao-val 1.0f) 1.0f ao-val))
-                        
-                        shadow-val (if solid-u 0.2f 1.0f)]
-                    (do
-                      (Array.aset! voxel-data (+ idx 2) shadow-val)
-                      (Array.aset! voxel-data (+ idx 3) ao-clamped)))))))))))
+  (deftemplate compute-chunk-lighting-c! (Fn [(Ref (Array Float)) Int] ())
+    "void $NAME(Array* voxel_data, int res)"
+    "$DECL {
+        if (!voxel_data || !voxel_data->data) return;
+        int res_sq = res * res;
+        float* data = voxel_data->data;
+        for (int z = 0; z < res; z++) {
+            int z_offset = z * res_sq;
+            for (int y = 0; y < res; y++) {
+                int y_offset = y * res;
+                int zy_offset = z_offset + y_offset;
+                for (int x = 0; x < res; x++) {
+                    int idx = (x + zy_offset) * 4;
+                    float d = data[idx];
+                    
+                    bool solid_l = (x - 1 >= 0)   ? (data[((x - 1) + zy_offset) * 4] < 0.0f) : (d < 0.0f);
+                    bool solid_r = (x + 1 < res)  ? (data[((x + 1) + zy_offset) * 4] < 0.0f) : (d < 0.0f);
+                    bool solid_d = (y - 1 >= 0)   ? (data[(x + z_offset + (y - 1) * res) * 4] < 0.0f) : (d < 0.0f);
+                    bool solid_u = (y + 1 < res)  ? (data[(x + z_offset + (y + 1) * res) * 4] < 0.0f) : (d < 0.0f);
+                    bool solid_b = (z - 1 >= 0)   ? (data[(x + y_offset + (z - 1) * res_sq) * 4] < 0.0f) : (d < 0.0f);
+                    bool solid_f = (z + 1 < res)  ? (data[(x + y_offset + (z + 1) * res_sq) * 4] < 0.0f) : (d < 0.0f);
+                    
+                    int num_solid = 0;
+                    if (solid_l) num_solid++;
+                    if (solid_r) num_solid++;
+                    if (solid_d) num_solid++;
+                    if (solid_u) num_solid++;
+                    if (solid_b) num_solid++;
+                    if (solid_f) num_solid++;
+                    
+                    float ao_val = 1.0f - ((float)num_solid * 0.15f);
+                    if (ao_val < 0.1f) ao_val = 0.1f;
+                    if (ao_val > 1.0f) ao_val = 1.0f;
+                    
+                    float shadow_val = solid_u ? 0.2f : 1.0f;
+                    
+                    data[idx + 2] = shadow_val;
+                    data[idx + 3] = ao_val;
+                }
+            }
+        }
+    }")
 
-  (defn bake-chunk! [ctx ren chunk world-data]
+  (defn compute-chunk-lighting! [chunk res]
+    (compute-chunk-lighting-c! (Chunk.voxel-data chunk) res))
+
+  (defn bake-chunk! [ctx ren chunk world-data static-world-sdf]
     (let [res @(World.voxel-resolution world-data)]
       (do
-        (bake-chunk-slices! ctx ren chunk world-data 0 res)
+        (bake-chunk-slices! ctx ren chunk world-data 0 res static-world-sdf)
         (compute-chunk-lighting! chunk res)
         (let [b @(Chunk.gpu-buffer chunk)]
           (if (WGPU.buffer-null?- b)
@@ -254,12 +280,17 @@
               (pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res)))))))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
-    (let [chunks (World.chunks world-data)]
+    (let [chunks (World.chunks world-data)
+          static-world-sdf (Maybe.Nothing)]
       (do
+        (ECS.query ecs-world [parent-ent (swt StaticWorldTag) (col Collidable)]
+          (match-ref (Collidable.volume col)
+            (Volume.Sdf parent-sdf) (set! static-world-sdf (Maybe.Just @parent-sdf))
+            _ ()))
         (IO.println "BAKING VOXEL GRID (CHUNKED)...")
         (for [i 0 (Array.length chunks)]
           (let [chunk (Array.unsafe-nth chunks i)]
-            (bake-chunk! ctx ren chunk world-data))))))
+            (bake-chunk! ctx ren chunk world-data &static-world-sdf))))))
 
   (defn carve-voxel-grid-cpu! [chunk center radius res cell-size]
     (let [qx @(Chunk.coord-x chunk)
