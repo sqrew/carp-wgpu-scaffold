@@ -573,6 +573,7 @@ struct PointInstance {
             var sum_color = vec3<f32>(0.0);
             var sum_color_w = 0.0;
             var sum_emissive = vec3<f32>(0.0);
+            var light_absorption = 1.0;
             if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
                 let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
                 let cell = grid[idx];
@@ -584,6 +585,18 @@ struct PointInstance {
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
                         let csg_root_idx = i32(round(s_data.color_csg.w));
+                        
+                        // Black hole light absorption
+                        if (csg_root_idx == -10) {
+                            let dist_to_sing = length(p - s_data.pos_scale.xyz);
+                            let singularity_r = raw_w;
+                            let pull_radius = singularity_r * 4.0;
+                            if (dist_to_sing < pull_radius) {
+                                let absorption = clamp((dist_to_sing - singularity_r) / (pull_radius - singularity_r), 0.0, 1.0);
+                                light_absorption = min(light_absorption, absorption);
+                            }
+                        }
+
                         var s = 1.0;
                         if (csg_root_idx <= -99) {
                             s = f32(-99 - csg_root_idx) / 100.0;
@@ -620,7 +633,7 @@ struct PointInstance {
             } else {
                 out.color = vec3<f32>(0.0);
             }
-            out.emissive = sum_emissive;
+            out.emissive = sum_emissive * light_absorption;
             return out;
         }
 
@@ -677,8 +690,8 @@ struct PointInstance {
                 // Temperature View
                 d = clamp(abs(fields.x) / 120.0, 0.0, 1.0) * 0.6;
             } else if (view_mode == 2.0) {
-                // Age View
-                d = clamp(fields.y / 12.0, 0.0, 1.0) * 0.6;
+                // Light Field View
+                d = fields.y * 0.8;
             } else if (view_mode == 3.0) {
                 // Humidity View
                 d = clamp(fields.z / 100.0, 0.0, 1.0) * 0.6;
@@ -698,8 +711,8 @@ struct PointInstance {
                 let norm_t = clamp(abs(fields.x) / 120.0, 0.0, 1.0);
                 return mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
             } else if (view_mode == 2.0) {
-                let norm_age = clamp(fields.y / 12.0, 0.0, 1.0);
-                return mix(vec3<f32>(0.1, 0.9, 0.1), vec3<f32>(0.9, 0.1, 0.9), norm_age);
+                // Golden-white light field visualization
+                return mix(vec3<f32>(0.05, 0.04, 0.02), vec3<f32>(1.0, 0.9, 0.65), fields.y);
             } else if (view_mode == 3.0) {
                 let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
                 return mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
@@ -1415,6 +1428,7 @@ struct PointInstance {
                     }
                     
                     fog_color_accum += local_fog_col * density * dt;
+                    fog_color_accum += interp_data.emissive * dt * 0.45;
                     fog_optical_depth += density * dt;
                     
                     t += dt;
@@ -1503,10 +1517,10 @@ struct PointInstance {
                 let voxel_d = voxel_val.x;
                 let metaball_d = final_metaball_d;
                 let solid_surface_d = select(0.0, voxel_d, hitId == -1.0);
+                let fields = getInterpolatedFields(p);
                 let is_wet = is_metaball || (metaball_d < solid_surface_d + u.grid_dims.w);
 
                 if (is_wet) {
-                    let fields = getInterpolatedFields(p);
                     let temp_factor = clamp(fields.x / 100.0, 0.0, 1.0);
                     let w_speed = u.time * (2.5 + temp_factor * 5.0);
                     let rx = sin(p.x * 10.0 + p.z * 6.0 + w_speed) * cos(p.z * 12.0 - p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
@@ -1635,6 +1649,10 @@ struct PointInstance {
                 }
 
                 var lighting = direct_lighting + ambient + sss * vec3<f32>(0.85, 0.38, 0.22) * clamp(dominant_alt * 5.0, 0.0, 1.0);
+                
+                // Dynamic diffuse Light Field contribution
+                let light_field_val = fields.y;
+                lighting += vec3<f32>(1.0, 0.92, 0.72) * light_field_val * 1.6;
 
                 // Determine the base terrain color at p using dynamic biome blending
                 let mat_id = i32(round(voxel_val.y));

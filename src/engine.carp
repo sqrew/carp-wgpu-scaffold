@@ -196,7 +196,7 @@
           pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
           vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
           temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
-          age-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
+          light-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
           hum-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 2) FieldKernelStorage.sample FieldKernelStorage.update)
           ch-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
           grav-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)
@@ -234,7 +234,7 @@
             pres-field
             vel-field
             temp-field
-            age-field
+            light-field
             hum-field
             ch-field
             grav-field
@@ -317,7 +317,7 @@
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)
           temp-field (Engine.temperature-field e)
-          age-field (Engine.age-field e)
+          light-field (Engine.light-field e)
           hum-field (Engine.humidity-field e)
           ch-field (Engine.charge-field e)
           grav-field (Engine.gravity-field e)]
@@ -328,8 +328,8 @@
         (FieldKernelStorageVector.set-grid-ptr! (Field.storage vel-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage temp-field) db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage temp-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage age-field) db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage age-field) grid-ptr)
+        (FieldKernelStorage.set-db-ptr! (Field.storage light-field) db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage light-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage hum-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage ch-field) db-ptr)
@@ -939,7 +939,7 @@
                       (Maybe.Just sdf) (SDF.set-scale! sdf @(FieldInstance.scale fi))
                       _ ())))
                 (FieldDatabase.set-scalar-by-name! db h "temperature" @(FieldInstance.temperature fi))
-                (FieldDatabase.set-scalar-by-name! db h "age" @(FieldInstance.age fi))
+                (FieldDatabase.set-scalar-by-name! db h "light" @(FieldInstance.age fi))
                 (FieldDatabase.set-scalar-by-name! db h "humidity" @(FieldInstance.humidity fi))
                 (FieldDatabase.set-scalar-by-name! db h "pressure" @(FieldInstance.pressure fi))
                 (FieldDatabase.set-scalar-by-name! db h "charge" @(FieldInstance.charge fi))
@@ -1097,7 +1097,7 @@
                     rad-scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
                     c-val (Array.unsafe-nth (FieldDatabase.colors db) id)
                     temp (FieldDatabase.get-entity-scalar db 0 id)
-                    age (FieldDatabase.get-entity-scalar db 1 id)
+                    light (FieldDatabase.get-entity-scalar db 1 id)
                     humidity (FieldDatabase.get-entity-scalar db 2 id)
                     pressure (FieldDatabase.get-entity-scalar db 3 id)
                     final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
@@ -1116,7 +1116,7 @@
                   (Array.aset! u-data (+ base 10) (Double.to-float @(Vector3.z c-val)))
                   (Array.aset! u-data (+ base 11) (Double.to-float (Double.from-int final-csg-idx)))
                   (Array.aset! u-data (+ base 12) (Double.to-float temp))
-                  (Array.aset! u-data (+ base 13) (Double.to-float age))
+                  (Array.aset! u-data (+ base 13) (Double.to-float light))
                   (Array.aset! u-data (+ base 14) (Double.to-float humidity))
                   (Array.aset! u-data (+ base 15) (Double.to-float pressure))))))))))
 

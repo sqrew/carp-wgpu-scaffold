@@ -102,7 +102,7 @@
   (sig noop-update (Fn [(Ptr ()) Double] ()))
   (sig diffuse-temperature! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-humidity! (Fn [(Ptr ()) Double] ()))
-  (sig tick-age! (Fn [(Ptr ()) Double] ()))
+  (sig diffuse-light! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-pressure! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-charge! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-density! (Fn [(Ptr ()) Double] ()))
@@ -274,16 +274,41 @@
         (for [i 0 num-entities]
           (Array.aset! charge-arr i @(Array.unsafe-nth &new-chgs i))))))
 
-  (defn tick-age! [db-ptr dt]
+  (defn diffuse-light! [db-ptr dt]
     (let [db (voidptr->db-ref db-ptr)
           active-arr (FieldDatabase.active db)
           num-entities (Array.length active-arr)
-          age-slot 1
-          age-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) age-slot)]
-      (for [i 0 num-entities]
-        (when @(Array.unsafe-nth active-arr i)
-          (let [curr-age @(Array.unsafe-nth age-arr i)]
-            (Array.aset! age-arr i (+ curr-age dt)))))))
+          light-slot 1
+          light-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) light-slot)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)
+          diffusion-rate 0.7
+          new-lights (Array.copy light-arr)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [l-i @(Array.unsafe-nth light-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  decay-rate 0.15
+                  ambient-light 0.0
+                  delta-light (* (- ambient-light l-i) (* decay-rate dt))]
+              (do
+                (for [j 0 num-entities]
+                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                    (let [l-j @(Array.unsafe-nth light-arr j)
+                          pos-j (Array.unsafe-nth positions j)
+                          scale-j @(Array.unsafe-nth scales j)
+                          to-j (Vector3.sub pos-j pos-i)
+                          dist (Vector3.mag &to-j)
+                          max-dist (+ scale-i scale-j)]
+                      (when (< dist max-dist)
+                        (let [factor (- 1.0 (/ dist max-dist))
+                              transfer (* (* (- l-j l-i) factor) dt)]
+                          (set! delta-light (+ delta-light (* transfer diffusion-rate))))))))
+                (Array.aset! &new-lights i (Double.clamp 0.0 1.0 (+ l-i delta-light)))))))
+        (for [i 0 num-entities]
+          (Array.aset! light-arr i @(Array.unsafe-nth &new-lights i))))))
 
   (defn diffuse-density! [db-ptr dt]
     (let [db (voidptr->db-ref db-ptr)

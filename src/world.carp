@@ -65,7 +65,7 @@
           db (FieldDatabase.new)]
       (do
         (ignore (FieldDatabase.register-kernel! &db @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!))
-        (ignore (FieldDatabase.register-kernel! &db @"age" 0.0 0.0 100.0 FieldDatabase.tick-age!))
+        (ignore (FieldDatabase.register-kernel! &db @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!))
         (ignore (FieldDatabase.register-kernel! &db @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!))
         (ignore (FieldDatabase.register-kernel! &db @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!))
         (ignore (FieldDatabase.register-kernel! &db @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!))
