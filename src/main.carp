@@ -305,6 +305,19 @@
                       (Maybe.Nothing) ())
                     (Context.tooltip gui-ctx-ref "Amplitude multiplier per fractal octave.")))
 
+                (let [vt (Double.to-float WGPURenderer.voxel-cleanup-threshold)]
+                  (do
+                    (match (Context.slider gui-ctx-ref "cleanup_threshold_slider" vt 0.0f 0.99f (copy "Voxel Cleanup %"))
+                      (Maybe.Just nv)
+                        (do
+                          (set! WGPURenderer.voxel-cleanup-threshold (Double.from-float nv))
+                          (set! WGPURenderer.cache-initialized false)
+                          (World.dirty-all-chunks! (Engine.world-data eng-ref))
+                          (Engine.set-voxel-dirty! eng-ref true)
+                          (Engine.set-grid-dirty! eng-ref true))
+                      (Maybe.Nothing) ())
+                    (Context.tooltip gui-ctx-ref "Auto-delete threshold for voxels with very small solid thicknesses.")))
+
                 (when (Context.button gui-ctx-ref "reset_terrain_btn" (copy "Reset Terrain Config"))
                   (do
                     (set! WGPURenderer.plains-scale 12.0)
@@ -317,11 +330,12 @@
                     (set! WGPURenderer.global-frequency 1.0)
                     (set! WGPURenderer.lacunarity 2.0)
                     (set! WGPURenderer.gain 0.5)
+                    (set! WGPURenderer.voxel-cleanup-threshold 0.05)
                     (set! WGPURenderer.cache-initialized false)
                     (World.dirty-all-chunks! (Engine.world-data eng-ref))
                     (Engine.set-voxel-dirty! eng-ref true)
                     (Engine.set-grid-dirty! eng-ref true)))
-                (Context.tooltip gui-ctx-ref "Reset all terrain noise parameters to defaults.")
+                (Context.tooltip gui-ctx-ref "Reset all terrain parameters to defaults.")
 
                 (when (Context.button gui-ctx-ref "rebake_terrain_btn" (copy "Rebake/Regen Terrain"))
                   (do
@@ -836,7 +850,16 @@
                                         title (str* "Carp WGPU Game Scaffold | FPS: " (Double.str fps))]
                                     (GLFW.set-window-title win (String.cstr &title))))))))))))
 
-                  (println* "Shutting down...")
-                  (Diagnostics.print-stats! (Engine.diagnostics &eng))
+                  (let [world-data (Engine.world-data &eng)
+                        c-stats (World.cache-stats world-data)
+                        queries @(Array.unsafe-nth c-stats 0)
+                        hits @(Array.unsafe-nth c-stats 1)
+                        rate (if (> queries 0) (* (/ (Double.from-int hits) (Double.from-int queries)) 100.0) 0.0)
+                        cache-log-msg (str* "Voxel Cache Stats | Queries: " (Int.str queries)
+                                            " | Hits: " (Int.str hits)
+                                            " | Hit Rate: " (Double.str rate) "%\n")]
+                    (do
+                      (Diagnostics.log! (Engine.diagnostics &eng) (LogLevel.Info) &cache-log-msg)
+                      (Diagnostics.print-stats! (Engine.diagnostics &eng))))
                   (Init.destroy-app app)
                   0)))))))

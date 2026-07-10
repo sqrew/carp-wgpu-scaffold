@@ -36,6 +36,7 @@
   cache-idx (Array Int)
   modified-chunks (Array Chunk)
   voxel-resolution Int
+  cache-stats (Array Int)
 ])
 
 (defmodule World
@@ -72,7 +73,7 @@
         (ignore (FieldDatabase.register-kernel! &db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update))
         (ignore (FieldDatabase.register-kernel! &db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!))
         (ignore (FieldDatabase.register-kernel! &db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!))
-        (World.init db origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res))))
+        (World.init db origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res (the (Array Int) [0 0])))))
 
   (defn init-gpu-buffers! [ctx world-data]
     (let [chunks (World.chunks world-data)
@@ -165,15 +166,19 @@
           lz (- gz (* qz res))
           chunks (World.chunks world)
           found-idx -1
-          hash-idx (Int.mod (Int.abs (+ qx (+ (* qy 3) (* qz 9)))) 64)]
+          hash-idx (Int.mod (Int.abs (+ qx (+ (* qy 3) (* qz 9)))) 64)
+          stats (World.cache-stats world)]
       (do
+        (Array.aset! stats 0 (inc @(Array.unsafe-nth stats 0)))
         (let [cached-qx @(Array.unsafe-nth (World.cache-qx world) hash-idx)
               cached-qy @(Array.unsafe-nth (World.cache-qy world) hash-idx)
               cached-qz @(Array.unsafe-nth (World.cache-qz world) hash-idx)]
           (if (and (= qx cached-qx)
                    (and (= qy cached-qy)
                         (= qz cached-qz)))
-               (set! found-idx @(Array.unsafe-nth (World.cache-idx world) hash-idx))
+               (do
+                 (Array.aset! stats 1 (inc @(Array.unsafe-nth stats 1)))
+                 (set! found-idx @(Array.unsafe-nth (World.cache-idx world) hash-idx)))
                ()))
         (when (= found-idx -1)
           (let [len (Array.length chunks)

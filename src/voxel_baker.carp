@@ -135,8 +135,26 @@
           chunk-center (Vector3.init (+ ox 16.0) (+ oy 16.0) (+ oz 16.0))
           chunk-radius 28.0
           active-arr (FieldDatabase.active db)
-          num-active (Array.length active-arr)]
+          num-active (Array.length active-arr)
+          active-craters (the (Array Int) [])]
       (do
+        (match-ref static-world-sdf
+          (Maybe.Just parent-sdf)
+            (let [nodes (SDF.csg-nodes parent-sdf)]
+              (for [i 0 (Array.length nodes)]
+                (let [node (Array.unsafe-nth nodes i)
+                      node-op @(CsgNode.op node)
+                      child-sdf (Box.peek (CsgNode.shape node))]
+                  (when (= node-op 1)
+                    (let [child-pos (SDF.position child-sdf)
+                          r (match @(SDF.base child-sdf)
+                              (BaseShape.Ball ball-r) ball-r
+                              _ 1.0)
+                          diff (Vector3.sub &chunk-center child-pos)
+                          dist (Vector3.mag &diff)]
+                      (when (<= dist (+ chunk-radius (+ r 2.5)))
+                        (Array.push-back! &active-craters i)))))))
+          _ ())
         (for [i 0 num-active]
           (when @(Array.unsafe-nth active-arr i)
             (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)]
@@ -180,22 +198,23 @@
                       
                       min-d (match-ref static-world-sdf
                               (Maybe.Just parent-sdf)
-                                (let [d voxel-d
-                                      nodes (SDF.csg-nodes parent-sdf)]
-                                  (do
-                                    (for [i 0 (Array.length nodes)]
-                                      (let [node (Array.unsafe-nth nodes i)
-                                            node-op @(CsgNode.op node)
-                                            child-sdf (Box.peek (CsgNode.shape node))
-                                            child-pos (SDF.position child-sdf)
-                                            diff (Vector3.sub &p child-pos)
-                                            dist-sq (Vector3.mag-sq &diff)]
-                                        (when (= node-op 1)
-                                          (let [d-right (match @(SDF.base child-sdf)
-                                                          (BaseShape.Ball r) (- (sqrt dist-sq) r)
-                                                          _ (SDF.distance-world child-sdf &p))]
-                                            (set! d (smax d (- 0.0 d-right) 2.5))))))
-                                    d))
+                                (if (Array.empty? &active-craters)
+                                    voxel-d
+                                    (let [d voxel-d
+                                          nodes (SDF.csg-nodes parent-sdf)]
+                                      (do
+                                        (for [i 0 (Array.length &active-craters)]
+                                          (let [node-idx @(Array.unsafe-nth &active-craters i)
+                                                node (Array.unsafe-nth nodes node-idx)
+                                                child-sdf (Box.peek (CsgNode.shape node))
+                                                child-pos (SDF.position child-sdf)
+                                                r (match @(SDF.base child-sdf)
+                                                    (BaseShape.Ball ball-r) ball-r
+                                                    _ 1.0)
+                                                dist (Vector3.dist &p child-pos)
+                                                d-right (- dist r)]
+                                            (set! d (smax d (- 0.0 d-right) 2.5))))
+                                        d)))
                               _ voxel-d)
                       mat-id (if (< min-d 0.0) 1.0f 0.0f)]
                   (do
@@ -208,10 +227,14 @@
                           (set! min-d scene-d)
                           (when (> scene-mat 0.0)
                             (set! mat-id (Double.to-float scene-mat))))))
-                    (let [idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
+                    (let [min-d-clean (if (and (< min-d 0.0) (> min-d (- 0.0 (* WGPURenderer.voxel-cleanup-threshold cell-size))))
+                                          (* WGPURenderer.voxel-cleanup-threshold cell-size)
+                                          min-d)
+                          mat-id-clean (if (< min-d-clean 0.0) mat-id 0.0f)
+                          idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
                       (do
-                        (Array.aset! voxel-data idx (Double.to-float min-d))
-                        (Array.aset! voxel-data (+ idx 1) mat-id)
+                        (Array.aset! voxel-data idx (Double.to-float min-d-clean))
+                        (Array.aset! voxel-data (+ idx 1) mat-id-clean)
                         (Array.aset! voxel-data (+ idx 2) 0.0f)
                         (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))))
 
