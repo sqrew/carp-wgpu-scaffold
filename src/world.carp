@@ -161,9 +161,9 @@
           qx (Double.to-int (Double.floor (/ (Double.from-int gx) res-d)))
           qy (Double.to-int (Double.floor (/ (Double.from-int gy) res-d)))
           qz (Double.to-int (Double.floor (/ (Double.from-int gz) res-d)))
-          lx (- gx (* qx res))
-          ly (- gy (* qy res))
-          lz (- gz (* qz res))
+          lx (clamp 0 (dec res) (- gx (* qx res)))
+          ly (clamp 0 (dec res) (- gy (* qy res)))
+          lz (clamp 0 (dec res) (- gz (* qz res)))
           chunks (World.chunks world)
           found-idx -1
           hash-idx (Int.mod (Int.abs (+ qx (+ (* qy 3) (* qz 9)))) 64)

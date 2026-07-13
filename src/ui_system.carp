@@ -7,8 +7,8 @@
   (use Ray)
 
   (defn get-cursor-ray [cam mx my sw sh]
-    (let [ndc-x (- (* 2.0 (/ mx sw)) 1.0)
-          ndc-y (- 1.0 (* 2.0 (/ my sh)))
+    (let [ndc-x (if (> sw 0.0) (- (* 2.0 (/ mx sw)) 1.0) 0.0)
+          ndc-y (if (> sh 0.0) (- 1.0 (* 2.0 (/ my sh))) 0.0)
           fov @(Camera.fov cam)
           aspect @(Camera.aspect cam)
           half-h (tan (* fov 0.00872664625))
