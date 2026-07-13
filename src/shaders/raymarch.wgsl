@@ -1670,7 +1670,22 @@ struct PointInstance {
                 lighting += vec3<f32>(1.0, 0.92, 0.72) * light_field_val * 1.6;
 
                 // Determine the base terrain color at p using dynamic biome blending
-                let mat_id = i32(round(voxel_val.y));
+                let inside_p = p - normal * 0.4;
+                let inside_voxel_val = sampleVoxelGrid(inside_p, false);
+                var mat_id = i32(round(inside_voxel_val.y));
+                if (mat_id < 11 || mat_id > 14) {
+                    let raw_mat = i32(round(voxel_val.y));
+                    if (raw_mat >= 11 && raw_mat <= 14) {
+                        mat_id = raw_mat;
+                    } else {
+                        let deeper_p = p - normal * 0.8;
+                        let deeper_voxel_val = sampleVoxelGrid(deeper_p, false);
+                        let deeper_mat = i32(round(deeper_voxel_val.y));
+                        if (deeper_mat >= 11 && deeper_mat <= 14) {
+                            mat_id = deeper_mat;
+                        }
+                    }
+                }
                 var terr_col = vec3<f32>(0.4, 0.4, 0.5);
                 var custom_glow = vec3<f32>(0.0);
                 var custom_specular_mult = 1.0;
