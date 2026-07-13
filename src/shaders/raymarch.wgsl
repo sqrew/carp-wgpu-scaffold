@@ -333,7 +333,12 @@ struct PointInstance {
                 let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
                 tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
                 tex_val.r = min(tex_val.r, 1.5);
-                best_mat = round(tex_val.g);
+                let closest_lx = i32(round(local_pos.x));
+                let closest_ly = i32(round(local_pos.y));
+                let closest_lz = i32(round(local_pos.z));
+                let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + closest_lx, (slot_y * {{VOXEL_RES}}i) + closest_ly, (slot_z * {{VOXEL_RES}}i) + closest_lz);
+                let raw_val = textureLoad(voxel_texture, atlas_coord, 0);
+                best_mat = raw_val.g;
             } else {
                v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
                v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);

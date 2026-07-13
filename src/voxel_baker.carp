@@ -218,7 +218,8 @@
                                                d-right (- dist r)]
                                            (set! d (smax d (- 0.0 d-right) 2.5))))
                                        d)))
-                      mat-id-built 0.0f
+                      closest-m 0.0f
+                      min-build-dist 999999.0
                       min-d (if (Array.empty? &build-radii)
                                 carved-d
                                 (let [d carved-d
@@ -231,10 +232,15 @@
                                             dist (Vector3.dist &p child-pos)
                                             d-right (- dist r)]
                                         (do
-                                          (when (< d-right 0.0)
-                                            (set! mat-id-built (Double.to-float m)))
-                                          (set! d (smin d d-right 2.5)))))
+                                          (when (< d-right min-build-dist)
+                                            (do
+                                              (set! min-build-dist d-right)
+                                              (set! closest-m (Double.to-float m))))
+                                          (set! d (if (< d d-right) d d-right)))))
                                     d)))
+                      mat-id-built (if (< min-build-dist 0.0)
+                                       closest-m
+                                       0.0f)
                       mat-id (if (> mat-id-built 0.0f)
                                  mat-id-built
                                  (if (< min-d 0.0)
@@ -455,11 +461,13 @@
                             dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
                             sphere-dist (- dist-to-sphere-center radius)
                             old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
-                            new-dist (smin old-dist sphere-dist 2.5)]
+                            new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
                         (do
                           (Array.aset! voxel-data idx-full (Double.to-float new-dist))
-                          (when (< sphere-dist 0.0)
-                            (Array.aset! voxel-data (+ idx-full 1) (Double.to-float mat-id)))))))))))))))
+                          (let [m-id (if (< sphere-dist 0.0)
+                                         (Double.to-float mat-id)
+                                         @(Array.unsafe-nth voxel-data (+ idx-full 1)))]
+                            (Array.aset! voxel-data (+ idx-full 1) m-id))))))))))))))
 
   (defn pack-and-copy-fields-chunk! [ctx ren slot]
     (let [f-scratch-b @(WGPURenderer.fields-scratch-buffer ren)

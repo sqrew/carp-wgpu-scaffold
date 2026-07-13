@@ -49,8 +49,8 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let new_dist = smax(old_dist, neg_crater_dist, 2.5);
         val.x = new_dist;
     } else {
-        // Build (using smin to match CPU)
-        let new_dist = smin(old_dist, crater_dist, 2.5);
+        // Build (hard union, no blending)
+        let new_dist = min(old_dist, crater_dist);
         val.x = new_dist;
         if (crater_dist < 0.0) {
             val.y = op;
