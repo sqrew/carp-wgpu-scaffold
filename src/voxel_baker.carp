@@ -136,7 +136,12 @@
           chunk-radius 28.0
           active-arr (FieldDatabase.active db)
           num-active (Array.length active-arr)
-          active-craters (the (Array Int) [])]
+          crater-positions (the (Array (Vector3 Double)) [])
+          crater-radii (the (Array Double) [])
+          max-scale (if (> WGPURenderer.plains-scale WGPURenderer.canyons-scale)
+                        (if (> WGPURenderer.plains-scale WGPURenderer.mountains-scale) WGPURenderer.plains-scale WGPURenderer.mountains-scale)
+                        (if (> WGPURenderer.canyons-scale WGPURenderer.mountains-scale) WGPURenderer.canyons-scale WGPURenderer.mountains-scale))
+          safety-factor-scaled (* 0.55 (/ 1.0 (+ 1.0 (* max-scale (* WGPURenderer.global-frequency 0.015)))))]
       (do
         (match-ref static-world-sdf
           (Maybe.Just parent-sdf)
@@ -153,7 +158,10 @@
                           diff (Vector3.sub &chunk-center child-pos)
                           dist (Vector3.mag &diff)]
                       (when (<= dist (+ chunk-radius (+ r 2.5)))
-                        (Array.push-back! &active-craters i)))))))
+                        (do
+                          (Array.push-back! &crater-positions @child-pos)
+                          (Array.push-back! &crater-radii r)
+                          ())))))))
           _ ())
         (for [i 0 num-active]
           (when @(Array.unsafe-nth active-arr i)
@@ -177,11 +185,7 @@
                       p (Vector3.init px py pz)
                       
                       raw-terrain-d (- py final-h)
-                      max-scale (if (> WGPURenderer.plains-scale WGPURenderer.canyons-scale)
-                                    (if (> WGPURenderer.plains-scale WGPURenderer.mountains-scale) WGPURenderer.plains-scale WGPURenderer.mountains-scale)
-                                    (if (> WGPURenderer.canyons-scale WGPURenderer.mountains-scale) WGPURenderer.canyons-scale WGPURenderer.mountains-scale))
-                      safety-factor (/ 1.0 (+ 1.0 (* max-scale (* WGPURenderer.global-frequency 0.015))))
-                      terrain-d (* raw-terrain-d (* 0.55 safety-factor))
+                      terrain-d (* raw-terrain-d safety-factor-scaled)
                       
                       ;; Carve out caves if below terrain height using 3D noise
                       cave-val (if (< terrain-d 0.0)
@@ -196,26 +200,18 @@
                       ;; Combine terrain and cave smoothly
                       voxel-d (if (> cave-sdf terrain-d) cave-sdf terrain-d)
                       
-                      min-d (match-ref static-world-sdf
-                              (Maybe.Just parent-sdf)
-                                (if (Array.empty? &active-craters)
-                                    voxel-d
-                                    (let [d voxel-d
-                                          nodes (SDF.csg-nodes parent-sdf)]
-                                      (do
-                                        (for [i 0 (Array.length &active-craters)]
-                                          (let [node-idx @(Array.unsafe-nth &active-craters i)
-                                                node (Array.unsafe-nth nodes node-idx)
-                                                child-sdf (Box.peek (CsgNode.shape node))
-                                                child-pos (SDF.position child-sdf)
-                                                r (match @(SDF.base child-sdf)
-                                                    (BaseShape.Ball ball-r) ball-r
-                                                    _ 1.0)
-                                                dist (Vector3.dist &p child-pos)
-                                                d-right (- dist r)]
-                                            (set! d (smax d (- 0.0 d-right) 2.5))))
-                                        d)))
-                              _ voxel-d)
+                      min-d (if (Array.empty? &crater-radii)
+                                voxel-d
+                                (let [d voxel-d
+                                      num-craters (Array.length &crater-radii)]
+                                  (do
+                                    (for [i 0 num-craters]
+                                      (let [child-pos (Array.unsafe-nth &crater-positions i)
+                                            r @(Array.unsafe-nth &crater-radii i)
+                                            dist (Vector3.dist &p child-pos)
+                                            d-right (- dist r)]
+                                        (set! d (smax d (- 0.0 d-right) 2.5))))
+                                    d)))
                       mat-id (if (< min-d 0.0)
                                  (if (> py 15.0)
                                      6.0f
