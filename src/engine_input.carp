@@ -46,7 +46,8 @@
       (InputManager.add-binding! mgr "CycleShadowQuality" (InputSource.Key GLFW.Keycode.O) 1.0)
       (InputManager.add-binding! mgr "ToggleVolumetricSdf" (InputSource.Key GLFW.Keycode.V) 1.0)
       (InputManager.add-binding! mgr "ToggleChunkLoading" (InputSource.Key GLFW.Keycode.L) 1.0)
-      (InputManager.add-binding! mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)))
+      (InputManager.add-binding! mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)
+      (InputManager.add-binding! mgr "CycleMaterial" (InputSource.Key GLFW.Keycode.K) 1.0)))
 
   (sig tick-settings-input! (Fn [(Ref Engine.Engine) (Ref InputManager)] ()))
   (defn tick-settings-input! [e mgr]
@@ -127,7 +128,22 @@
         (let [curr @(Engine.chunk-loading-enabled e)]
           (do
             (Engine.set-chunk-loading-enabled! e (not curr))
-            (IO.println (if curr "Background chunk loading DISABLED" "Background chunk loading ENABLED")))))))
+            (IO.println (if curr "Background chunk loading DISABLED" "Background chunk loading ENABLED")))))
+      (when (InputManager.action-pressed? mgr "CycleMaterial")
+        (let [curr @(Engine.selected-material e)
+              next (if (= curr 2.0) 11.0
+                   (if (= curr 11.0) 12.0
+                   (if (= curr 12.0) 13.0
+                   (if (= curr 13.0) 14.0
+                   2.0))))]
+          (do
+            (Engine.set-selected-material! e next)
+            (IO.println &(str* "Selected Build Material: "
+              (if (= next 2.0) "Natural Biome Green"
+              (if (= next 11.0) "Glowing Neon Cyan"
+              (if (= next 12.0) "Shiny Gold / Brass"
+              (if (= next 13.0) "Pulsating Lava Crimson"
+              "Dark Obsidian")))))))))))
 
   (sig tick-gameplay-input! (Fn [(Ref Engine.Engine) (Ref InputManager) Double (Ref RigidBody) (Ref RotationState) Double] ()))
   (defn tick-gameplay-input! [e mgr dt p-rb p-rot p-scale]

@@ -241,10 +241,11 @@
                               _ ()))
                           r))
                 rad (* p-rad 1.5)
-                crater-data (CraterSpawnData.init @hit-p rad 1.0)
+                mat-id @(Engine.selected-material e)
+                crater-data (CraterSpawnData.init @hit-p rad mat-id)
                 ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
             (do
-              (IO.println &(str* "Build hit at " &(Vector3.str hit-p) ", building sphere of radius " &(Double.str rad)))
+              (IO.println &(str* "Build hit at " &(Vector3.str hit-p) ", building sphere of radius " &(Double.str rad) " with material ID " &(Double.str mat-id)))
               (Coordinator.dispatch! (Engine.coordinator e) ev)))
           (IO.println "Build missed!"))))
 

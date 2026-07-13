@@ -88,11 +88,12 @@
             (the String @"")
             (the String @"")
             (the String @"")
-            cfg)))))
+            cfg
+            2.0)))))
 
 
-  (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))
-  (defn spawn-crater! [e pos rad existing-crater]
+  (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double Int (Maybe (Handle ()))] (Maybe (Handle ()))))
+  (defn spawn-crater! [e pos rad op existing-crater]
     (let [world (Engine.world e)
           result existing-crater]
       (do
@@ -135,10 +136,10 @@
                           (when (>= (Array.length &child-handles) 64)
                             (let [oldest-handle (Array.unsafe-nth &child-handles 0)
                                   oldest-ent (ECS.Entity.init @oldest-handle)]
-                              (GameWorld.destroy-entity! world &oldest-ent)))
+                               (GameWorld.destroy-entity! world &oldest-ent)))
                           (let [child-ent (GameWorld.create-entity! world)
                                 parent-comp (Parent.init @parent-handle)
-                                csg-comp (CsgNode.init (Box.init (SDF.init-sphere rad local-pos (Quaternion.identity))) 1)]
+                                csg-comp (CsgNode.init (Box.init (SDF.init-sphere rad local-pos (Quaternion.identity))) op)]
                             (do
                               (ECS.add-component! world &child-ent parent-comp)
                               (ECS.add-component! world &child-ent csg-comp)
@@ -197,16 +198,18 @@
                       rad @(CraterSpawnData.radius data)
                       op @(CraterSpawnData.op-type data)]
                   (do
-                    (if (< op 0.5)
+                    (if (= op 0.0)
                       (do
                         (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos rad 800.0 120.0 30.0)
                         (Engine.set-voxel-dirty! e true))
-                      (if (< op 1.5)
-                        (let [build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4))]
-                           (Array.push-back! (Engine.growing-builds e) build))
+                      (if (< op 0.0)
                         (do
                           (ExplosionSystem.spawn-implosion! (Engine.world e) (Engine.db e) pos rad -1200.0 -40.0 -80.0)
-                          (Engine.set-voxel-dirty! e true))))
+                          (Engine.set-voxel-dirty! e true))
+                        (let [op-int (Double.to-int op)
+                              c-handle (Engine.spawn-crater! e @pos 0.05 op-int (Maybe.Nothing))
+                              build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4) op c-handle)]
+                           (Array.push-back! (Engine.growing-builds e) build))))
                     (Result.Success ())))
               _ (Result.Success ()))
           _ (Result.Success ())))))
@@ -250,15 +253,19 @@
                     curr @(GrowingBuild.current-radius &gb)
                     target @(GrowingBuild.target-radius &gb)
                     speed @(GrowingBuild.speed &gb)
+                    mat-id @(GrowingBuild.material-id &gb)
+                    c-h (GrowingBuild.crater-handle &gb)
                     new-r (+ curr (* speed dt))]
                 (if (< new-r target)
-                    (let [updated-gb (GrowingBuild.init @pos new-r target speed)
-                          crater-data (CraterSpawnData.init @pos new-r 1.0)]
+                    (let [new-h (Engine.spawn-crater! e @pos new-r (Double.to-int mat-id) @c-h)
+                          updated-gb (GrowingBuild.init @pos new-r target speed mat-id new-h)
+                          crater-data (CraterSpawnData.init @pos new-r mat-id)]
                       (do
                         (Array.push-back! &keep-gb updated-gb)
                         (Array.push-back! (Engine.craters e) crater-data)
                         (Engine.set-voxel-dirty! e true)))
-                    (let [crater-data (CraterSpawnData.init @pos target 1.0)]
+                    (let [new-h (Engine.spawn-crater! e @pos target (Double.to-int mat-id) @c-h)
+                          crater-data (CraterSpawnData.init @pos target mat-id)]
                       (do
                         (Array.push-back! (Engine.craters e) crater-data)
                         (Engine.set-voxel-dirty! e true))))))
@@ -929,14 +936,14 @@
                       (when (VoxelBaker.chunk-overlaps-sphere? chunk pos rad)
                         (do
                           (Diagnostics.start-zone! diag "Bake: Carve CPU")
-                          (if (< op 0.5)
+                          (if (= op 0.0)
                               (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad res cell-size)
-                              (VoxelBaker.build-voxel-grid-cpu! chunk pos rad res cell-size))
+                              (VoxelBaker.build-voxel-grid-cpu! chunk pos rad res cell-size op))
                           (Diagnostics.end-zone! diag "Bake: Carve CPU")
                           (Diagnostics.start-zone! diag "Bake: Carve GPU")
-                          (if (< op 0.5)
+                          (if (= op 0.0)
                               (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad res)
-                              (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res))
+                              (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res op))
                           (Diagnostics.end-zone! diag "Bake: Carve GPU")
                           (Chunk.set-modified! chunk true)
                           (set! overlapped true)))))

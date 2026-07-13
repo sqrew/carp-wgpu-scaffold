@@ -122,6 +122,14 @@
             cam-pos (Camera.pos cam)
             pos-str (str* "Pos: " (Double.str @(Vector3.x cam-pos)) ", " (Double.str @(Vector3.y cam-pos)) ", " (Double.str @(Vector3.z cam-pos)))]
         (Context.label gui-ctx-ref pos-str))
+      (let [mat-id @(Engine.selected-material eng-ref)
+            mat-name (if (= mat-id 2.0) "Natural Biome Green"
+                     (if (= mat-id 11.0) "Glowing Neon Cyan"
+                     (if (= mat-id 12.0) "Shiny Gold / Brass"
+                     (if (= mat-id 13.0) "Pulsating Lava Crimson"
+                     "Dark Obsidian"))))
+            mat-str (str* "Build Mat [K]: " mat-name)]
+        (Context.label gui-ctx-ref mat-str))
       (Gui.separator gui-ctx-ref)
 
       ;; Tab Selector buttons

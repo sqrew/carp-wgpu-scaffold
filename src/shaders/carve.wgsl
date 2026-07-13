@@ -53,7 +53,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         let new_dist = smin(old_dist, crater_dist, 2.5);
         val.x = new_dist;
         if (crater_dist < 0.0) {
-            val.y = 2.0; // Green material ID
+            val.y = op;
         }
     }
 

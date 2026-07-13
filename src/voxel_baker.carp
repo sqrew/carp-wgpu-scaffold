@@ -115,8 +115,8 @@
   (defn carve-voxel-grid-gpu! [ctx ren chunk center radius res]
     (run-voxel-action-gpu! ctx ren chunk center radius 0.0 res))
 
-  (defn build-voxel-grid-gpu! [ctx ren chunk center radius res]
-    (run-voxel-action-gpu! ctx ren chunk center radius 1.0 res))
+  (defn build-voxel-grid-gpu! [ctx ren chunk center radius res mat-id]
+    (run-voxel-action-gpu! ctx ren chunk center radius mat-id res))
 
   (defn bake-chunk-slices! [ctx ren chunk world-data start-z end-z static-world-sdf]
     (let [voxel-data (Chunk.voxel-data chunk)
@@ -138,6 +138,9 @@
           num-active (Array.length active-arr)
           crater-positions (the (Array (Vector3 Double)) [])
           crater-radii (the (Array Double) [])
+          build-positions (the (Array (Vector3 Double)) [])
+          build-radii (the (Array Double) [])
+          build-mats (the (Array Double) [])
           max-scale (if (> WGPURenderer.plains-scale WGPURenderer.canyons-scale)
                         (if (> WGPURenderer.plains-scale WGPURenderer.mountains-scale) WGPURenderer.plains-scale WGPURenderer.mountains-scale)
                         (if (> WGPURenderer.canyons-scale WGPURenderer.mountains-scale) WGPURenderer.canyons-scale WGPURenderer.mountains-scale))
@@ -149,19 +152,22 @@
               (for [i 0 (Array.length nodes)]
                 (let [node (Array.unsafe-nth nodes i)
                       node-op @(CsgNode.op node)
-                      child-sdf (Box.peek (CsgNode.shape node))]
-                  (when (= node-op 1)
-                    (let [child-pos (SDF.position child-sdf)
-                          r (match @(SDF.base child-sdf)
-                              (BaseShape.Ball ball-r) ball-r
-                              _ 1.0)
-                          diff (Vector3.sub &chunk-center child-pos)
-                          dist (Vector3.mag &diff)]
-                      (when (<= dist (+ chunk-radius (+ r 2.5)))
+                      child-sdf (Box.peek (CsgNode.shape node))
+                      child-pos (SDF.position child-sdf)
+                      r (match @(SDF.base child-sdf)
+                          (BaseShape.Ball ball-r) ball-r
+                          _ 1.0)
+                      diff (Vector3.sub &chunk-center child-pos)
+                      dist (Vector3.mag &diff)]
+                  (when (<= dist (+ chunk-radius (+ r 2.5)))
+                    (if (= node-op 1)
                         (do
                           (Array.push-back! &crater-positions @child-pos)
-                          (Array.push-back! &crater-radii r)
-                          ())))))))
+                          (Array.push-back! &crater-radii r))
+                        (do
+                          (Array.push-back! &build-positions @child-pos)
+                          (Array.push-back! &build-radii r)
+                          (Array.push-back! &build-mats (Double.from-int node-op))))))))
           _ ())
         (for [i 0 num-active]
           (when @(Array.unsafe-nth active-arr i)
@@ -200,33 +206,52 @@
                       ;; Combine terrain and cave smoothly
                       voxel-d (if (> cave-sdf terrain-d) cave-sdf terrain-d)
                       
-                      min-d (if (Array.empty? &crater-radii)
-                                voxel-d
-                                (let [d voxel-d
-                                      num-craters (Array.length &crater-radii)]
+                      carved-d (if (Array.empty? &crater-radii)
+                                   voxel-d
+                                   (let [d voxel-d
+                                         num-craters (Array.length &crater-radii)]
+                                     (do
+                                       (for [i 0 num-craters]
+                                         (let [child-pos (Array.unsafe-nth &crater-positions i)
+                                               r @(Array.unsafe-nth &crater-radii i)
+                                               dist (Vector3.dist &p child-pos)
+                                               d-right (- dist r)]
+                                           (set! d (smax d (- 0.0 d-right) 2.5))))
+                                       d)))
+                      mat-id-built 0.0f
+                      min-d (if (Array.empty? &build-radii)
+                                carved-d
+                                (let [d carved-d
+                                      num-builds (Array.length &build-radii)]
                                   (do
-                                    (for [i 0 num-craters]
-                                      (let [child-pos (Array.unsafe-nth &crater-positions i)
-                                            r @(Array.unsafe-nth &crater-radii i)
+                                    (for [i 0 num-builds]
+                                      (let [child-pos (Array.unsafe-nth &build-positions i)
+                                            r @(Array.unsafe-nth &build-radii i)
+                                            m @(Array.unsafe-nth &build-mats i)
                                             dist (Vector3.dist &p child-pos)
                                             d-right (- dist r)]
-                                        (set! d (smax d (- 0.0 d-right) 2.5))))
+                                        (do
+                                          (when (< d-right 0.0)
+                                            (set! mat-id-built (Double.to-float m)))
+                                          (set! d (smin d d-right 2.5)))))
                                     d)))
-                      mat-id (if (< min-d 0.0)
-                                 (if (> py 15.0)
-                                     6.0f
-                                     (if (< py -120.0)
-                                         7.0f
-                                         (if (< py -40.0)
-                                             8.0f
-                                             (if (< py -10.0)
-                                                 10.0f
-                                                 (if (and (< py -2.0) (> (noise3d (* px 0.05) 0.0 (* pz 0.05)) 0.0))
-                                                     5.0f
-                                                     (if (> (noise3d (* px 0.02) 0.0 (* pz 0.02)) 0.3)
-                                                         2.0f
-                                                         1.0f))))))
-                                 0.0f)]
+                      mat-id (if (> mat-id-built 0.0f)
+                                 mat-id-built
+                                 (if (< min-d 0.0)
+                                     (if (> py 15.0)
+                                         6.0f
+                                         (if (< py -120.0)
+                                             7.0f
+                                             (if (< py -40.0)
+                                                 8.0f
+                                                 (if (< py -10.0)
+                                                     10.0f
+                                                     (if (and (< py -2.0) (> (noise3d (* px 0.05) 0.0 (* pz 0.05)) 0.0))
+                                                         5.0f
+                                                         (if (> (noise3d (* px 0.02) 0.0 (* pz 0.02)) 0.3)
+                                                             2.0f
+                                                             1.0f))))))
+                                     0.0f))]
                   (do
                     ;; Bake dynamic/static SDF colliders from FieldDatabase
                     (when (> (Array.length &near-indices) 0)
@@ -379,7 +404,7 @@
                             new-dist (smax old-dist (- 0.0 crater-dist) 2.5)]
                         (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))))
 
-  (defn build-voxel-grid-cpu! [chunk center radius res cell-size]
+  (defn build-voxel-grid-cpu! [chunk center radius res cell-size mat-id]
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
@@ -434,7 +459,7 @@
                         (do
                           (Array.aset! voxel-data idx-full (Double.to-float new-dist))
                           (when (< sphere-dist 0.0)
-                            (Array.aset! voxel-data (+ idx-full 1) 2.0f))))))))))))))
+                            (Array.aset! voxel-data (+ idx-full 1) (Double.to-float mat-id)))))))))))))))
 
   (defn pack-and-copy-fields-chunk! [ctx ren slot]
     (let [f-scratch-b @(WGPURenderer.fields-scratch-buffer ren)

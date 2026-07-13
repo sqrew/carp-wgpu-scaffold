@@ -52,10 +52,11 @@
     last-known-carve String
     last-known-field-rule String
     settings Settings
+    selected-material Double
   ])
 
-  (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double (Maybe (Handle ()))] (Maybe (Handle ()))))
-  (defn spawn-crater! [e pos rad existing-crater]
+  (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double Int (Maybe (Handle ()))] (Maybe (Handle ()))))
+  (defn spawn-crater! [e pos rad op existing-crater]
     (Maybe.Nothing))
 
   (sig handle-id (Fn [(Ref (Handle ()))] Uint32))

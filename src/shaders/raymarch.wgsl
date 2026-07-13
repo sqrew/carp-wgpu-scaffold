@@ -1667,7 +1667,27 @@ struct PointInstance {
                 // Determine the base terrain color at p using dynamic biome blending
                 let mat_id = i32(round(voxel_val.y));
                 var terr_col = vec3<f32>(0.4, 0.4, 0.5);
-                if (mat_id == 1 || mat_id == 2 || hitId == -1.0) {
+                var custom_glow = vec3<f32>(0.0);
+                var custom_specular_mult = 1.0;
+                
+                if (mat_id == 11) {
+                    // Custom Material 11: Glowing Neon Cyan
+                    terr_col = vec3<f32>(0.02, 0.45, 0.6);
+                    custom_glow = vec3<f32>(0.0, 0.9, 1.0) * 1.8;
+                } else if (mat_id == 12) {
+                    // Custom Material 12: Shiny Gold / Brass
+                    terr_col = vec3<f32>(0.85, 0.62, 0.18);
+                    custom_specular_mult = 4.0;
+                } else if (mat_id == 13) {
+                    // Custom Material 13: Pulsating Lava Crimson
+                    terr_col = vec3<f32>(0.28, 0.05, 0.05);
+                    let pulse = sin(u.time * 2.5) * 0.35 + 0.65;
+                    custom_glow = vec3<f32>(1.0, 0.12, 0.0) * pulse * 2.2;
+                } else if (mat_id == 14) {
+                    // Custom Material 14: Dark Obsidian
+                    terr_col = vec3<f32>(0.06, 0.06, 0.09);
+                    custom_specular_mult = 2.5;
+                } else if (mat_id == 1 || mat_id == 2 || hitId == -1.0) {
                     let b_val = noise2d(p.x * 0.003, p.z * 0.003);
                     let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
                     let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
@@ -1916,7 +1936,8 @@ struct PointInstance {
                     base_col = mix(base_col, sky_ref, 0.25 * fresnel * h);
                }
 
-                color = base_col * lighting * ao + vec3<f32>(specular);
+                color = base_col * lighting * ao + vec3<f32>(specular * custom_specular_mult);
+                color += custom_glow;
 
                if (is_exp) {
                    let glow = mix(vec3<f32>(1.0, 0.15, 0.0), vec3<f32>(1.0, 0.9, 0.25), exp_n_col);
