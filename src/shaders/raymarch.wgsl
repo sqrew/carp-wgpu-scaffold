@@ -1673,15 +1673,15 @@ struct PointInstance {
                 let inside_p = p - normal * 0.4;
                 let inside_voxel_val = sampleVoxelGrid(inside_p, false);
                 var mat_id = i32(round(inside_voxel_val.y));
-                if (mat_id < 11 || mat_id > 14) {
+                if (mat_id < 3) {
                     let raw_mat = i32(round(voxel_val.y));
-                    if (raw_mat >= 11 && raw_mat <= 14) {
+                    if (raw_mat >= 3) {
                         mat_id = raw_mat;
                     } else {
                         let deeper_p = p - normal * 0.8;
                         let deeper_voxel_val = sampleVoxelGrid(deeper_p, false);
                         let deeper_mat = i32(round(deeper_voxel_val.y));
-                        if (deeper_mat >= 11 && deeper_mat <= 14) {
+                        if (deeper_mat >= 3) {
                             mat_id = deeper_mat;
                         }
                     }
@@ -1707,7 +1707,41 @@ struct PointInstance {
                     // Custom Material 14: Dark Obsidian
                     terr_col = vec3<f32>(0.06, 0.06, 0.09);
                     custom_specular_mult = 2.5;
-                } else if (mat_id == 1 || mat_id == 2 || hitId == -1.0) {
+                } else if (mat_id == 3) {
+                    // Custom Material 3: Stone grey
+                    terr_col = vec3<f32>(0.42, 0.42, 0.45);
+                    terr_col += noise3d(p.x * 0.25, p.y * 0.25, p.z * 0.25) * 0.05;
+                } else if (mat_id == 4) {
+                    // Custom Material 4: Water blue
+                    terr_col = vec3<f32>(0.15, 0.35, 0.75);
+                } else if (mat_id == 5) {
+                    // Custom Material 5: Sand Beige
+                    terr_col = vec3<f32>(0.76, 0.68, 0.48);
+                    terr_col += noise3d(p.x * 0.15, p.y * 0.15, p.z * 0.15) * 0.03;
+                } else if (mat_id == 6) {
+                    // Custom Material 6: Snow / Ice
+                    terr_col = vec3<f32>(0.92, 0.94, 0.98);
+                    terr_col += noise3d(p.x * 0.4, p.y * 0.4, p.z * 0.4) * 0.02;
+                    custom_specular_mult = 2.0;
+                } else if (mat_id == 7) {
+                    // Custom Material 7: Volcanic Obsidian
+                    terr_col = vec3<f32>(0.05, 0.05, 0.07);
+                    custom_specular_mult = 3.0;
+                } else if (mat_id == 8) {
+                    // Custom Material 8: Deep Cave Moss
+                    terr_col = vec3<f32>(0.12, 0.38, 0.18);
+                    terr_col += noise3d(p.x * 0.2, p.y * 0.2, p.z * 0.2) * 0.04;
+                } else if (mat_id == 9) {
+                    // Custom Material 9: Amethyst Purple Crystal
+                    terr_col = vec3<f32>(0.45, 0.15, 0.55);
+                    let pulse = sin(u.time * 2.0) * 0.25 + 0.75;
+                    custom_glow = vec3<f32>(0.8, 0.2, 1.0) * pulse * 2.0;
+                    custom_specular_mult = 4.0;
+                } else if (mat_id == 10) {
+                    // Custom Material 10: Clay Brown
+                    terr_col = vec3<f32>(0.35, 0.25, 0.18);
+                    terr_col += noise3d(p.x * 0.1, p.y * 0.1, p.z * 0.1) * 0.03;
+                } else if (mat_id == 1 || mat_id == 2 || hitId == -1.0 || is_metaball) {
                     let b_val = noise2d(p.x * 0.003, p.z * 0.003);
                     let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
                     let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
