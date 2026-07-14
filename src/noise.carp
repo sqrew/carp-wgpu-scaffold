@@ -1,5 +1,7 @@
 ;; src/noise.carp
 
+(load "../carp-noise/noise.carp")
+
 (defmodule WGPURenderer
   (def plains-scale 12.0)
   (def plains-offset -18.0)
@@ -23,42 +25,6 @@
   (def cloud-color-b 0.45)
   (def cloud-noise-scale 0.004)
 
-  (deftemplate noise2d-c (Fn [Double Double] Double)
-    "double $NAME(double x, double z)"
-    "$DECL {
-        double fx = floor(x);
-        double fz = floor(z);
-        double tx = x - fx;
-        double tz = z - fz;
-        
-        #define HASH2D(px, pz) ({ \
-            unsigned int x_int = (unsigned int)(px); \
-            unsigned int z_int = (unsigned int)(pz); \
-            unsigned int h = x_int * 73856093u ^ z_int * 83492791u; \
-            h = h ^ (h >> 16); \
-            h = h * 0x7feb352du; \
-            h = h ^ (h >> 15); \
-            h = h * 0x846ca68bu; \
-            h = h ^ (h >> 16); \
-            (double)h / 4294967296.0; \
-        })
-        
-        double v00 = HASH2D(fx, fz);
-        double v10 = HASH2D(fx + 1.0, fz);
-        double v01 = HASH2D(fx, fz + 1.0);
-        double v11 = HASH2D(fx + 1.0, fz + 1.0);
-        
-        #undef HASH2D
-        
-        double u = tx * tx * (3.0 - 2.0 * tx);
-        double v = tz * tz * (3.0 - 2.0 * tz);
-        
-        double x0 = v00 + u * (v10 - v00);
-        double x1 = v01 + u * (v11 - v01);
-        
-        return x0 + v * (x1 - x0);
-    }")
-
   (defn lerp [a b t]
     (+ a (* t (- b a))))
 
@@ -66,22 +32,16 @@
     (* (* t t) (- 3.0 (* 2.0 t))))
 
   (defn noise2d [x z]
-    (noise2d-c x z))
+    (Noise.Fast.noise2d x z))
 
   (defn fbm2d [x z]
-    (let [n1 (noise2d x z)
-          n2 (* gain (noise2d (* x lacunarity) (* z lacunarity)))
-          n3 (* (* gain gain) (noise2d (* x (* lacunarity lacunarity)) (* z (* lacunarity lacunarity))))]
-      (+ n1 (+ n2 n3))))
+    (Noise.Fast.fbm2d x z gain lacunarity))
 
   (defn clamp-double [low high val]
     (if (< val low) low (if (> val high) high val)))
 
   (defn rigid-fbm2d [x z]
-    (let [n1 (- 1.0 (Double.abs (- (* (noise2d x z) 2.0) 1.0)))
-          n2 (* gain (- 1.0 (Double.abs (- (* (noise2d (* x lacunarity) (* z lacunarity)) 2.0) 1.0))))
-          n3 (* (* gain gain) (- 1.0 (Double.abs (- (* (noise2d (* x (* lacunarity lacunarity)) (* z (* lacunarity lacunarity))) 2.0) 1.0))))]
-      (+ n1 (+ n2 n3))))
+    (Noise.Fast.rigid-fbm2d x z gain lacunarity))
 
   (defn get-terrain-height [x z]
     (let [sx (+ x seed-offset)
@@ -105,55 +65,6 @@
           h-mountains (+ (* (rigid-fbm2d (* sx (* 0.01 global-frequency)) (* sz (* 0.01 global-frequency))) mountains-scale) mountains-offset)]
       (+ (* W1 h-plains) (+ (* W2 h-canyons) (* W3 h-mountains)))))
 
-  (deftemplate noise3d-c (Fn [Double Double Double] Double)
-    "double $NAME(double x, double y, double z)"
-    "$DECL {
-        double fx = floor(x);
-        double fy = floor(y);
-        double fz = floor(z);
-        double tx = x - fx;
-        double ty = y - fy;
-        double tz = z - fz;
-        
-        #define HASH3D(px, py, pz) ({ \
-            unsigned int x_int = (unsigned int)(px); \
-            unsigned int y_int = (unsigned int)(py); \
-            unsigned int z_int = (unsigned int)(pz); \
-            unsigned int h = x_int * 73856093u ^ y_int * 19349663u ^ z_int * 83492791u; \
-            h = h ^ (h >> 16); \
-            h = h * 0x7feb352du; \
-            h = h ^ (h >> 15); \
-            h = h * 0x846ca68bu; \
-            h = h ^ (h >> 16); \
-            (double)h / 4294967296.0; \
-        })
-        
-        double v000 = HASH3D(fx, fy, fz);
-        double v100 = HASH3D(fx + 1.0, fy, fz);
-        double v010 = HASH3D(fx, fy + 1.0, fz);
-        double v110 = HASH3D(fx + 1.0, fy + 1.0, fz);
-        double v001 = HASH3D(fx, fy, fz + 1.0);
-        double v101 = HASH3D(fx + 1.0, fy, fz + 1.0);
-        double v011 = HASH3D(fx, fy + 1.0, fz + 1.0);
-        double v111 = HASH3D(fx + 1.0, fy + 1.0, fz + 1.0);
-        
-        #undef HASH3D
-        
-        double u = tx * tx * (3.0 - 2.0 * tx);
-        double v = ty * ty * (3.0 - 2.0 * ty);
-        double w = tz * tz * (3.0 - 2.0 * tz);
-        
-        double x00 = v000 + u * (v100 - v000);
-        double x10 = v010 + u * (v110 - v010);
-        double x01 = v001 + u * (v101 - v001);
-        double x11 = v011 + u * (v111 - v011);
-        
-        double y0 = x00 + v * (x10 - x00);
-        double y1 = x01 + v * (x11 - x01);
-        
-        return y0 + w * (y1 - y0);
-    }")
-
   (defn noise3d [x y z]
-    (noise3d-c x y z))
+    (Noise.Fast.noise3d x y z))
 )

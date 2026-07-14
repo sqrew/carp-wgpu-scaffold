@@ -193,9 +193,8 @@
                       raw-terrain-d (- py final-h)
                       terrain-d (* raw-terrain-d safety-factor-scaled)
                       
-                      ;; Carve out caves if below terrain height using 3D noise
                       cave-val (if (< terrain-d 0.0)
-                                   (noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
+                                   (WGPURenderer.noise3d (* px 0.08) (* py 0.08) (* pz 0.08))
                                     0.0)
                       
                       ;; Compute smooth cave SDF (using optimal 1/0.08 = 12.5 scale factor for correct gradient of 1.0)
@@ -249,14 +248,14 @@
                                          (if (< py -120.0)
                                              7.0f
                                              (if (< py -40.0)
-                                                 (if (> (noise3d (* px 0.15) (* py 0.15) (* pz 0.15)) 0.6)
+                                                 (if (> (WGPURenderer.noise3d (* px 0.15) (* py 0.15) (* pz 0.15)) 0.6)
                                                      9.0f
                                                      8.0f)
                                                  (if (< py -10.0)
                                                      10.0f
-                                                     (if (and (< py -2.0) (> (noise3d (* px 0.05) 0.0 (* pz 0.05)) 0.0))
+                                                     (if (and (< py -2.0) (> (WGPURenderer.noise3d (* px 0.05) 0.0 (* pz 0.05)) 0.0))
                                                          5.0f
-                                                         (if (> (noise3d (* px 0.02) 0.0 (* pz 0.02)) 0.3)
+                                                         (if (> (WGPURenderer.noise3d (* px 0.02) 0.0 (* pz 0.02)) 0.3)
                                                              2.0f
                                                              1.0f))))))
                                      0.0f))]
