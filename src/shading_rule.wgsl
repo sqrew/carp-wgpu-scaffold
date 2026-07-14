@@ -11,9 +11,9 @@
 // - custom_specular_mult : f32        -> Output specular/shine multiplier (read/write)
 // - u.time               : f32        -> Accumulated simulation runtime in seconds
 
-if (mat_id == 9) {
-    terr_col = vec3<f32>(0.1, 1.0, 0.3); // Bright neon green amethyst!
-    let pulse = sin(u.time * 4.0) * 0.3 + 0.7;
-    custom_glow = vec3<f32>(0.2, 1.0, 0.4) * pulse * 2.5;
-    custom_specular_mult = 6.0;
-}
+// if (mat_id == 2) {
+//     terr_col = vec3<f32>(0.1, 1.0, 0.3); // Bright neon green amethyst!
+//     let pulse = sin(u.time * 4.0) * 0.3 + 0.7;
+//     custom_glow = vec3<f32>(0.2, 1.0, 0.4) * pulse * 2.5;
+//     custom_specular_mult = 6.0;
+// }
