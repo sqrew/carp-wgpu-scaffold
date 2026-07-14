@@ -8649,3 +8649,103 @@
 [Uint64(1784051321361552697)] [INFO] Zone: Chunks: Scan and Load | Runs: 120 | Last: 161.333ms | Avg: 190.632ms | Jitter: 36.8416ms | Min: 155.441ms | Max: 360.305ms | Spikes (>16.6ms): 120 | % of Frame: 77.3765%
 [Uint64(1784051321361567137)] [INFO] ----------------------------------
 
+[Uint64(1784052173204128762)] [INFO] === Engine Started / Diagnostics Initialized ===
+[Uint64(1784052175947170660)] [INFO] Baking fresh physical system pipeline directly to GPU hardware.
+[Uint64(1784052423121466127)] [INFO] --- PERFORMANCE PROFILE REPORT ---
+
+[Uint64(1784052423121713174)] [INFO] Zone: Input Handling | Runs: 3169 | Last: 0.094946ms | Avg: 0.19773ms | Jitter: 2.36508ms | Min: 0.017011ms | Max: 75.1098ms | Spikes (>16.6ms): 8 | % of Frame: 1.46133%
+[Uint64(1784052423121748170)] [INFO] Zone: Physics Simulation | Runs: 3169 | Last: 1.59199ms | Avg: 1.129ms | Jitter: 0.535735ms | Min: 4.7e-05ms | Max: 7.04451ms | Spikes (>16.6ms): 0 | % of Frame: 8.3439%
+[Uint64(1784052423121776066)] [INFO] Zone: ECS Lifecycle | Runs: 3169 | Last: 0.004811ms | Avg: 0.00366ms | Jitter: 0.00296979ms | Min: 0.000979ms | Max: 0.099125ms | Spikes (>16.6ms): 0 | % of Frame: 0.0270509%
+[Uint64(1784052423121809424)] [INFO] Zone: Field DB Sync | Runs: 3169 | Last: 0.155161ms | Avg: 0.135965ms | Jitter: 0.0858918ms | Min: 0.042363ms | Max: 3.20045ms | Spikes (>16.6ms): 0 | % of Frame: 1.00486%
+[Uint64(1784052423121835230)] [INFO] Zone: Sync: Compile JIT Shader | Runs: 1 | Last: 0.769631ms | Avg: 0.769631ms | Jitter: 0ms | Min: 0.769631ms | Max: 0.769631ms | Spikes (>16.6ms): 0 | % of Frame: 0.00179488%
+[Uint64(1784052423121860352)] [INFO] Zone: Sync: JIT Hot Reload | Runs: 3169 | Last: 0.692821ms | Avg: 0.590929ms | Jitter: 0.266943ms | Min: 0.179099ms | Max: 4.25456ms | Spikes (>16.6ms): 0 | % of Frame: 4.36728%
+[Uint64(1784052423121883418)] [INFO] Zone: Sync: JIT Physics Loop | Runs: 3169 | Last: 0.142258ms | Avg: 0.115711ms | Jitter: 0.135267ms | Min: 0.029887ms | Max: 3.21143ms | Spikes (>16.6ms): 0 | % of Frame: 0.855166%
+[Uint64(1784052423121906640)] [INFO] Zone: Sync: Submit Render Cmds | Runs: 3169 | Last: 0.000573ms | Avg: 0.006311ms | Jitter: 0.00943509ms | Min: 0.000108ms | Max: 0.086731ms | Spikes (>16.6ms): 0 | % of Frame: 0.0466418%
+[Uint64(1784052423121930298)] [INFO] Zone: Sync: Pack Uniforms | Runs: 3169 | Last: 0.001026ms | Avg: 0.000709ms | Jitter: 0.00159862ms | Min: 0.000171ms | Max: 0.080262ms | Spikes (>16.6ms): 0 | % of Frame: 0.005241%
+[Uint64(1784052423121954668)] [INFO] Zone: Sync: Pack CSG Instances | Runs: 3169 | Last: 0.00219ms | Avg: 0.001578ms | Jitter: 0.00072511ms | Min: 0.00056ms | Max: 0.020411ms | Spikes (>16.6ms): 0 | % of Frame: 0.0116664%
+[Uint64(1784052423121981483)] [INFO] Zone: Chunks: Slice Baking | Runs: 1867 | Last: 17.6405ms | Avg: 14.0276ms | Jitter: 9.60812ms | Min: 1.34258ms | Max: 63.7178ms | Spikes (>16.6ms): 739 | % of Frame: 61.0774%
+[Uint64(1784052423122005894)] [INFO] Zone: Sync: Update Voxel Chunks | Runs: 3169 | Last: 2.37267ms | Avg: 9.27871ms | Jitter: 12.6884ms | Min: 0.02858ms | Max: 289.247ms | Spikes (>16.6ms): 772 | % of Frame: 68.5746%
+[Uint64(1784052423122028608)] [INFO] Zone: Sync: Build Chunk Lookup | Runs: 3169 | Last: 0.036664ms | Avg: 0.052248ms | Jitter: 0.0609938ms | Min: 0.013154ms | Max: 3.09412ms | Spikes (>16.6ms): 0 | % of Frame: 0.386147%
+[Uint64(1784052423122053432)] [INFO] Zone: Sync: Bake Voxels | Runs: 3169 | Last: 0.000611ms | Avg: 0.47426ms | Jitter: 5.01505ms | Min: 0.000112ms | Max: 106.633ms | Spikes (>16.6ms): 28 | % of Frame: 3.50503%
+[Uint64(1784052423122075972)] [INFO] Zone: Sync: Bake Fields GPU | Runs: 3169 | Last: 0.99861ms | Avg: 1.09094ms | Jitter: 3.06591ms | Min: 0.000725ms | Max: 97.4711ms | Spikes (>16.6ms): 7 | % of Frame: 8.06265%
+[Uint64(1784052423122097345)] [INFO] Zone: Sync: Flatten Spatial Grid | Runs: 3169 | Last: 0.104748ms | Avg: 0.154938ms | Jitter: 0.123575ms | Min: 0.06822ms | Max: 4.27659ms | Spikes (>16.6ms): 0 | % of Frame: 1.14507%
+[Uint64(1784052423122124196)] [INFO] Zone: Sync: Render DB Update | Runs: 3169 | Last: 3.8077ms | Avg: 11.3307ms | Jitter: 14.1293ms | Min: 0.254459ms | Max: 290.081ms | Spikes (>16.6ms): 857 | % of Frame: 83.7397%
+[Uint64(1784052423122150061)] [INFO] Zone: Render Submit & Sync | Runs: 3169 | Last: 4.65115ms | Avg: 12.0524ms | Jitter: 14.1833ms | Min: 0.564901ms | Max: 290.885ms | Spikes (>16.6ms): 880 | % of Frame: 89.0734%
+[Uint64(1784052423122175987)] [INFO] Zone: Total Frame Time | Runs: 3169 | Last: 6.5099ms | Avg: 13.5308ms | Jitter: 14.4981ms | Min: 0.967088ms | Max: 292.801ms | Spikes (>16.6ms): 924 | % of Frame: 100%
+[Uint64(1784052423122200925)] [INFO] Zone: Phys: Forces & Integrator | Runs: 11351 | Last: 0.004807ms | Avg: 0.004401ms | Jitter: 0.00341217ms | Min: 0.001143ms | Max: 0.171825ms | Spikes (>16.6ms): 0 | % of Frame: 0.116523%
+[Uint64(1784052423122232251)] [INFO] Zone: Phys: Spatial Grid Rebuild | Runs: 11351 | Last: 0.017856ms | Avg: 0.017828ms | Jitter: 0.0166464ms | Min: 0.004117ms | Max: 1.19675ms | Spikes (>16.6ms): 0 | % of Frame: 0.471967%
+[Uint64(1784052423122256360)] [INFO] Zone: Phys: Collision Detection | Runs: 11351 | Last: 0.272763ms | Avg: 0.222977ms | Jitter: 0.111453ms | Min: 0.037766ms | Max: 5.42919ms | Spikes (>16.6ms): 0 | % of Frame: 5.90266%
+[Uint64(1784052423122284936)] [INFO] Zone: Phys: Constraint Solver | Runs: 11351 | Last: 0.030618ms | Avg: 0.02405ms | Jitter: 0.0296051ms | Min: 2.8e-05ms | Max: 2.5213ms | Spikes (>16.6ms): 0 | % of Frame: 0.636676%
+[Uint64(1784052423122309167)] [INFO] Zone: Chunks: Scan and Load | Runs: 1302 | Last: 2.3135ms | Avg: 0.629369ms | Jitter: 0.746689ms | Min: 0.021727ms | Max: 5.20286ms | Spikes (>16.6ms): 0 | % of Frame: 1.91104%
+[Uint64(1784052423122333025)] [INFO] Zone: Bake: Carve CPU | Runs: 205 | Last: 0.027399ms | Avg: 0.026506ms | Jitter: 0.0200074ms | Min: 0.001836ms | Max: 0.083758ms | Spikes (>16.6ms): 0 | % of Frame: 0.0126724%
+[Uint64(1784052423122357850)] [INFO] Zone: Bake: Carve GPU | Runs: 205 | Last: 1.18818ms | Avg: 2.87015ms | Jitter: 11.3638ms | Min: 0.192161ms | Max: 93.3038ms | Spikes (>16.6ms): 9 | % of Frame: 1.37218%
+[Uint64(1784052423122382463)] [INFO] Zone: GUI Update & Layout | Runs: 247 | Last: 2.34623ms | Avg: 2.95154ms | Jitter: 8.3404ms | Min: 0.182035ms | Max: 57.9923ms | Spikes (>16.6ms): 11 | % of Frame: 1.7002%
+[Uint64(1784052423122399648)] [INFO] ----------------------------------
+
+[Uint64(1784052518619818775)] [INFO] Voxel Cache Stats | Queries: 36904952 | Hits: 36897303 | Hit Rate: 99.9793%
+
+[Uint64(1784052518619936704)] [INFO] --- PERFORMANCE PROFILE REPORT ---
+
+[Uint64(1784052518620025015)] [INFO] Zone: Input Handling | Runs: 4206 | Last: 0.06998ms | Avg: 0.166327ms | Jitter: 2.05383ms | Min: 0.017011ms | Max: 75.1098ms | Spikes (>16.6ms): 8 | % of Frame: 0.946385%
+[Uint64(1784052518620111171)] [INFO] Zone: Physics Simulation | Runs: 4206 | Last: 0.000176ms | Avg: 1.17542ms | Jitter: 0.647154ms | Min: 4.7e-05ms | Max: 7.04451ms | Spikes (>16.6ms): 0 | % of Frame: 6.688%
+[Uint64(1784052518620189085)] [INFO] Zone: ECS Lifecycle | Runs: 4206 | Last: 0.003783ms | Avg: 0.003596ms | Jitter: 0.00313766ms | Min: 0.000979ms | Max: 0.11138ms | Spikes (>16.6ms): 0 | % of Frame: 0.0204652%
+[Uint64(1784052518620261945)] [INFO] Zone: Field DB Sync | Runs: 4206 | Last: 0.141304ms | Avg: 0.129556ms | Jitter: 0.0990791ms | Min: 0.037351ms | Max: 4.03735ms | Spikes (>16.6ms): 0 | % of Frame: 0.737163%
+[Uint64(1784052518620334953)] [INFO] Zone: Sync: Compile JIT Shader | Runs: 1 | Last: 0.769631ms | Avg: 0.769631ms | Jitter: 0ms | Min: 0.769631ms | Max: 0.769631ms | Spikes (>16.6ms): 0 | % of Frame: 0.00104116%
+[Uint64(1784052518620404418)] [INFO] Zone: Sync: JIT Hot Reload | Runs: 4206 | Last: 0.656392ms | Avg: 0.582197ms | Jitter: 0.284512ms | Min: 0.176762ms | Max: 5.73285ms | Spikes (>16.6ms): 0 | % of Frame: 3.31263%
+[Uint64(1784052518620473985)] [INFO] Zone: Sync: JIT Physics Loop | Runs: 4206 | Last: 0.152592ms | Avg: 0.117458ms | Jitter: 0.122203ms | Min: 0.029887ms | Max: 3.21143ms | Spikes (>16.6ms): 0 | % of Frame: 0.668325%
+[Uint64(1784052518620566653)] [INFO] Zone: Sync: Submit Render Cmds | Runs: 4206 | Last: 0.020144ms | Avg: 0.009955ms | Jitter: 0.0503036ms | Min: 0.000108ms | Max: 3.04873ms | Spikes (>16.6ms): 0 | % of Frame: 0.0566466%
+[Uint64(1784052518620646848)] [INFO] Zone: Sync: Pack Uniforms | Runs: 4206 | Last: 0.000705ms | Avg: 0.000688ms | Jitter: 0.00139501ms | Min: 0.000165ms | Max: 0.080262ms | Spikes (>16.6ms): 0 | % of Frame: 0.00391997%
+[Uint64(1784052518620717476)] [INFO] Zone: Sync: Pack CSG Instances | Runs: 4206 | Last: 0.00199ms | Avg: 0.001553ms | Jitter: 0.000791615ms | Min: 0.000482ms | Max: 0.022411ms | Spikes (>16.6ms): 0 | % of Frame: 0.00883753%
+[Uint64(1784052518620795178)] [INFO] Zone: Chunks: Slice Baking | Runs: 2386 | Last: 5.26911ms | Avg: 13.7ms | Jitter: 9.80866ms | Min: 1.34258ms | Max: 63.7178ms | Spikes (>16.6ms): 904 | % of Frame: 44.2206%
+[Uint64(1784052518620873723)] [INFO] Zone: Sync: Update Voxel Chunks | Runs: 4206 | Last: 5.31163ms | Avg: 13.4021ms | Jitter: 26.8053ms | Min: 0.02858ms | Max: 289.247ms | Spikes (>16.6ms): 1083 | % of Frame: 76.2564%
+[Uint64(1784052518620943878)] [INFO] Zone: Sync: Build Chunk Lookup | Runs: 4206 | Last: 0.076609ms | Avg: 0.054003ms | Jitter: 0.0718001ms | Min: 0.013154ms | Max: 3.09412ms | Spikes (>16.6ms): 0 | % of Frame: 0.307272%
+[Uint64(1784052518621038069)] [INFO] Zone: Sync: Bake Voxels | Runs: 4206 | Last: 0.000712ms | Avg: 0.410921ms | Jitter: 5.04752ms | Min: 0.000112ms | Max: 145.527ms | Spikes (>16.6ms): 30 | % of Frame: 2.33809%
+[Uint64(1784052518621109550)] [INFO] Zone: Sync: Bake Fields GPU | Runs: 4206 | Last: 2.3192ms | Avg: 1.07581ms | Jitter: 2.68544ms | Min: 0.000725ms | Max: 97.4711ms | Spikes (>16.6ms): 7 | % of Frame: 6.12125%
+[Uint64(1784052518621189356)] [INFO] Zone: Sync: Flatten Spatial Grid | Runs: 4206 | Last: 0.202545ms | Avg: 0.151835ms | Jitter: 0.113747ms | Min: 0.06822ms | Max: 4.27659ms | Spikes (>16.6ms): 0 | % of Frame: 0.863925%
+[Uint64(1784052518621268363)] [INFO] Zone: Sync: Render DB Update | Runs: 4206 | Last: 8.23248ms | Avg: 15.3705ms | Jitter: 27.3019ms | Min: 0.254459ms | Max: 290.081ms | Spikes (>16.6ms): 1183 | % of Frame: 87.4564%
+[Uint64(1784052518621342028)] [INFO] Zone: Render Submit & Sync | Runs: 4206 | Last: 9.0698ms | Avg: 16.0883ms | Jitter: 27.3088ms | Min: 0.564901ms | Max: 290.885ms | Spikes (>16.6ms): 1209 | % of Frame: 91.5405%
+[Uint64(1784052518621415202)] [INFO] Zone: Total Frame Time | Runs: 4206 | Last: 9.29818ms | Avg: 17.5751ms | Jitter: 27.4054ms | Min: 0.967088ms | Max: 292.801ms | Spikes (>16.6ms): 1259 | % of Frame: 100%
+[Uint64(1784052518621484711)] [INFO] Zone: Phys: Forces & Integrator | Runs: 15071 | Last: 0.001292ms | Avg: 0.004255ms | Jitter: 0.00354207ms | Min: 0.001054ms | Max: 0.171825ms | Spikes (>16.6ms): 0 | % of Frame: 0.0867565%
+[Uint64(1784052518621575593)] [INFO] Zone: Phys: Spatial Grid Rebuild | Runs: 15071 | Last: 0.005247ms | Avg: 0.01733ms | Jitter: 0.0162313ms | Min: 0.003992ms | Max: 1.19675ms | Spikes (>16.6ms): 0 | % of Frame: 0.353345%
+[Uint64(1784052518621647094)] [INFO] Zone: Phys: Collision Detection | Runs: 15071 | Last: 0.100005ms | Avg: 0.236685ms | Jitter: 0.142607ms | Min: 0.037766ms | Max: 5.42919ms | Spikes (>16.6ms): 0 | % of Frame: 4.82557%
+[Uint64(1784052518621715433)] [INFO] Zone: Phys: Constraint Solver | Runs: 15071 | Last: 0.012209ms | Avg: 0.024965ms | Jitter: 0.0275493ms | Min: 2.8e-05ms | Max: 2.5213ms | Spikes (>16.6ms): 0 | % of Frame: 0.508994%
+[Uint64(1784052518621791700)] [INFO] Zone: Chunks: Scan and Load | Runs: 1820 | Last: 118.776ms | Avg: 9.62856ms | Jitter: 34.1786ms | Min: 0.021727ms | Max: 179.622ms | Spikes (>16.6ms): 119 | % of Frame: 23.7065%
+[Uint64(1784052518621859571)] [INFO] Zone: Bake: Carve CPU | Runs: 233 | Last: 0.005294ms | Avg: 0.024326ms | Jitter: 0.0197366ms | Min: 0.001836ms | Max: 0.083758ms | Spikes (>16.6ms): 0 | % of Frame: 0.00766791%
+[Uint64(1784052518621929364)] [INFO] Zone: Bake: Carve GPU | Runs: 233 | Last: 0.412115ms | Avg: 3.4883ms | Jitter: 13.287ms | Min: 0.192161ms | Max: 93.3038ms | Spikes (>16.6ms): 12 | % of Frame: 1.09952%
+[Uint64(1784052518621996791)] [INFO] Zone: GUI Update & Layout | Runs: 247 | Last: 2.34623ms | Avg: 2.95154ms | Jitter: 8.3404ms | Min: 0.182035ms | Max: 57.9923ms | Spikes (>16.6ms): 11 | % of Frame: 0.986234%
+[Uint64(1784052518622046359)] [INFO] ----------------------------------
+
+[Uint64(1784052585353247729)] [INFO] === Engine Started / Diagnostics Initialized ===
+[Uint64(1784052598681878462)] [INFO] Baking fresh physical system pipeline directly to GPU hardware.
+[Uint64(1784052771250315048)] [INFO] Voxel Cache Stats | Queries: 21770832 | Hits: 21768854 | Hit Rate: 99.9909%
+
+[Uint64(1784052771250429332)] [INFO] --- PERFORMANCE PROFILE REPORT ---
+
+[Uint64(1784052771250517448)] [INFO] Zone: Input Handling | Runs: 2396 | Last: 0.07272ms | Avg: 0.065006ms | Jitter: 0.0433432ms | Min: 0.016948ms | Max: 1.83085ms | Spikes (>16.6ms): 0 | % of Frame: 0.388888%
+[Uint64(1784052771250623021)] [INFO] Zone: Physics Simulation | Runs: 2396 | Last: 1.63868ms | Avg: 1.15915ms | Jitter: 0.558463ms | Min: 5.5e-05ms | Max: 4.98767ms | Spikes (>16.6ms): 0 | % of Frame: 6.93434%
+[Uint64(1784052771250699129)] [INFO] Zone: ECS Lifecycle | Runs: 2396 | Last: 0.003848ms | Avg: 0.003436ms | Jitter: 0.00302468ms | Min: 0.000975ms | Max: 0.10078ms | Spikes (>16.6ms): 0 | % of Frame: 0.0205579%
+[Uint64(1784052771250803343)] [INFO] Zone: Field DB Sync | Runs: 2396 | Last: 0.164272ms | Avg: 0.136501ms | Jitter: 0.0683036ms | Min: 0.039785ms | Max: 1.9834ms | Spikes (>16.6ms): 0 | % of Frame: 0.816587%
+[Uint64(1784052771250878365)] [INFO] Zone: Sync: Compile JIT Shader | Runs: 1 | Last: 0.876097ms | Avg: 0.876097ms | Jitter: 0ms | Min: 0.876097ms | Max: 0.876097ms | Spikes (>16.6ms): 0 | % of Frame: 0.00218742%
+[Uint64(1784052771250957275)] [INFO] Zone: Sync: JIT Hot Reload | Runs: 2396 | Last: 0.653004ms | Avg: 6.18951ms | Jitter: 274.901ms | Min: 0.174546ms | Max: 13459.5ms | Spikes (>16.6ms): 1 | % of Frame: 37.0273%
+[Uint64(1784052771251029839)] [INFO] Zone: Sync: JIT Physics Loop | Runs: 2396 | Last: 0.162074ms | Avg: 0.103743ms | Jitter: 0.0505326ms | Min: 0.028957ms | Max: 1.74605ms | Spikes (>16.6ms): 0 | % of Frame: 0.620619%
+[Uint64(1784052771251098306)] [INFO] Zone: Sync: Submit Render Cmds | Runs: 2396 | Last: 0.022484ms | Avg: 0.020504ms | Jitter: 0.0632322ms | Min: 0.00623ms | Max: 3.04854ms | Spikes (>16.6ms): 0 | % of Frame: 0.122666%
+[Uint64(1784052771251166573)] [INFO] Zone: Sync: Pack Uniforms | Runs: 2396 | Last: 0.000766ms | Avg: 0.00069ms | Jitter: 0.000529465ms | Min: 0.000184ms | Max: 0.024194ms | Spikes (>16.6ms): 0 | % of Frame: 0.00413375%
+[Uint64(1784052771251233566)] [INFO] Zone: Sync: Pack CSG Instances | Runs: 2396 | Last: 0.001834ms | Avg: 0.001396ms | Jitter: 0.000682736ms | Min: 0.000484ms | Max: 0.025778ms | Spikes (>16.6ms): 0 | % of Frame: 0.00835715%
+[Uint64(1784052771251307592)] [INFO] Zone: Chunks: Slice Baking | Runs: 1212 | Last: 8.96977ms | Avg: 14.2492ms | Jitter: 9.20886ms | Min: 1.45524ms | Max: 35.7386ms | Spikes (>16.6ms): 511 | % of Frame: 43.1195%
+[Uint64(1784052771251379059)] [INFO] Zone: Sync: Update Voxel Chunks | Runs: 2396 | Last: 9.00588ms | Avg: 7.74902ms | Jitter: 9.74159ms | Min: 0.036856ms | Max: 102.159ms | Spikes (>16.6ms): 518 | % of Frame: 46.3567%
+[Uint64(1784052771251445875)] [INFO] Zone: Sync: Build Chunk Lookup | Runs: 2396 | Last: 0.069807ms | Avg: 0.048167ms | Jitter: 0.0278542ms | Min: 0.012336ms | Max: 0.402068ms | Spikes (>16.6ms): 0 | % of Frame: 0.288154%
+[Uint64(1784052771251514816)] [INFO] Zone: Sync: Bake Voxels | Runs: 2396 | Last: 0.000918ms | Avg: 0.07222ms | Jitter: 1.95023ms | Min: 0.00013ms | Max: 69.8695ms | Spikes (>16.6ms): 3 | % of Frame: 0.432043%
+[Uint64(1784052771251596555)] [INFO] Zone: Sync: Bake Fields GPU | Runs: 2396 | Last: 0.044381ms | Avg: 0.74827ms | Jitter: 0.686837ms | Min: 0.000616ms | Max: 5.78821ms | Spikes (>16.6ms): 0 | % of Frame: 4.47636%
+[Uint64(1784052771251662131)] [INFO] Zone: Sync: Flatten Spatial Grid | Runs: 2396 | Last: 0.154968ms | Avg: 0.145681ms | Jitter: 0.0842199ms | Min: 0.068648ms | Max: 3.20599ms | Spikes (>16.6ms): 0 | % of Frame: 0.871509%
+[Uint64(1784052771251738011)] [INFO] Zone: Sync: Render DB Update | Runs: 2396 | Last: 9.57021ms | Avg: 9.02057ms | Jitter: 9.92576ms | Min: 0.243235ms | Max: 103.042ms | Spikes (>16.6ms): 548 | % of Frame: 53.9635%
+[Uint64(1784052771251811077)] [INFO] Zone: Render Submit & Sync | Runs: 2396 | Last: 10.415ms | Avg: 15.3405ms | Jitter: 274.973ms | Min: 0.521306ms | Max: 13463.3ms | Spikes (>16.6ms): 576 | % of Frame: 91.7711%
+[Uint64(1784052771251923577)] [INFO] Zone: Total Frame Time | Runs: 2396 | Last: 12.3075ms | Avg: 16.7161ms | Jitter: 274.971ms | Min: 0.760634ms | Max: 13464.2ms | Spikes (>16.6ms): 598 | % of Frame: 100%
+[Uint64(1784052771251994339)] [INFO] Zone: Phys: Forces & Integrator | Runs: 8783 | Last: 0.004429ms | Avg: 0.004532ms | Jitter: 0.00380131ms | Min: 0.001163ms | Max: 0.182996ms | Spikes (>16.6ms): 0 | % of Frame: 0.0993879%
+[Uint64(1784052771252089772)] [INFO] Zone: Phys: Spatial Grid Rebuild | Runs: 8783 | Last: 0.015616ms | Avg: 0.017677ms | Jitter: 0.0152869ms | Min: 0.004243ms | Max: 0.964336ms | Spikes (>16.6ms): 0 | % of Frame: 0.387659%
+[Uint64(1784052771252156190)] [INFO] Zone: Phys: Collision Detection | Runs: 8783 | Last: 0.298195ms | Avg: 0.227492ms | Jitter: 0.117844ms | Min: 0.031166ms | Max: 3.28402ms | Spikes (>16.6ms): 0 | % of Frame: 4.98872%
+[Uint64(1784052771252234479)] [INFO] Zone: Phys: Constraint Solver | Runs: 8783 | Last: 0.030116ms | Avg: 0.022048ms | Jitter: 0.0244527ms | Min: 2.5e-05ms | Max: 1.90944ms | Spikes (>16.6ms): 0 | % of Frame: 0.483512%
+[Uint64(1784052771252297750)] [INFO] Zone: Chunks: Scan and Load | Runs: 1184 | Last: 2.75146ms | Avg: 0.788057ms | Jitter: 0.857824ms | Min: 0.030764ms | Max: 6.42293ms | Spikes (>16.6ms): 0 | % of Frame: 2.32964%
+[Uint64(1784052771252362306)] [INFO] Zone: Bake: Carve CPU | Runs: 28 | Last: 0.093674ms | Avg: 0.033143ms | Jitter: 0.036236ms | Min: 0.004463ms | Max: 0.136815ms | Spikes (>16.6ms): 0 | % of Frame: 0.00231702%
+[Uint64(1784052771252431249)] [INFO] Zone: Bake: Carve GPU | Runs: 28 | Last: 67.3713ms | Avg: 6.07843ms | Jitter: 16.0738ms | Min: 0.197781ms | Max: 67.3713ms | Spikes (>16.6ms): 3 | % of Frame: 0.424941%
+[Uint64(1784052771252477903)] [INFO] ----------------------------------
+

@@ -24,7 +24,11 @@
           voxel-cell-size-str (Double.str voxel-cell-size)]
       (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/raymarch.wgsl")
         (Result.Success src)
-          (let [s1 (replace-all &src "\\{\\{LIMIT\\}\\}" &limit-str)
+          (let [shading-rule (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shading_rule.wgsl")
+                               (Result.Success rule-content) rule-content
+                               _ @"")
+                s-injected (replace-all &src "// === DYNAMIC SHADING INJECTION ===" &shading-rule)
+                s1 (replace-all &s-injected "\\{\\{LIMIT\\}\\}" &limit-str)
                 s2 (replace-all &s1 "\\{\\{MAX_IDS\\}\\}" &max-ids-str)
                 s3 (replace-all &s2 "\\{\\{RAY_STEPS\\}\\}" &ray-steps-str)
                 s4 (replace-all &s3 "\\{\\{SHADOW_STEPS\\}\\}" &shadow-steps-str)

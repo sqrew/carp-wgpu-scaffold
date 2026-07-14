@@ -409,12 +409,19 @@
 
   (sig evaluate-render-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn evaluate-render-hot-reload! [e ctx ren]
-    (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/raymarch.wgsl")]
-      (match file-res
-        (Result.Success content)
+    (let [file-res1 (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/raymarch.wgsl")
+          file-res2 (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shading_rule.wgsl")
+          content (match file-res1
+                    (Result.Success c1)
+                      (match file-res2
+                        (Result.Success c2) (str* c1 c2)
+                        _ c1)
+                    _ @"")]
+      (if (String.empty? &content)
+          ()
           (let [last-known (Engine.last-known-raymarch e)]
             (if (String.empty? last-known)
-                (Engine.set-last-known-raymarch! e content)
+                (Engine.set-last-known-raymarch! e @&content)
                 (when (not (= last-known &content))
                   (do
                     (Engine.set-last-known-raymarch! e @&content)
@@ -452,8 +459,7 @@
                                   (WGPURender.free-pipeline new-pipe)
                                   (println* "Failed to create bind group for new render pipeline: " &err))))
                         (Result.Error err)
-                          (println* "Failed to compile new render pipeline: " &err)))))))
-        (Result.Error _) ())))
+                          (println* "Failed to compile new render pipeline: " &err))))))))))
 
   (sig evaluate-carve-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn evaluate-carve-hot-reload! [e ctx ren]

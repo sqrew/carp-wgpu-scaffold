@@ -1693,6 +1693,8 @@ struct PointInstance {
                 var custom_glow = vec3<f32>(0.0);
                 var custom_specular_mult = 1.0;
                 
+                // === DYNAMIC SHADING INJECTION ===
+                
                 if (mat_id == 11) {
                     // Custom Material 11: Glowing Neon Cyan
                     terr_col = vec3<f32>(0.02, 0.45, 0.6);
