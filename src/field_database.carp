@@ -69,6 +69,7 @@
   influences (Array Double)
   kernel-updates (Array KernelUpdate)
   entity-scalars (Array (Array Double))
+  spatial-grid (SpatialGrid Int)
 ])
 
 (defmodule FieldDatabase
@@ -126,7 +127,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           diffusion-rate 0.8
-          new-temps (Array.copy temp-arr)]
+          new-temps (Array.copy temp-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -135,20 +137,25 @@
                   scale-i @(Array.unsafe-nth scales i)
                   cooling-rate 0.1
                   ambient-temp 0.0
-                  delta-temp (* (- ambient-temp t-i) (* cooling-rate dt))]
+                  delta-temp (* (- ambient-temp t-i) (* cooling-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [t-j @(Array.unsafe-nth temp-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              transfer (* (* (- t-j t-i) factor) dt)]
-                          (set! delta-temp (+ delta-temp (* transfer diffusion-rate))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [t-j @(Array.unsafe-nth temp-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- t-j t-i) factor) dt)]
+                            (set! delta-temp (+ delta-temp (* transfer diffusion-rate)))))))))
                 (Array.aset! &new-temps i (+ t-i delta-temp))))))
         (for [i 0 num-entities]
           (Array.aset! temp-arr i @(Array.unsafe-nth &new-temps i))))))
@@ -164,7 +171,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           diffusion-rate 0.6
-          new-hums (Array.copy hum-arr)]
+          new-hums (Array.copy hum-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -177,21 +185,26 @@
                   delta-hum (* (- ambient-hum h-i) (* dissipation-rate dt))
                   evap-cond (if (> t-i 0.0)
                                 (* (* t-i 0.01) (* (- 1.0 h-i) dt))
-                                (* (* t-i 0.02) (* h-i dt)))]
+                                (* (* t-i 0.02) (* h-i dt)))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
                 (set! delta-hum (+ delta-hum evap-cond))
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [h-j @(Array.unsafe-nth hum-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              transfer (* (* (- h-j h-i) factor) dt)]
-                          (set! delta-hum (+ delta-hum (* transfer diffusion-rate))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [h-j @(Array.unsafe-nth hum-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- h-j h-i) factor) dt)]
+                            (set! delta-hum (+ delta-hum (* transfer diffusion-rate)))))))))
                 (Array.aset! &new-hums i (Double.clamp 0.0 1.0 (+ h-i delta-hum)))))))
         (for [i 0 num-entities]
           (Array.aset! hum-arr i @(Array.unsafe-nth &new-hums i))))))
@@ -207,7 +220,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           diffusion-rate 0.7
-          new-pres (Array.copy pres-arr)]
+          new-pres (Array.copy pres-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -219,21 +233,26 @@
                   dissipation-rate 0.15
                   delta-pres (* (- ambient-pres p-i) (* dissipation-rate dt))
                   expansion-rate 0.25
-                  thermal-expansion (* (* t-i expansion-rate) dt)]
+                  thermal-expansion (* (* t-i expansion-rate) dt)
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
                 (set! delta-pres (+ delta-pres thermal-expansion))
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [p-j @(Array.unsafe-nth pres-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              transfer (* (* (- p-j p-i) factor) dt)]
-                          (set! delta-pres (+ delta-pres (* transfer diffusion-rate))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [p-j @(Array.unsafe-nth pres-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- p-j p-i) factor) dt)]
+                            (set! delta-pres (+ delta-pres (* transfer diffusion-rate)))))))))
                 (Array.aset! &new-pres i (Double.clamp 0.0 100.0 (+ p-i delta-pres)))))))
         (for [i 0 num-entities]
           (Array.aset! pres-arr i @(Array.unsafe-nth &new-pres i))))))
@@ -247,7 +266,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           diffusion-rate 0.9
-          new-chgs (Array.copy charge-arr)]
+          new-chgs (Array.copy charge-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -256,20 +276,25 @@
                   scale-i @(Array.unsafe-nth scales i)
                   ambient-chg 0.0
                   discharge-rate 0.1
-                  delta-charge (* (- ambient-chg c-i) (* discharge-rate dt))]
+                  delta-charge (* (- ambient-chg c-i) (* discharge-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [c-j @(Array.unsafe-nth charge-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              transfer (* (* (- c-j c-i) factor) dt)]
-                          (set! delta-charge (+ delta-charge (* transfer diffusion-rate))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [c-j @(Array.unsafe-nth charge-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- c-j c-i) factor) dt)]
+                            (set! delta-charge (+ delta-charge (* transfer diffusion-rate)))))))))
                 (Array.aset! &new-chgs i (Double.clamp -10.0 10.0 (+ c-i delta-charge)))))))
         (for [i 0 num-entities]
           (Array.aset! charge-arr i @(Array.unsafe-nth &new-chgs i))))))
@@ -283,7 +308,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           diffusion-rate 0.7
-          new-lights (Array.copy light-arr)]
+          new-lights (Array.copy light-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -292,20 +318,25 @@
                   scale-i @(Array.unsafe-nth scales i)
                   decay-rate 0.15
                   ambient-light 0.0
-                  delta-light (* (- ambient-light l-i) (* decay-rate dt))]
+                  delta-light (* (- ambient-light l-i) (* decay-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [l-j @(Array.unsafe-nth light-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              transfer (* (* (- l-j l-i) factor) dt)]
-                          (set! delta-light (+ delta-light (* transfer diffusion-rate))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [l-j @(Array.unsafe-nth light-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- l-j l-i) factor) dt)]
+                            (set! delta-light (+ delta-light (* transfer diffusion-rate)))))))))
                 (Array.aset! &new-lights i (Double.clamp 0.0 1.0 (+ l-i delta-light)))))))
         (for [i 0 num-entities]
           (Array.aset! light-arr i @(Array.unsafe-nth &new-lights i))))))
@@ -319,7 +350,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           diffusion-rate 0.5
-          new-dens (Array.copy density-arr)]
+          new-dens (Array.copy density-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -327,20 +359,25 @@
                   pos-i (Array.unsafe-nth positions i)
                   scale-i @(Array.unsafe-nth scales i)
                   decay-rate 0.05
-                  delta-density (* (- 1.0 d-i) (* decay-rate dt))]
+                  delta-density (* (- 1.0 d-i) (* decay-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                    (let [d-j @(Array.unsafe-nth density-arr j)
-                          pos-j (Array.unsafe-nth positions j)
-                          scale-j @(Array.unsafe-nth scales j)
-                          to-j (Vector3.sub pos-j pos-i)
-                          dist (Vector3.mag &to-j)
-                          max-dist (+ scale-i scale-j)]
-                      (when (< dist max-dist)
-                        (let [factor (- 1.0 (/ dist max-dist))
-                              transfer (* (* (- d-j d-i) factor) dt)]
-                          (set! delta-density (+ delta-density (* transfer diffusion-rate))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [d-j @(Array.unsafe-nth density-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- d-j d-i) factor) dt)]
+                            (set! delta-density (+ delta-density (* transfer diffusion-rate)))))))))
                 (Array.aset! &new-dens i (+ d-i delta-density))))))
         (for [i 0 num-entities]
           (Array.aset! density-arr i @(Array.unsafe-nth &new-dens i))))))
@@ -385,8 +422,9 @@
           kernels (the (Array FieldKernelDef) [])
           influences (the (Array Double) (replicate n &1.0))
           kernel-updates (the (Array KernelUpdate) [])
-          entity-scalars (the (Array (Array Double)) [])]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates entity-scalars)))
+          entity-scalars (the (Array (Array Double)) [])
+          grid (SpatialGrid.new-with-origin 8.0 32 32 32 (Vector3.init -128.0 -128.0 -128.0))]
+      (FieldDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates entity-scalars grid)))
 
 
   (defn FieldDatabase.get-index-by-handle [db handle]
@@ -886,10 +924,26 @@
         (FieldDatabase.set-next-virtual-id! db (inc h-id))
         (let [discard-idx (register-instance-generic! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col 1.0 fields (the (Maybe SDF) (Maybe.Nothing)))]
           ())
-        (let [idx (get-index-by-handle db &handle)]
+            (let [idx (get-index-by-handle db &handle)]
           (when (>= idx 0)
             (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) idx @vel)))
         (Array.push-back! (FieldDatabase.events db) event))))
+
+  (defn rebuild-spatial-grid! [db]
+    (let [grid (FieldDatabase.spatial-grid db)
+          active-arr (FieldDatabase.active db)
+          num-entities (Array.length active-arr)
+          positions (FieldDatabase.positions db)
+          scales (FieldDatabase.scales db)]
+      (do
+        (SpatialGrid.clear! grid)
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [pos (Array.unsafe-nth positions i)
+                  scale @(Array.unsafe-nth scales i)
+                  aabb (AABB.init (Vector3.sub pos &(Vector3.init scale scale scale))
+                                  (Vector3.add pos &(Vector3.init scale scale scale)))]
+              (SpatialGrid.insert! grid &aabb i)))))))
 
   (defn diffuse-velocity! [db dt]
     (let [active-arr (FieldDatabase.active db)
@@ -898,7 +952,8 @@
           positions (FieldDatabase.positions db)
           scales (FieldDatabase.scales db)
           viscosity 0.4
-          new-vels (Array.copy vel-arr)]
+          new-vels (Array.copy vel-arr)
+          grid (FieldDatabase.spatial-grid db)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -906,21 +961,26 @@
                   pos-i (Array.unsafe-nth positions i)
                   scale-i @(Array.unsafe-nth scales i)
                   friction 0.1
-                  delta-vel (Vector3.mul v-i (neg (* friction dt)))]
+                  delta-vel (Vector3.mul v-i (neg (* friction dt)))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
               (do
-                (for [j 0 num-entities]
-                  (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                     (let [v-j (Array.unsafe-nth vel-arr j)
-                           pos-j (Array.unsafe-nth positions j)
-                           scale-j @(Array.unsafe-nth scales j)
-                           to-j (Vector3.sub pos-j pos-i)
-                           dist (Vector3.mag &to-j)
-                           max-dist (+ scale-i scale-j)]
-                       (when (< dist max-dist)
-                         (let [factor (- 1.0 (/ dist max-dist))
-                               diff (Vector3.sub v-j v-i)
-                               transfer (Vector3.mul &diff (* factor dt))]
-                           (set! delta-vel (Vector3.add &delta-vel &(Vector3.mul &transfer viscosity))))))))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [v-j (Array.unsafe-nth vel-arr j)
+                            pos-j (Array.unsafe-nth positions j)
+                            scale-j @(Array.unsafe-nth scales j)
+                            to-j (Vector3.sub pos-j pos-i)
+                            dist (Vector3.mag &to-j)
+                            max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                diff (Vector3.sub v-j v-i)
+                                transfer (Vector3.mul &diff (* factor dt))]
+                            (set! delta-vel (Vector3.add &delta-vel &(Vector3.mul &transfer viscosity)))))))))
                 (Array.aset! &new-vels i (Vector3.add v-i &delta-vel))))))
         (for [i 0 num-entities]
           (Array.aset! vel-arr i @(Array.unsafe-nth &new-vels i))))))
@@ -931,6 +991,7 @@
           len (Array.length ev-arr)
           keep-ev []]
       (do
+        (rebuild-spatial-grid! db)
         (diffuse-velocity! db dt)
 
         (for [i 0 len]
