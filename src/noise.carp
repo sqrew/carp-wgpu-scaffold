@@ -32,9 +32,15 @@
         double tz = z - fz;
         
         #define HASH2D(px, pz) ({ \
-            double s = sin((px) * 12.9898 + (pz) * 78.233); \
-            double mult = s * 43758.5453123; \
-            mult - floor(mult); \
+            unsigned int x_int = (unsigned int)(px); \
+            unsigned int z_int = (unsigned int)(pz); \
+            unsigned int h = x_int * 73856093u ^ z_int * 83492791u; \
+            h = h ^ (h >> 16); \
+            h = h * 0x7feb352du; \
+            h = h ^ (h >> 15); \
+            h = h * 0x846ca68bu; \
+            h = h ^ (h >> 16); \
+            (double)h / 4294967296.0; \
         })
         
         double v00 = HASH2D(fx, fz);
@@ -110,9 +116,16 @@
         double tz = z - fz;
         
         #define HASH3D(px, py, pz) ({ \
-            double s = sin((px) * 12.9898 + (py) * 78.233 + (pz) * 144.7272); \
-            double mult = s * 43758.5453123; \
-            mult - floor(mult); \
+            unsigned int x_int = (unsigned int)(px); \
+            unsigned int y_int = (unsigned int)(py); \
+            unsigned int z_int = (unsigned int)(pz); \
+            unsigned int h = x_int * 73856093u ^ y_int * 19349663u ^ z_int * 83492791u; \
+            h = h ^ (h >> 16); \
+            h = h * 0x7feb352du; \
+            h = h ^ (h >> 15); \
+            h = h * 0x846ca68bu; \
+            h = h ^ (h >> 16); \
+            (double)h / 4294967296.0; \
         })
         
         double v000 = HASH3D(fx, fy, fz);
