@@ -1056,6 +1056,9 @@ struct PointInstance {
                           let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
                           let inst_type = i32(round(s_data.shape_info.y));
                           let csg_root_idx = i32(round(s_data.shape_info.z));
+                          if (csg_root_idx == -3) {
+                              continue;
+                          }
                           let shape_type = u32(round(s_data.shape_info.x));
 
                           if (inst_type == 1) { // Black hole

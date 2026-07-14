@@ -72,7 +72,7 @@
             zero-g-color-v (Vector3.init 0.6 0.1 0.8)
             zero-g-color (Color.init @&zero-g-color-v)
             params (Vector4.init 1.0 0.0 0.0 0.0)
-            zero-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+            zero-g-fi (FieldInstance.init 1 params 4.0 -3 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
             gs (GravitySource.init 0.0)]
         (do
           (ECS.add-component! world &zero-g-ent zero-g-rb)
@@ -104,7 +104,7 @@
             inv-g-color-v (Vector3.init 0.9 0.2 0.1)
             inv-g-color (Color.init @&inv-g-color-v)
             params (Vector4.init 1.0 0.0 0.0 0.0)
-            inv-g-fi (FieldInstance.init 1 params 4.0 -1 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+            inv-g-fi (FieldInstance.init 1 params 4.0 -3 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
             gs (GravitySource.init -1.0)]
         (do
           (ECS.add-component! world &inv-g-ent inv-g-rb)

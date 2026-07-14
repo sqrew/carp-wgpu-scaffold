@@ -749,10 +749,12 @@
             (let [csg-op @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) i)]
               (if (= csg-op -2)
                   (set! min-d (max-double min-d (- 0.0 inst-d)))
-                  (when (< inst-d min-d)
-                    (do
-                      (set! min-d inst-d)
-                      (set! mat-id (Double.from-int (inc i)))))))))
+                  (if (= csg-op -3)
+                      () ;; Non-solid field: skip baking into collision terrain
+                      (when (< inst-d min-d)
+                        (do
+                          (set! min-d inst-d)
+                          (set! mat-id (Double.from-int (inc i))))))))))
         (Vector2.init min-d mat-id))))
 
   (sig calculate-pressure-gradient-grid (Fn [(Ref FieldDatabase) (Ref (Vector3 Double)) (Ptr (SpatialGrid Uint32))] (Vector3 Double)))
