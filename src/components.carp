@@ -56,19 +56,7 @@
   (implements zero BouncyTag.zero)
 )
 
-(deftype Explosion [
-  radius Double
-  radius-speed Double
-  max-radius Double
-  force Double
-  pressure Double
-  temperature Double
-  crater-handle (Maybe (Handle ()))
-])
-(defmodule Explosion
-  (defn zero [] (Explosion.init 0.0 0.0 0.0 0.0 0.0 0.0 (Maybe.Nothing)))
-  (implements zero Explosion.zero)
-)
+
 
 (deftype StaticWorldTag [])
 (defmodule StaticWorldTag
@@ -167,5 +155,5 @@
   (implements zero UiPanel.zero)
 )
 
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag Explosion StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel)
 

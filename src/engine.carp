@@ -205,18 +205,20 @@
                       rad @(CraterSpawnData.radius data)
                       op @(CraterSpawnData.op-type data)]
                   (do
-                    (if (= op 0.0)
-                      (do
-                        (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) (Engine.entity-db e) pos rad 800.0 120.0 30.0)
-                        (Engine.set-voxel-dirty! e true))
-                      (if (< op 0.0)
+                    (if (>= op 0.0)
+                      (if (= op 0.0)
+                        (let [new-h (Engine.spawn-crater! e @pos rad 1 (Maybe.Nothing))
+                              crater-data (CraterSpawnData.init @pos rad 0.0)]
+                          (do
+                            (Array.push-back! (Engine.craters e) crater-data)
+                            (Engine.set-voxel-dirty! e true)))
+                        (let [build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4) op (Maybe.Nothing))]
+                           (Array.push-back! (Engine.growing-builds e) build)))
+                      (let [new-h (Engine.spawn-crater! e @pos rad 1 (Maybe.Nothing))
+                            crater-data (CraterSpawnData.init @pos rad 0.0)]
                         (do
-                          (ExplosionSystem.spawn-implosion! (Engine.world e) (Engine.db e) (Engine.entity-db e) pos rad -1200.0 -40.0 -80.0)
-                          (Engine.set-voxel-dirty! e true))
-                        (let [op-int (Double.to-int op)
-                              c-handle (Engine.spawn-crater! e @pos 0.05 op-int (Maybe.Nothing))
-                              build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4) op c-handle)]
-                           (Array.push-back! (Engine.growing-builds e) build))))
+                          (Array.push-back! (Engine.craters e) crater-data)
+                          (Engine.set-voxel-dirty! e true))))
                     (Result.Success ())))
               _ (Result.Success ()))
           _ (Result.Success ())))))
@@ -242,7 +244,6 @@
           (do
             (PhysicsSystem.apply-atmospheric-forces! e world (Engine.db e) (Engine.entity-db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
             (let [stepped (PhysicsSystem.step-ecs! e world grid)] ())
-            (ExplosionSystem.step-explosions! e world (Engine.db e) f-dt)
             (Engine.set-accumulator! e (- @(Engine.accumulator e) f-dt)))))))
 
   (defn tick-lifecycle! [e dt]
@@ -261,17 +262,15 @@
                     target @(GrowingBuild.target-radius &gb)
                     speed @(GrowingBuild.speed &gb)
                     mat-id @(GrowingBuild.material-id &gb)
-                    c-h (GrowingBuild.crater-handle &gb)
                     new-r (+ curr (* speed dt))]
                 (if (< new-r target)
-                    (let [new-h (Engine.spawn-crater! e @pos new-r (Double.to-int mat-id) @c-h)
-                          updated-gb (GrowingBuild.init @pos new-r target speed mat-id new-h)
+                    (let [updated-gb (GrowingBuild.init @pos new-r target speed mat-id (Maybe.Nothing))
                           crater-data (CraterSpawnData.init @pos new-r mat-id)]
                       (do
                         (Array.push-back! &keep-gb updated-gb)
                         (Array.push-back! (Engine.craters e) crater-data)
                         (Engine.set-voxel-dirty! e true)))
-                    (let [new-h (Engine.spawn-crater! e @pos target (Double.to-int mat-id) @c-h)
+                    (let [new-h (Engine.spawn-crater! e @pos target (Double.to-int mat-id) (Maybe.Nothing))
                           crater-data (CraterSpawnData.init @pos target mat-id)]
                       (do
                         (Array.push-back! (Engine.craters e) crater-data)
@@ -673,22 +672,12 @@
             world (Engine.world e)
             chunks (World.chunks world-data)
             num-chunks (Array.length chunks)
-            lookup-grid (the (Array Bool) (replicate 53361 &false))
             static-world-sdf (Maybe.Nothing)]
         (do
           (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
             (match-ref (Collidable.volume col)
               (Volume.Sdf parent-sdf) (set! static-world-sdf (Maybe.Just @parent-sdf))
               _ ()))
-          (for [i 0 num-chunks]
-            (let [c (Array.unsafe-nth chunks i)
-                  dx (+ @(Chunk.coord-x c) (- 16 cam-qx))
-                  dy (+ @(Chunk.coord-y c) (- 24 cam-qy))
-                  dz (+ @(Chunk.coord-z c) (- 16 cam-qz))]
-              (when (and (and (>= dx 0) (< dx 33))
-                         (and (and (>= dy 0) (< dy 49))
-                               (and (>= dz 0) (< dz 33))))
-                (Array.aset! &lookup-grid (+ dx (+ (* dy 33) (* (* dz 33) 49))) true))))
 
           (when (or (not (= cam-qx @(World.last-cam-x world-data)))
                     (or (not (= cam-qy @(World.last-cam-y world-data)))
@@ -754,7 +743,7 @@
                   (let [chunk-ref (Array.unsafe-nth chunks baking-idx)
                         current-prog @(Chunk.bake-progress chunk-ref)
                         res @(World.voxel-resolution world-data)
-                        step (let [s (/ 65536 (* res res))] (if (< s 1) 1 s))
+                        step (let [s (/ res 8)] (if (< s 1) 1 s))
                         next-prog (let [sum (+ current-prog step)] (if (< res sum) res sum))
                         qx @(Chunk.coord-x chunk-ref)
                         qy @(Chunk.coord-y chunk-ref)
@@ -784,9 +773,20 @@
                   
                   ;; If no chunk is baking, check if we need to load a new missing chunk
                   (when @(Engine.need-chunk-scan e)
-                    (let [r 0]
+                    (let [lookup-grid (the (Array Bool) (replicate 53361 &false))]
                       (do
-                        (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Scan and Load")
+                        (for [i 0 num-chunks]
+                          (let [c (Array.unsafe-nth chunks i)
+                                dx (+ @(Chunk.coord-x c) (- 16 cam-qx))
+                                dy (+ @(Chunk.coord-y c) (- 24 cam-qy))
+                                dz (+ @(Chunk.coord-z c) (- 16 cam-qz))]
+                            (when (and (and (>= dx 0) (< dx 33))
+                                       (and (and (>= dy 0) (< dy 49))
+                                             (and (>= dz 0) (< dz 33))))
+                              (Array.aset! &lookup-grid (+ dx (+ (* dy 33) (* (* dz 33) 49))) true))))
+                        (let [r 0]
+                          (do
+                            (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Scan and Load")
                         (while (and (< r 15) (not loaded-any))
                           (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))
                                 offsets (if (= limit-r 0)
@@ -896,7 +896,7 @@
                               (set! r (inc r)))))
                         (when (not loaded-any)
                           (Engine.set-need-chunk-scan! e false))
-                        (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))))
+                        (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))))))
 
   (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
