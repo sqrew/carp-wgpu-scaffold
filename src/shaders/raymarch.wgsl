@@ -771,40 +771,7 @@ struct PointInstance {
             return vec3<f32>(0.4, 0.4, 0.5);
         }
 
-      fn getMetaballDist(p: vec3<f32>) -> f32 {
-          let p_local = p - u.grid_origin.xyz;
-          let gx = i32(floor(p_local.x / u.cell_size));
-          let gy = i32(floor(p_local.y / u.cell_size));
-          let gz = i32(floor(p_local.z / u.cell_size));
-          var metaball_d = 10000.0;
-          if (gx >= 0 && gx < i32(u.grid_dims.x) && gy >= 0 && gy < i32(u.grid_dims.y) && gz >= 0 && gz < i32(u.grid_dims.z)) {
-              let idx = gx + i32(u.grid_dims.x) * (gy + i32(u.grid_dims.y) * gz);
-              let cell = grid[idx];
-              let count = min(i32(round(cell.header.x)), {{MAX_IDS}});
-              for(var i = 0; i < count; i = i + 1) {
-                  let s_idx = i32(round(cell.ids[i]));
-                  if (s_idx >= 0 && s_idx < 1024) {
-                    let s_data = u.instances[s_idx];
-                    let raw_w = s_data.pos_scale.w;
-                    if (raw_w != 0.0) {
-                      let csg_root_idx = i32(round(s_data.color_csg.w));
-                      if (csg_root_idx <= -99) {
-                          var s = f32(-99 - csg_root_idx) / 100.0;
-                          if (s < 0.05) { s = 0.6; }
-                          let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
-                          let wave_phase = (local_p.x + local_p.z) * 8.0 - u.time * 12.0;
-                          let wave = 0.05 * sin(wave_phase) * exp(-length(local_p) * 0.15);
-                          let wavy_p = vec3<f32>(local_p.x, local_p.y + wave, local_p.z);
-                          let squashed_p = vec3<f32>(wavy_p.x, wavy_p.y / s, wavy_p.z);
-                          let local_dist = (length(squashed_p) - raw_w) * min(1.0, s) * 0.85;
-                          metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
-                      }
-                    }
-                  }
-              }
-          }
-          return metaball_d;
-      }
+
 
       fn sdPlane(p: vec3<f32>, n: vec3<f32>, h: f32) -> f32 {
           return dot(p, n) + h;
@@ -1115,28 +1082,12 @@ struct PointInstance {
                                final_d = min(final_d, knob1_d);
                                final_d = min(final_d, knob2_d);
 
-                               local_dist = final_d;
-
-                               if (local_dist < metaball_d) {
-                                   metaball_d = local_dist;
-                                   has_metaballs = true;
-                                   metaball_idx = f32(s_idx);
+                               if (final_d < d.x) {
+                                   d = vec2<f32>(final_d, f32(s_idx));
                                }
                                continue;
                           }
-                          if (inst_type == 3) { // Metaballs
-                              if (!eval_metaballs) { continue; }
-                              var s = f32(-99 - csg_root_idx) / 100.0;
-                              if (s < 0.05) { s = 0.6; }
-                              let wave_phase = (local_p.x + local_p.z) * 8.0 - u.time * 12.0;
-                              let wave = 0.05 * sin(wave_phase) * exp(-length(local_p) * 0.15);
-                              let wavy_p = vec3<f32>(local_p.x, local_p.y + wave, local_p.z);
-                              let squashed_p = vec3<f32>(wavy_p.x, wavy_p.y / s, wavy_p.z);
-                              local_dist = (length(squashed_p) - raw_w) * min(1.0, s) * 0.85;
-                              metaball_d = smin(metaball_d, local_dist, u.grid_dims.w);
-                              has_metaballs = true;
-                              metaball_idx = f32(s_idx);
-                          } else if (inst_type == 0) { // CSG tree / shape primitive
+                          if (inst_type == 0) { // CSG tree / shape primitive
                               if (csg_root_idx >= 0) {
                                   local_dist = evaluateCsgTree(local_p, csg_root_idx);
                               } else {
@@ -1163,15 +1114,6 @@ struct PointInstance {
                       }
                   }
 
-                  if (has_metaballs && eval_metaballs) {
-                      let blended_d = smin(d.x, metaball_d, u.grid_dims.w);
-                      var idx = d.y;
-                      if (metaball_d < d.x) {
-                          idx = metaball_idx;
-                      }
-                      d = vec2<f32>(blended_d, idx);
-                  }
-
                   var t_exit = 100.0;
                   if (u.shadow_ao_quality.z <= 0.5) {
                       let cell_min = vec3<f32>(f32(gx), f32(gy), f32(gz)) * u.cell_size;
@@ -1188,7 +1130,7 @@ struct PointInstance {
                   if (u.shadow_ao_quality.z > 0.5) {
                       h_step = d.x;
                   }
-                  return vec4<f32>(h_step, d.x, d.y, metaball_d);
+                  return vec4<f32>(h_step, d.x, d.y, 10000.0);
               } else {
                   return vec4<f32>(d.x, d.x, d.y, 10000.0);
               }
@@ -1456,7 +1398,6 @@ struct PointInstance {
                 let p = ro + rd * t;
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
                 var is_sphere = false;
-                var is_metaball = false;
                 var is_exp = false;
                 var exp_temp_factor = 0.0;
                 var exp_n_col = 0.0;
@@ -1470,16 +1411,13 @@ struct PointInstance {
                     if (shape_type == 1u && inst_type == 0 && csg_root_idx < 0 && s_data.sph_fields.x == 0.0) {
                         is_sphere = true;
                     }
-                    if (inst_type == 3) {
-                        is_metaball = true;
-                    }
                 }
 
                 if (is_sphere) {
                      let s_idx = i32(hitId);
                      let s_data = u.instances[s_idx];
                      normal = normalize(p - s_data.pos_scale.xyz);
-                 } else if (hitId != -1.0 && !is_metaball) {
+                 } else if (hitId != -1.0) {
                      let s_idx = i32(hitId);
                      let eps = 0.005;
                      let d1 = getInstanceDist(p + vec3<f32>( eps, -eps, -eps), s_idx);
@@ -1496,59 +1434,29 @@ struct PointInstance {
                      } else {
                          normal = vec3<f32>(0.0, 1.0, 0.0);
                      }
-                 } else if (is_metaball) {
-                    let eps = 0.01;
-                    let d1 = getMetaballDist(p + vec3<f32>( eps, -eps, -eps));
-                    let d2 = getMetaballDist(p + vec3<f32>(-eps, -eps,  eps));
-                    let d3 = getMetaballDist(p + vec3<f32>(-eps,  eps, -eps));
-                    let d4 = getMetaballDist(p + vec3<f32>( eps,  eps,  eps));
-                    let grad = vec3<f32>( eps, -eps, -eps) * d1 +
-                               vec3<f32>(-eps, -eps,  eps) * d2 +
-                               vec3<f32>(-eps,  eps, -eps) * d3 +
-                               vec3<f32>( eps,  eps,  eps) * d4;
-                    let len = length(grad);
-                    if (len > 1e-6) {
-                        normal = grad / len;
-                    } else {
-                        normal = vec3<f32>(0.0, 1.0, 0.0);
-                    }
-                } else {
-                    let eps = 0.05 + 0.0005 * t;
-                    let d1 = worldSDF(p + vec3<f32>( eps, -eps, -eps), rd, dither_threshold, false).y;
-                    let d2 = worldSDF(p + vec3<f32>(-eps, -eps,  eps), rd, dither_threshold, false).y;
-                    let d3 = worldSDF(p + vec3<f32>(-eps,  eps, -eps), rd, dither_threshold, false).y;
-                    let d4 = worldSDF(p + vec3<f32>( eps,  eps,  eps), rd, dither_threshold, false).y;
-                    let grad = vec3<f32>( eps, -eps, -eps) * d1 +
-                               vec3<f32>(-eps, -eps,  eps) * d2 +
-                               vec3<f32>(-eps,  eps, -eps) * d3 +
-                               vec3<f32>( eps,  eps,  eps) * d4;
-                    let len = length(grad);
-                    if (len > 1e-6) {
-                        normal = grad / len;
-                    } else {
-                        normal = vec3<f32>(0.0, 1.0, 0.0);
-                    }
-                }
+                 } else {
+                     let eps = 0.05 + 0.0005 * t;
+                     let d1 = worldSDF(p + vec3<f32>( eps, -eps, -eps), rd, dither_threshold, false).y;
+                     let d2 = worldSDF(p + vec3<f32>(-eps, -eps,  eps), rd, dither_threshold, false).y;
+                     let d3 = worldSDF(p + vec3<f32>(-eps,  eps, -eps), rd, dither_threshold, false).y;
+                     let d4 = worldSDF(p + vec3<f32>( eps,  eps,  eps), rd, dither_threshold, false).y;
+                     let grad = vec3<f32>( eps, -eps, -eps) * d1 +
+                                vec3<f32>(-eps, -eps,  eps) * d2 +
+                                vec3<f32>(-eps,  eps, -eps) * d3 +
+                                vec3<f32>( eps,  eps,  eps) * d4;
+                     let len = length(grad);
+                     if (len > 1e-6) {
+                         normal = grad / len;
+                     } else {
+                         normal = vec3<f32>(0.0, 1.0, 0.0);
+                     }
+                 }
 
                 // Sample voxel and metaball distances for color and shading blending
                 let voxel_val = sampleVoxelGrid(p, false);
                 let voxel_d = voxel_val.x;
-                let metaball_d = final_metaball_d;
-                let solid_surface_d = select(0.0, voxel_d, hitId == -1.0);
                 let fields = getInterpolatedFields(p);
-                let is_wet = is_metaball || (metaball_d < solid_surface_d + u.grid_dims.w);
-
-                if (is_wet) {
-                    let temp_factor = clamp(fields.x / 100.0, 0.0, 1.0);
-                    let w_speed = u.time * (2.5 + temp_factor * 5.0);
-                    let rx = sin(p.x * 10.0 + p.z * 6.0 + w_speed) * cos(p.z * 12.0 - p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
-                    let ry = sin(p.y * 15.0 - w_speed) * (0.06 + temp_factor * 0.08);
-                    let rz = cos(p.x * 8.0 - p.z * 6.0 - w_speed) * sin(p.z * 12.0 + p.x * 4.0 + w_speed) * (0.12 + temp_factor * 0.15);
-                    let h = clamp(0.5 + 0.5 * (solid_surface_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
-                    
-                    let ripples = getWaterRipples(p);
-                    normal = normalize(normal + (vec3<f32>(rx, ry, rz) + ripples) * h);
-                }
+                let is_wet = false;
 
                 let num_suns = u32(round(u.light_params.x));
                 var direct_lighting = vec3<f32>(0.0);
@@ -1581,7 +1489,7 @@ struct PointInstance {
                     var shadow = 1.0;
                     if (blend_factor < 1.0) {
                         var rt_shadow = 1.0;
-                        if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                        if (u.shadow_ao_quality.x > 0.0) {
                             if (diffuse <= 0.0) {
                                 rt_shadow = 0.0;
                             } else {
@@ -1605,27 +1513,21 @@ struct PointInstance {
                     // Accumulate specular highlights scaled by intensity
                     let view_dir = normalize(u.cam_pos.xyz - p);
                     let half_dir = normalize(sun_dir + view_dir);
-                    if (is_wet) {
-                        let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
-                        let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
-                        specular += pow(max(dot(normal, half_dir), 0.0), 120.0) * 2.0 * fresnel * shadow * h * intensity;
-                    } else {
-                        specular += pow(max(dot(normal, half_dir), 0.0), 16.0) * 0.08 * shadow * intensity;
-                    }
+                    specular += pow(max(dot(normal, half_dir), 0.0), 16.0) * 0.08 * shadow * intensity;
                 }
 
                 // AO and sky visibility are calculated once
                 if (blend_factor < 1.0) {
                     var rt_ao = 1.0;
                     var rt_sky_vis = 1.0;
-                    if (u.shadow_ao_quality.y > 0.0 && !(is_wet && u.shadow_ao_quality.y < 2.0)) {
+                    if (u.shadow_ao_quality.y > 0.0) {
                         if (hitId == -1.0) {
                             rt_ao = voxel_val.w;
                         } else {
                             rt_ao = getAO(p, normal, dither_threshold);
                         }
                     }
-                    if (u.shadow_ao_quality.x > 0.0 && !(is_wet && u.shadow_ao_quality.x < 2.0)) {
+                    if (u.shadow_ao_quality.x > 0.0) {
                         rt_sky_vis = rt_ao;
                     }
                     ao = mix(rt_ao, voxel_val.w, blend_factor);
@@ -1746,7 +1648,7 @@ struct PointInstance {
                     // Custom Material 10: Clay Brown
                     terr_col = vec3<f32>(0.35, 0.25, 0.18);
                     terr_col += noise3d(p.x * 0.1, p.y * 0.1, p.z * 0.1) * 0.03;
-                } else if (mat_id == 1 || mat_id == 2 || hitId == -1.0 || is_metaball) {
+                } else if (mat_id == 1 || mat_id == 2 || hitId == -1.0) {
                     let b_val = noise2d(p.x * 0.003, p.z * 0.003);
                     let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
                     let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
@@ -1812,7 +1714,7 @@ struct PointInstance {
                  var base_col = terr_col;
                  var edge = 0.0;
 
-                if (hitId != -1.0 && !is_metaball) {
+                if (hitId != -1.0) {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let inst_type = i32(round(s_data.shape_info.y));
@@ -1935,65 +1837,8 @@ struct PointInstance {
                         }
                     }
                 } else {
-                    let fields = getInterpolatedFields(p);
-                    let view_mode = u.grid_origin.w;
-
-                    // Calculate water color at p (using world coordinates for waves layout)
-                    let temp_factor = clamp(fields.x / 100.0, 0.0, 1.0);
-                    let w_speed1 = u.time * (2.2 + temp_factor * 4.0);
-                    let w_speed2 = u.time * (-1.5 - temp_factor * 3.0);
-                    let wave_val1 = sin(p.x * 3.0 + p.z * 2.0 + w_speed1) * cos(p.x * -1.0 + p.z * 2.5 + w_speed1) * 0.5 + 0.5;
-                    let wave_val2 = sin(p.x * 7.5 - p.z * 5.0 + w_speed2) * sin(p.x * 3.0 + p.z * 8.0 - w_speed2) * 0.5 + 0.5;
-                    let wave_val = mix(wave_val1, wave_val2, 0.4);
-
-                    var water_base = vec3<f32>(0.02, 0.25, 0.75);
-                    var water_tip = vec3<f32>(0.15, 0.65, 0.95);
-
-                    if (view_mode == 1.0) {
-                        // Temperature
-                        let norm_t = clamp(fields.x / 120.0, 0.0, 1.0);
-                        water_base = mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(0.5, 0.5, 0.0), norm_t);
-                        water_tip = mix(vec3<f32>(0.0, 0.8, 0.8), vec3<f32>(1.0, 0.1, 0.0), norm_t);
-                    } else if (view_mode == 2.0) {
-                        // Age / Time
-                        let norm_age = clamp(fields.y / 12.0, 0.0, 1.0);
-                        water_base = mix(vec3<f32>(0.1, 0.9, 0.1), vec3<f32>(0.1, 0.2, 0.9), norm_age);
-                        water_tip = mix(vec3<f32>(0.8, 1.0, 0.2), vec3<f32>(0.9, 0.1, 0.9), norm_age);
-                    } else if (view_mode == 3.0) {
-                        // Humidity
-                        let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
-                        water_base = mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.4, 0.6), norm_hum);
-                        water_tip = mix(vec3<f32>(0.6, 0.5, 0.2), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
-                    } else if (view_mode == 4.0) {
-                        // Pressure
-                        let norm_pres = clamp((fields.w - 1.0) / 30.0, 0.0, 1.0);
-                        water_base = mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.0, 0.4, 0.8), norm_pres);
-                        water_tip = mix(vec3<f32>(0.2, 0.1, 0.6), vec3<f32>(0.2, 0.8, 1.0), norm_pres);
-                    }
-
-                    let water_col = mix(water_base, water_tip, wave_val);
-
-                    // Blend terrain color and water color smoothly (pow-based shallow transparency)
-                    let h = clamp(0.5 + 0.5 * (voxel_d - metaball_d) / u.grid_dims.w, 0.0, 1.0);
-                    let blend_h = pow(h, 1.8);
-                    base_col = mix(terr_col, water_col, blend_h);
-
-                    // Add animated foam froth at the shoreline intersections
-                    let foam_edge = 1.0 - abs(h - 0.5) * 2.0;
-                    var foam_intensity = 0.3;
-                    if (view_mode == 4.0) {
-                        foam_intensity = 0.3 + 0.5 * clamp((fields.w - 1.0) / 30.0, 0.0, 1.0);
-                    }
-                    let foam = pow(max(0.0, foam_edge), 8.0) * foam_intensity * (sin(p.x * 15.0 + p.z * 10.0 + u.time * 6.0) * sin(p.z * 18.0 - p.x * 8.0 - u.time * 4.0) * 0.5 + 0.5);
-                    base_col += vec3<f32>(foam);
-
-                    // Add glossy sky reflections
-                    let view_dir = normalize(u.cam_pos.xyz - p);
-                    let fresnel = pow(1.0 - max(dot(normal, view_dir), 0.0), 5.0) * 0.85 + 0.15;
-                    let ref_dir = reflect(-view_dir, normal);
-                    let sky_ref = getSkyColor(ref_dir) * sky_visibility;
-                    base_col = mix(base_col, sky_ref, 0.25 * fresnel * h);
-               }
+                    base_col = terr_col;
+                }
 
                 color = base_col * lighting * ao + vec3<f32>(specular * custom_specular_mult);
                 color += custom_glow;

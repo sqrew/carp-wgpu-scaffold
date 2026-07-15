@@ -120,7 +120,7 @@
                             (PhysicsSystem.clamp-vector3 &tf 1000.0))]
           (RigidBody.apply-force! rb &total-force)))))
 
-  (defn step-ecs! [e world grid metaball-k]
+  (defn step-ecs! [e world grid]
     (let [world-data (Engine.world-data e)
           coord (Engine.coordinator e)
           diag (Engine.diagnostics e)
@@ -159,7 +159,7 @@
               (let [vel (Body.velocity (RigidBody.body rb))
                     swept (Collision.get-swept-aabb vol vel fixed-dt)
                     swept-expanded (if (ECS.has-component? world &ent BouncyTag)
-                                       (let [pad (+ 0.8 metaball-k)
+                                       (let [pad 2.0
                                              pad-vec (Vector3.init pad pad pad)]
                                          (AABB.init (Vector3.sub (AABB.min &swept) &pad-vec)
                                                     (Vector3.add (AABB.max &swept) &pad-vec)))

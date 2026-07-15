@@ -67,7 +67,6 @@
             true
             []
             []
-            1.2
             @(Settings.show-debug-lines &cfg)
             0
             @(Settings.shadow-quality &cfg)
@@ -242,7 +241,7 @@
         (while (>= @(Engine.accumulator e) f-dt)
           (do
             (PhysicsSystem.apply-atmospheric-forces! e world (Engine.db e) (Engine.entity-db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
-            (let [stepped (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e))] ())
+            (let [stepped (PhysicsSystem.step-ecs! e world grid)] ())
             (ExplosionSystem.step-explosions! e world (Engine.db e) f-dt)
             (Engine.set-accumulator! e (- @(Engine.accumulator e) f-dt)))))))
 
@@ -503,7 +502,7 @@
               (DebugDraw.volume! r-db pos rot vol col-vec)))))))
 
   (defn pack-uniform-header! [u-data cam-pos cam-dir cam-right cam-up bg-color
-                              cell-size cols rows layers metaball-k origin
+                              cell-size cols rows layers origin
                               view-mode shadow-quality volumetric-sdf show-debug
                               suns lacunarity gain]
     (do
@@ -531,7 +530,7 @@
       (Array.aset! u-data 24 (Double.to-float (Double.from-int cols)))
       (Array.aset! u-data 25 (Double.to-float (Double.from-int rows)))
       (Array.aset! u-data 26 (Double.to-float (Double.from-int layers)))
-      (Array.aset! u-data 27 (Double.to-float metaball-k))
+      (Array.aset! u-data 27 0.0f)
       (Array.aset! u-data 28 (Double.to-float @(Vector3.x origin)))
       (Array.aset! u-data 29 (Double.to-float @(Vector3.y origin)))
       (Array.aset! u-data 30 (Double.to-float @(Vector3.z origin)))
@@ -1022,7 +1021,6 @@
           layers @(SpatialGrid.layers grid)
           origin (SpatialGrid.origin grid)
           show-debug @(Engine.show-debug-lines e)
-          metaball-k @(Engine.metaball-k e)
           view-mode @(Engine.view-mode e)
           shadow-quality @(Engine.shadow-quality e)
           bg-color @(Engine.bg-color e)
@@ -1047,7 +1045,7 @@
               gn WGPURenderer.gain
               suns-ref (Engine.suns e)]
           (Engine.pack-uniform-header! u-data cam-pos cam-dir cam-right cam-up &bg-color
-                                       cell-size cols rows layers metaball-k origin
+                                       cell-size cols rows layers origin
                                        view-mode shadow-quality @(Engine.volumetric-sdf e) show-debug
                                        suns-ref lac gn))
         (Diagnostics.end-zone! diag "Sync: Pack Uniforms")
