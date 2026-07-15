@@ -131,10 +131,11 @@
           w-dim res
           h-dim res
           db (World.field-db world-data)
+          edb (World.entity-db world-data)
           near-indices (the (Array Int) [])
           chunk-center (Vector3.init (+ ox 16.0) (+ oy 16.0) (+ oz 16.0))
           chunk-radius 28.0
-          active-arr (FieldDatabase.active db)
+          active-arr (EntityDatabase.active edb)
           num-active (Array.length active-arr)
           crater-positions (the (Array (Vector3 Double)) [])
           crater-radii (the (Array Double) [])
@@ -171,11 +172,11 @@
           _ ())
         (for [i 0 num-active]
           (when @(Array.unsafe-nth active-arr i)
-            (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)]
+            (let [shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) i)]
               (when (/= shape-type -1)
-                (let [scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                      params (Array.unsafe-nth (FieldDatabase.params db) i)
-                      inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
+                (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)
+                      params (Array.unsafe-nth (EntityDatabase.params edb) i)
+                      inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
                       R (FieldDatabase.get-shape-bounding-radius shape-type scale params)
                       diff (Vector3.sub &chunk-center inst-pos)
                       dist (Vector3.mag &diff)]
@@ -262,7 +263,7 @@
                   (do
                     ;; Bake dynamic/static SDF colliders from FieldDatabase
                     (when (> (Array.length &near-indices) 0)
-                      (let [scene-res (FieldDatabase.evaluate-scene-sdf-material-subset db &p &near-indices min-d)
+                      (let [scene-res (FieldDatabase.evaluate-scene-sdf-material-subset db edb &p &near-indices min-d)
                             scene-d @(Vector2.x &scene-res)
                             scene-mat @(Vector2.y &scene-res)]
                         (do

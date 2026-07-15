@@ -23,7 +23,7 @@
   fields (Array FieldInitialVal)
   color (Vector3 Double)
   handle-id Int
-  update-fn (Fn [(Ptr ()) (Ref (Handle ())) (Ref FieldEvent) Double] ())
+  update-fn (Fn [(Ptr ()) (Ptr ()) (Ref (Handle ())) (Ref FieldEvent) Double] ())
 ])
 
 (deftype FieldKernelDef [
@@ -35,7 +35,7 @@
 ])
 
 (deftype KernelUpdate [
-  func (Fn [(Ptr ()) Double] ())
+  func (Fn [(Ptr ()) (Ptr ()) Double] ())
 ])
 
 (deftype EntityDatabase [

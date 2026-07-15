@@ -69,7 +69,6 @@
           fdb (FieldDatabase.new)
           world (World.init edb fdb origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res (the (Array Int) [0 0]))]
       (do
-        (FieldDatabase.set-entity-db-ptr! (World.field-db &world) (the (Ptr ()) (ptr-cast (Pointer.address (World.entity-db &world)))))
         (let [db (World.field-db &world)]
           (let [t-idx (FieldDatabase.register-kernel! db @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!)
                 l-idx (FieldDatabase.register-kernel! db @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!)

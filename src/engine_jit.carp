@@ -222,7 +222,7 @@
                 (set! injection-accum (str* injection-accum "\n{\n// === Injected from physics_rule.wgsl ===\n" content "\n}\n")))
             (Result.Error _) ()))
         (ECS.query world [ent (gs GravitySource)]
-          (let [inst-idx (FieldDatabase.get-index-by-handle db (ECS.Entity.handle &ent))]
+          (let [inst-idx (EntityDatabase.get-index-by-handle (Engine.entity-db e) (ECS.Entity.handle &ent))]
             (when (>= inst-idx 0)
               (set! injection-accum (str* injection-accum "\n{\n  let instance = u.instances[" (Int.str inst-idx) "];\n" (GravitySource.wgsl-interaction-snippet) "\n}")))))
         (if (String.empty? &injection-accum)

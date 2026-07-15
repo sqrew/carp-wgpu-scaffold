@@ -100,14 +100,14 @@
               _ ())))
         (Vector2.init min-d mat-id))))
 
-  (defn apply-atmospheric-forces! [e world db grid vel-field gravity-field]
+  (defn apply-atmospheric-forces! [e world db edb grid vel-field gravity-field]
     (let [coeff -30.0
           drag-coeff 0.15
           gravity (Settings.gravity (Engine.settings e))]
       (ECS.query world [ent (rb RigidBody)]
         (let [pos (RigidBody.position rb)
               vel (Body.velocity (RigidBody.body rb))
-              grad (FieldDatabase.calculate-pressure-gradient-grid db pos (Pointer.address grid))
+              grad (FieldDatabase.calculate-pressure-gradient-grid db edb pos (Pointer.address grid))
               p-force (let [f (Vector3.mul &grad coeff)]
                         (PhysicsSystem.clamp-vector3 &f 300.0))
               ind-vel (Field.sample vel-field pos)
@@ -167,14 +167,14 @@
                 (when (not (ECS.has-component? world &ent StaticWorldTag))
                   (SpatialGrid.insert! grid &swept-expanded (ECS.Entity.id &ent)))))))
  
-        (let [active-arr (FieldDatabase.active (World.field-db (Engine.world-data e)))
-              len (Array.length active-arr)
-              db (World.field-db (Engine.world-data e))]
+        (let [edb (World.entity-db (Engine.world-data e))
+              active-arr (EntityDatabase.active edb)
+              len (Array.length active-arr)]
           (for [id 0 len]
             (when @(Array.unsafe-nth active-arr id)
-              (let [h (Array.unsafe-nth (FieldDatabase.handles db) id)
-                    pos (Array.unsafe-nth (FieldDatabase.positions db) id)
-                    scale (* @(Array.unsafe-nth (FieldDatabase.scales db) id) 2.0)
+              (let [h (Array.unsafe-nth (EntityDatabase.handles edb) id)
+                    pos (Array.unsafe-nth (EntityDatabase.positions edb) id)
+                    scale (* @(Array.unsafe-nth (EntityDatabase.scales edb) id) 2.0)
                     pad-vec (Vector3.init scale scale scale)
                     aabb (AABB.init (Vector3.sub pos &pad-vec) (Vector3.add pos &pad-vec))
                     ent-id (the Uint32 (Uint32.from-long (Uint64.to-long (Handle.index h))))]
@@ -323,10 +323,10 @@
                     (do
                       (when (and (not (Uint32.= @id2 (ECS.Entity.id &ent1)))
                                  (Handle.less-than? (Collidable.handle col1) (ECS.Entity.handle &ent2)))
-                        (let [db (World.field-db world-data)
+                        (let [edb (World.entity-db world-data)
                               h-idx (the Int (Long.to-int (Uint32.to-long @id2)))
-                              is-field (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-                                           (>= @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx) 0)
+                              is-field (if (< h-idx (Array.length (EntityDatabase.handle-to-index edb)))
+                                           (>= @(Array.unsafe-nth (EntityDatabase.handle-to-index edb) h-idx) 0)
                                            false)]
                           (when (not is-field)
                             (ECS.with-components world @&ent2 [e2 (rb2 RigidBody) (col2 Collidable)]

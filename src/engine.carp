@@ -33,13 +33,13 @@
           world (GameWorld.new)
           coord (Coordinator.new)
           db-ptr (the (Ptr ()) (ptr-cast (Pointer.address (World.field-db &world-data))))
-          pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
-          vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
-          temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
-          light-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
-          hum-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 2) FieldKernelStorage.sample FieldKernelStorage.update)
-          ch-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
-          grav-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)
+          pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
+          vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr) (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
+          temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
+          light-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
+          hum-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 2) FieldKernelStorage.sample FieldKernelStorage.update)
+          ch-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
+          grav-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)
           diag (Diagnostics.new @"/home/sqrew/Desktop/carp-wgpu-scaffold/diagnostics.log")]
       (do
         (Diagnostics.log! &diag (LogLevel.Info) "=== Engine Started / Diagnostics Initialized ===")
@@ -153,6 +153,7 @@
 
   (defn init-fields! [e]
     (let [db-ptr (the (Ptr ()) (ptr-cast (Pointer.address (World.field-db (Engine.world-data e)))))
+          entity-db-ptr (the (Ptr ()) (ptr-cast (Pointer.address (World.entity-db (Engine.world-data e)))))
           grid-ptr (Pointer.address (Engine.grid e))
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)
@@ -162,20 +163,26 @@
           ch-field (Engine.charge-field e)
           grav-field (Engine.gravity-field e)]
       (do
-        (FieldDatabase.set-entity-db-ptr! (World.field-db (Engine.world-data e)) (the (Ptr ()) (ptr-cast (Pointer.address (World.entity-db (Engine.world-data e))))))
         (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage pres-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage pres-field) grid-ptr)
         (FieldKernelStorageVector.set-db-ptr! (Field.storage vel-field) db-ptr)
+        (FieldKernelStorageVector.set-entity-db-ptr! (Field.storage vel-field) entity-db-ptr)
         (FieldKernelStorageVector.set-grid-ptr! (Field.storage vel-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage temp-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage temp-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage temp-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage light-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage light-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage light-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage hum-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage hum-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage ch-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage ch-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage ch-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage grav-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage grav-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage grav-field) grid-ptr))))
 
   (defn register-internal-handlers! [e]
@@ -201,11 +208,11 @@
                   (do
                     (if (= op 0.0)
                       (do
-                        (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) pos rad 800.0 120.0 30.0)
+                        (ExplosionSystem.spawn! (Engine.world e) (Engine.db e) (Engine.entity-db e) pos rad 800.0 120.0 30.0)
                         (Engine.set-voxel-dirty! e true))
                       (if (< op 0.0)
                         (do
-                          (ExplosionSystem.spawn-implosion! (Engine.world e) (Engine.db e) pos rad -1200.0 -40.0 -80.0)
+                          (ExplosionSystem.spawn-implosion! (Engine.world e) (Engine.db e) (Engine.entity-db e) pos rad -1200.0 -40.0 -80.0)
                           (Engine.set-voxel-dirty! e true))
                         (let [op-int (Double.to-int op)
                               c-handle (Engine.spawn-crater! e @pos 0.05 op-int (Maybe.Nothing))
@@ -215,9 +222,9 @@
               _ (Result.Success ()))
           _ (Result.Success ())))))
 
-  (defn destroy-sdf-entity! [world db ent]
+  (defn destroy-sdf-entity! [world db edb ent]
     (do
-      (FieldDatabase.release-instance! db (ECS.Entity.handle ent))
+      (FieldDatabase.release-field-instance! db edb (ECS.Entity.handle ent))
       (GameWorld.destroy-entity! world ent)))
 
   (defn tick-events! [e]
@@ -234,7 +241,7 @@
         (Engine.set-accumulator! e (+ @(Engine.accumulator e) (min dt 0.033)))
         (while (>= @(Engine.accumulator e) f-dt)
           (do
-            (PhysicsSystem.apply-atmospheric-forces! e world (Engine.db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
+            (PhysicsSystem.apply-atmospheric-forces! e world (Engine.db e) (Engine.entity-db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
             (let [stepped (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e))] ())
             (ExplosionSystem.step-explosions! e world (Engine.db e) f-dt)
             (Engine.set-accumulator! e (- @(Engine.accumulator e) f-dt)))))))
@@ -286,7 +293,7 @@
                     (Array.push-back! &expired-ents ent)))))
             (for [i 0 (Array.length &expired-ents)]
               (do
-                (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &expired-ents i))
+                (destroy-sdf-entity! world (Engine.db e) (Engine.entity-db e) (Array.unsafe-nth &expired-ents i))
                 (Engine.set-grid-dirty! e true)
                 (Engine.set-csg-dirty! e true)))))
 
@@ -311,7 +318,7 @@
                   
                   (for [i 0 (Array.length &to-destroy)]
                     (do
-                      (destroy-sdf-entity! world (Engine.db e) (Array.unsafe-nth &to-destroy i))
+                      (destroy-sdf-entity! world (Engine.db e) (Engine.entity-db e) (Array.unsafe-nth &to-destroy i))
                       (Engine.set-grid-dirty! e true)
                       (Engine.set-csg-dirty! e true)))
                   
@@ -343,7 +350,8 @@
   (sig tick-field-db-sync! (Fn [(Ref Engine.Engine)] ()))
   (defn tick-field-db-sync! [e]
     (let [world (Engine.world e)
-          db (the (Ref FieldDatabase) (Engine.db e))]
+          db (the (Ref FieldDatabase) (Engine.db e))
+          edb (the (Ref EntityDatabase) (Engine.entity-db e))]
       (do
         ;; 1. Update bouncy bullets' FieldInstance properties dynamically
         (ECS.query world [ent (fi FieldInstance) (rb RigidBody) (lt Lifetime) (bt BouncyTag)]
@@ -375,23 +383,23 @@
               (FieldInstance.set-csg-index! fi csg-idx))))
 
         ;; 2. Release invalid or component-less handles from the FieldDatabase
-        (let [active-arr (FieldDatabase.active db)
+        (let [active-arr (EntityDatabase.active edb)
               len (Array.length active-arr)
               registry-ref (GameWorld.registry world)]
           (for [i 0 len]
             (when @(Array.unsafe-nth active-arr i)
-              (let [h (Array.unsafe-nth (FieldDatabase.handles db) i)
+              (let [h (Array.unsafe-nth (EntityDatabase.handles edb) i)
                     h-id (the Int (Long.to-int (Uint64.to-long (Handle.index h))))]
                 (when (< h-id 512)
                   (let [ent-val (ECS.Entity.init @h)]
                     (when (or (not (ECS.Registry.valid? registry-ref &ent-val))
                               (not (ECS.has-component? world &ent-val FieldInstance)))
-                      (FieldDatabase.release-instance! db h))))))))
+                      (FieldDatabase.release-field-instance! db edb h))))))))
 
         ;; 3. Register new FieldInstances or sync existing ones
         (ECS.query world [ent (fi FieldInstance)]
           (let [h (the (Ref (Handle ())) (ECS.Entity.handle &ent))
-                db-idx (FieldDatabase.get-index-by-handle db h)]
+                db-idx (EntityDatabase.get-index-by-handle edb h)]
             (if (= db-idx -1)
               ;; Register
               (let [pos (Vector3.init 0.0 0.0 0.0)
@@ -416,67 +424,68 @@
                                           _ (Maybe.Nothing)))
                                     _ (Maybe.Nothing))
                                   (Maybe.Nothing))]
-                (let [discard-idx (the Int (FieldDatabase.register-instance! db h
-                                             @(FieldInstance.shape-type fi)
-                                             @(FieldInstance.params fi)
-                                             (the (Vector3 Double) pos)
-                                             (the Quaternion rot)
-                                             @(FieldInstance.scale fi)
-                                             @(FieldInstance.csg-index fi)
-                                             (the (Vector3 Double) col)
-                                             @(FieldInstance.temperature fi)
-                                             @(FieldInstance.age fi)
-                                             @(FieldInstance.humidity fi)
-                                             @(FieldInstance.pressure fi)
-                                             @(FieldInstance.charge fi)
-                                             @(FieldInstance.gravity fi)
-                                             @(FieldInstance.density fi)
-                                             @(FieldInstance.lifetime fi)
-                                             (the (Vector3 Double) vel)
-                                             @(FieldInstance.influence fi)
-                                             (the (Maybe SDF) sdf-maybe)))]
-                  ()))
+                (let [new-idx (EntityDatabase.register-instance! edb h
+                                              @(FieldInstance.shape-type fi)
+                                              @(FieldInstance.params fi)
+                                              (the (Vector3 Double) pos)
+                                              (the Quaternion rot)
+                                              @(FieldInstance.scale fi)
+                                              @(FieldInstance.csg-index fi)
+                                              (the (Vector3 Double) col)
+                                              (the (Maybe SDF) sdf-maybe))]
+                  (do
+                    (when (>= new-idx 0)
+                      (do
+                        (FieldDatabase.sync-instance-capacity! db new-idx (FieldDatabase.kernels db))
+                        (Array.aset! (FieldDatabase.influences db) new-idx @(FieldInstance.influence fi))
+                        (Array.aset! (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0) new-idx (the (Vector3 Double) vel))
+                        (FieldDatabase.set-scalar-field! db 0 new-idx @(FieldInstance.temperature fi))
+                        (FieldDatabase.set-scalar-field! db 1 new-idx @(FieldInstance.age fi))
+                        (FieldDatabase.set-scalar-field! db 2 new-idx @(FieldInstance.humidity fi))
+                        (FieldDatabase.set-scalar-field! db 3 new-idx @(FieldInstance.pressure fi))
+                        (FieldDatabase.set-scalar-field! db 4 new-idx @(FieldInstance.charge fi))
+                        (FieldDatabase.set-scalar-field! db 5 new-idx @(FieldInstance.gravity fi))
+                        (FieldDatabase.set-scalar-field! db 6 new-idx @(FieldInstance.density fi))
+                        (FieldDatabase.set-scalar-field! db 7 new-idx @(FieldInstance.lifetime fi))
+                        ())))))
               ;; Update
-              (do
-                (when (ECS.has-component? world &ent RigidBody)
-                  (ECS.with-components world @&ent [ent-rb (rb RigidBody)]
-                    (do
-                      (FieldDatabase.set-position! db h @(RigidBody.position rb))
-                      (FieldDatabase.set-velocity! db h @(Body.velocity (RigidBody.body rb)))
-                      (if (ECS.has-component? world &ent BouncyTag)
-                        (let [vel (Body.velocity (RigidBody.body rb))
-                              speed (Double.sqrt (Vector3.mag-sq vel))]
-                          (if (> speed 0.1)
-                            (let [dir (Vector3.mul vel (/ 1.0 speed))
-                                  up-axis (Vector3.init 0.0 1.0 0.0)
-                                  rot-val (Engine.rotation-between &up-axis &dir)]
-                               (FieldDatabase.set-rotation! db h rot-val))
-                            (FieldDatabase.set-rotation! db h (Quaternion.identity))))
-                        (FieldDatabase.set-rotation! db h @(RigidBody.rotation rb)))
-                      (let [db-idx (FieldDatabase.get-index-by-handle db h)]
-                        (when (>= db-idx 0)
-                          (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) db-idx)
-                            (Maybe.Just sdf)
-                              (do
-                                (SDF.set-position! sdf @(RigidBody.position rb))
-                                (SDF.set-rotation! sdf @(RigidBody.rotation rb)))
-                            _ ()))))))
-                (FieldDatabase.set-scale! db h @(FieldInstance.scale fi))
-                (let [db-idx (FieldDatabase.get-index-by-handle db h)]
-                  (when (>= db-idx 0)
-                    (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) db-idx)
-                      (Maybe.Just sdf) (SDF.set-scale! sdf @(FieldInstance.scale fi))
-                      _ ())))
-                (FieldDatabase.set-scalar-by-name! db h "temperature" @(FieldInstance.temperature fi))
-                (FieldDatabase.set-scalar-by-name! db h "light" @(FieldInstance.age fi))
-                (FieldDatabase.set-scalar-by-name! db h "humidity" @(FieldInstance.humidity fi))
-                (FieldDatabase.set-scalar-by-name! db h "pressure" @(FieldInstance.pressure fi))
-                (FieldDatabase.set-scalar-by-name! db h "charge" @(FieldInstance.charge fi))
-                (FieldDatabase.set-scalar-by-name! db h "gravity" @(FieldInstance.gravity fi))
-                (FieldDatabase.set-scalar-by-name! db h "density" @(FieldInstance.density fi))
-                (FieldDatabase.set-scalar-by-name! db h "lifetime" @(FieldInstance.lifetime fi))
-                (FieldDatabase.set-influence! db h @(FieldInstance.influence fi))
-                (FieldDatabase.set-root-csg-index! db h @(FieldInstance.csg-index fi)))))))))
+              (let [idx db-idx]
+                (do
+                  (when (ECS.has-component? world &ent RigidBody)
+                    (ECS.with-components world @&ent [ent-rb (rb RigidBody)]
+                      (do
+                        (EntityDatabase.set-position! edb h @(RigidBody.position rb))
+                        (EntityDatabase.set-velocity! edb h @(Body.velocity (RigidBody.body rb)))
+                        (if (ECS.has-component? world &ent BouncyTag)
+                          (let [vel (Body.velocity (RigidBody.body rb))
+                                speed (Double.sqrt (Vector3.mag-sq vel))]
+                            (if (> speed 0.1)
+                              (let [dir (Vector3.mul vel (/ 1.0 speed))
+                                    up-axis (Vector3.init 0.0 1.0 0.0)
+                                    rot-val (Engine.rotation-between &up-axis &dir)]
+                                 (EntityDatabase.set-rotation! edb h rot-val))
+                              (EntityDatabase.set-rotation! edb h (Quaternion.identity))))
+                          (EntityDatabase.set-rotation! edb h @(RigidBody.rotation rb)))
+                        (match-ref (Array.unsafe-nth (EntityDatabase.sdfs edb) idx)
+                          (Maybe.Just sdf)
+                            (do
+                              (SDF.set-position! sdf @(RigidBody.position rb))
+                              (SDF.set-rotation! sdf @(RigidBody.rotation rb)))
+                          _ ())))))
+                  (EntityDatabase.set-scale! edb h @(FieldInstance.scale fi))
+                  (match-ref (Array.unsafe-nth (EntityDatabase.sdfs edb) idx)
+                    (Maybe.Just sdf) (SDF.set-scale! sdf @(FieldInstance.scale fi))
+                    _ ())
+                  (FieldDatabase.set-scalar-field! db 0 idx @(FieldInstance.temperature fi))
+                  (FieldDatabase.set-scalar-field! db 1 idx @(FieldInstance.age fi))
+                  (FieldDatabase.set-scalar-field! db 2 idx @(FieldInstance.humidity fi))
+                  (FieldDatabase.set-scalar-field! db 3 idx @(FieldInstance.pressure fi))
+                  (FieldDatabase.set-scalar-field! db 4 idx @(FieldInstance.charge fi))
+                  (FieldDatabase.set-scalar-field! db 5 idx @(FieldInstance.gravity fi))
+                  (FieldDatabase.set-scalar-field! db 6 idx @(FieldInstance.density fi))
+                  (FieldDatabase.set-scalar-field! db 7 idx @(FieldInstance.lifetime fi))
+                  (Array.aset! (FieldDatabase.influences db) idx @(FieldInstance.influence fi))
+                  (EntityDatabase.set-root-csg-index! edb h @(FieldInstance.csg-index fi)))))))))
 
   (defn submit-render-commands! [e]
     (let [world (Engine.world e)
@@ -600,7 +609,7 @@
                 (Array.aset! u-data (+ base-idx 10) 0.0f)
                 (Array.aset! u-data (+ base-idx 11) 0.0f))))))))
 
-  (defn pack-instances! [world db u-data csg-data csg-dirty]
+  (defn pack-instances! [world db edb u-data csg-data csg-dirty]
     (let [next-csg-node-idx 0]
       (do
         (when csg-dirty
@@ -615,22 +624,22 @@
                     (Volume.Sdf sdf)
                       (when (> (Array.length (SDF.csg-nodes sdf)) 0)
                         (let [root-csg-idx (WGPURenderer.serialize-sdf! sdf csg-data (Pointer.address &next-csg-node-idx) true)]
-                          (FieldDatabase.set-root-csg-index! db (ECS.Entity.handle &ent) root-csg-idx)))
+                          (EntityDatabase.set-root-csg-index! edb (ECS.Entity.handle &ent) root-csg-idx)))
                     _ ()))))))
-        (let [active-arr (FieldDatabase.active db)
+        (let [active-arr (EntityDatabase.active edb)
               len (Array.length active-arr)]
           (for [id 0 len]
             (when @(Array.unsafe-nth active-arr id)
-              (let [pos (Array.unsafe-nth (FieldDatabase.positions db) id)
-                    rot (Array.unsafe-nth (FieldDatabase.rotations db) id)
-                    rad-scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
-                    c-val (Array.unsafe-nth (FieldDatabase.colors db) id)
+              (let [pos (Array.unsafe-nth (EntityDatabase.positions edb) id)
+                    rot (Array.unsafe-nth (EntityDatabase.rotations edb) id)
+                    rad-scale @(Array.unsafe-nth (EntityDatabase.scales edb) id)
+                    c-val (Array.unsafe-nth (EntityDatabase.colors edb) id)
                     temp (FieldDatabase.get-entity-scalar db 0 id)
                     light (FieldDatabase.get-entity-scalar db 1 id)
                     humidity (FieldDatabase.get-entity-scalar db 2 id)
                     pressure (FieldDatabase.get-entity-scalar db 3 id)
-                    final-csg-idx @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) id)
-                    shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) id)
+                    final-csg-idx @(Array.unsafe-nth (EntityDatabase.root-csg-indices edb) id)
+                    shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) id)
                     instance-type (if (= final-csg-idx -10) 1.0
                                     (if (= final-csg-idx -5) 2.0
                                       (if (<= final-csg-idx -99) 3.0 0.0)))
@@ -963,10 +972,11 @@
   (defn bake-all-fields-gpu! [e ctx ren]
     (let [world-data (Engine.world-data e)
           db (World.field-db world-data)
+          edb (World.entity-db world-data)
           chunks (World.chunks world-data)
           num-chunks (Array.length chunks)
-          num-instances (Double.from-int (Array.length (FieldDatabase.active db)))
-          active-arr (FieldDatabase.active db)
+          num-instances (Double.from-int (Array.length (EntityDatabase.active edb)))
+          active-arr (EntityDatabase.active edb)
           num-active (Array.length active-arr)]
       (do
         (for [i 0 num-chunks]
@@ -974,14 +984,14 @@
             (let [chunk (Array.unsafe-nth chunks i)
                   slot @(Chunk.atlas-slot chunk)
                   overlaps false]
-              (do
-                (for [k 0 num-active]
-                  (when @(Array.unsafe-nth active-arr k)
-                    (let [scale @(Array.unsafe-nth (FieldDatabase.scales db) k)]
-                      (when (> scale 0.0)
-                        (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) k)]
-                          (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
-                            (set! overlaps true)))))))
+               (do
+                 (for [k 0 num-active]
+                   (when @(Array.unsafe-nth active-arr k)
+                     (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) k)]
+                       (when (> scale 0.0)
+                         (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) k)]
+                           (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
+                             (set! overlaps true)))))))
                 (let [active-slots (WGPURenderer.fields-active-slots ren)
                       had-fields @(Array.unsafe-nth active-slots slot)]
                   (when (or overlaps had-fields)
@@ -1044,7 +1054,7 @@
 
         ;; 2. Pack CSG Node Hierarchies & Active Instances (index >= 36)
         (Diagnostics.start-zone! diag "Sync: Pack CSG Instances")
-        (Engine.pack-instances! world db u-data csg-data csg-dirty)
+        (Engine.pack-instances! world db (Engine.entity-db e) u-data csg-data csg-dirty)
         (Diagnostics.end-zone! diag "Sync: Pack CSG Instances")
 
         ;; 3. Dynamic Chunk Loading / progressive baking
@@ -1078,7 +1088,7 @@
         ;; 6. Flatten Spatial Grid (if dirty)
         (Diagnostics.start-zone! diag "Sync: Flatten Spatial Grid")
         (when grid-dirty
-          (GPUSpatial.flatten-in-place! db world grid 64 flat-grid geom-map))
+          (GPUSpatial.flatten-in-place! (Engine.entity-db e) world grid 64 flat-grid geom-map))
         (Diagnostics.end-zone! diag "Sync: Flatten Spatial Grid"))))
 
   (defn tick! [e ctx ren width height]
@@ -1135,8 +1145,8 @@
         (Diagnostics.end-zone! diag "ECS Lifecycle")
         (Diagnostics.start-zone! diag "Field DB Sync")
         (Engine.tick-field-db-sync! e)
-        (FieldDatabase.tick! (Engine.db e) dt)
-        (when (> (Array.length (FieldDatabase.events (Engine.db e))) 0)
+        (FieldDatabase.tick! (Engine.db e) (Engine.entity-db e) dt)
+        (when (> (Array.length (EntityDatabase.events (Engine.entity-db e))) 0)
           (Engine.set-grid-dirty! e true))
         (Diagnostics.end-zone! diag "Field DB Sync")
         (Diagnostics.start-zone! diag "Render Submit & Sync")

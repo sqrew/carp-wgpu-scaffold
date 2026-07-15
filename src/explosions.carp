@@ -11,7 +11,7 @@
   (use Lifetime)
   (use Engine)
 
-  (defn spawn! [world db pos max-radius force temp-val pres-val]
+  (defn spawn! [world db edb pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
           params (Vector4.init max-radius 0.0 0.0 0.0)
           r (Double.random-between 0.2 1.0)
@@ -23,7 +23,7 @@
                    [(FieldInitialVal.init 0 temp-val)
                     (FieldInitialVal.init 3 pres-val)])]
       (do
-        (FieldDatabase.dispatch-event! db pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 &fields &col FieldDatabase.default-event-update)
+        (FieldDatabase.dispatch-event! db edb pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 &fields &col FieldDatabase.default-event-update)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.3)) (Uint32.from-long 1l) (Uint32.from-long 1l) true))
         (ECS.add-component! world &exp-ent (Color.init col))
@@ -31,7 +31,7 @@
         (ECS.add-component! world &exp-ent (Explosion.init 0.1 20.0 max-radius force pres-val temp-val (Maybe.Nothing)))
         ())))
 
-  (defn spawn-implosion! [world db pos max-radius force temp-val pres-val]
+  (defn spawn-implosion! [world db edb pos max-radius force temp-val pres-val]
     (let [exp-ent (GameWorld.create-entity! world)
           params (Vector4.init max-radius 0.0 0.0 0.0)
           col (Vector3.init 0.1 0.5 1.0)
@@ -40,7 +40,7 @@
                    [(FieldInitialVal.init 0 temp-val)
                     (FieldInitialVal.init 3 pres-val)])]
       (do
-        (FieldDatabase.dispatch-event! db pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 &fields &col FieldDatabase.default-event-update)
+        (FieldDatabase.dispatch-event! db edb pos &(Vector3.init 0.0 0.0 0.0) 1 &params 0.3 (* max-radius 3.0) growth-speed 0.5 &fields &col FieldDatabase.default-event-update)
         (ECS.add-component! world &exp-ent (RigidBody.static @pos (Quaternion.identity) 0.0 0.0))
         (ECS.add-component! world &exp-ent (Collidable.init @(ECS.Entity.handle &exp-ent) (Volume.Ball (Sphere.init @pos 0.3)) (Uint32.from-long 1l) (Uint32.from-long 1l) true))
         (ECS.add-component! world &exp-ent (Color.init col))

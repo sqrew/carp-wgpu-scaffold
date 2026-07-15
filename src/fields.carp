@@ -192,6 +192,7 @@
 ;; 4. Field Instance Kernel Scalar Field Storage
 (deftype FieldKernelStorage [
   db-ptr (Ptr ())
+  entity-db-ptr (Ptr ())
   grid-ptr (Ptr (SpatialGrid Uint32))
   array-idx Int ;; 0=temp, 1=age, 2=hum, 3=pres, 4=charge, 5=gravity
 ])
@@ -201,11 +202,12 @@
 
   (defn sample [storage pos]
     (let [db (FieldDatabase.voidptr->db-ref @(FieldKernelStorage.db-ptr storage))
+          edb (EntityDatabase.voidptr->db-ref @(FieldKernelStorage.entity-db-ptr storage))
           idx @(FieldKernelStorage.array-idx storage)
           kernels-arr (FieldDatabase.kernels db)
           kernel (Array.unsafe-nth kernels-arr idx)
           def-val @(FieldKernelDef.default-val kernel)]
-      (FieldDatabase.sample-analytical-field db idx pos def-val)))
+      (FieldDatabase.sample-analytical-field db edb idx pos def-val)))
 
   (defn update [storage dt]
     ())
@@ -214,6 +216,7 @@
 ;; 5. Field Instance Kernel Vector Field Storage
 (deftype FieldKernelStorageVector [
   db-ptr (Ptr ())
+  entity-db-ptr (Ptr ())
   grid-ptr (Ptr (SpatialGrid Uint32))
 ])
 
@@ -222,13 +225,14 @@
 
   (defn sample [storage pos]
     (let [db (FieldDatabase.voidptr->db-ref @(FieldKernelStorageVector.db-ptr storage))
+          edb (EntityDatabase.voidptr->db-ref @(FieldKernelStorageVector.entity-db-ptr storage))
           grid-p @(FieldKernelStorageVector.grid-ptr storage)
-          active (FieldDatabase.active db)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          velocities (Array.unsafe-nth (FieldDatabase.vector-fields db) 0)
+          active (EntityDatabase.active edb)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          velocities (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
           influences (FieldDatabase.influences db)
-          h-to-idx (FieldDatabase.handle-to-index db)
+          h-to-idx (EntityDatabase.handle-to-index edb)
           
           sum-vel (Vector3.init 0.0 0.0 0.0)
           sum-W 0.0

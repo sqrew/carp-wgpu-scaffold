@@ -11,14 +11,14 @@
   (defn required-floats [grid max-ids]
     (* (GPUSpatial.cell-count grid) (GPUSpatial.stride max-ids)))
 
-  (defn flatten-in-place! [db world grid max-ids data geom-map]
+  (defn flatten-in-place! [edb world grid max-ids data geom-map]
     (let [total-cells (GPUSpatial.cell-count grid)
           st (GPUSpatial.stride max-ids)
           heads (SpatialGrid.heads grid)
           entries (SpatialGrid.entries grid)
           geom-map-size (Array.length geom-map)
-          active (FieldDatabase.active db)
-          handles (FieldDatabase.handles db)]
+          active (EntityDatabase.active edb)
+          handles (EntityDatabase.handles edb)]
       (do
         (clear-ints! geom-map -1)
         (for [i 0 (Array.length active)]
