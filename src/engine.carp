@@ -32,7 +32,7 @@
           grid (World.create-spatial-grid &world-data)
           world (GameWorld.new)
           coord (Coordinator.new)
-          db-ptr (FieldDatabase.ptr-cast (Pointer.address (World.field-db &world-data)))
+          db-ptr (the (Ptr ()) (ptr-cast (Pointer.address (World.field-db &world-data))))
           pres-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 3) FieldKernelStorage.sample FieldKernelStorage.update)
           vel-field (Field.init (FieldKernelStorageVector.init db-ptr (null-ptr)) FieldKernelStorageVector.sample FieldKernelStorageVector.update)
           temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
@@ -152,7 +152,7 @@
         result)))
 
   (defn init-fields! [e]
-    (let [db-ptr (FieldDatabase.ptr-cast (Pointer.address (World.field-db (Engine.world-data e))))
+    (let [db-ptr (the (Ptr ()) (ptr-cast (Pointer.address (World.field-db (Engine.world-data e)))))
           grid-ptr (Pointer.address (Engine.grid e))
           pres-field (Engine.pressure-field e)
           vel-field (Engine.velocity-field e)
@@ -162,6 +162,7 @@
           ch-field (Engine.charge-field e)
           grav-field (Engine.gravity-field e)]
       (do
+        (FieldDatabase.set-entity-db-ptr! (World.field-db (Engine.world-data e)) (the (Ptr ()) (ptr-cast (Pointer.address (World.entity-db (Engine.world-data e))))))
         (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage pres-field) grid-ptr)
         (FieldKernelStorageVector.set-db-ptr! (Field.storage vel-field) db-ptr)
@@ -234,7 +235,7 @@
         (while (>= @(Engine.accumulator e) f-dt)
           (do
             (PhysicsSystem.apply-atmospheric-forces! e world (Engine.db e) grid (Engine.velocity-field e) (Engine.gravity-field e))
-            (ignore (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e)))
+            (let [stepped (PhysicsSystem.step-ecs! e world grid @(Engine.metaball-k e))] ())
             (ExplosionSystem.step-explosions! e world (Engine.db e) f-dt)
             (Engine.set-accumulator! e (- @(Engine.accumulator e) f-dt)))))))
 
@@ -483,7 +484,7 @@
       (do
         (let [line-cmds (RenderDatabase.line-commands r-db)]
           (while (not (Array.empty? line-cmds))
-            (ignore (Array.pop-back! line-cmds))))
+            (let [popped (Array.pop-back! line-cmds)] ())))
         (when @(Engine.show-debug-lines e)
           (ECS.query world [ent (rb RigidBody) (col Collidable) (color Color)]
             (let [pos (RigidBody.position rb)

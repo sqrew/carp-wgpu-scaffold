@@ -1,75 +1,24 @@
 (deftemplate ptr->ref (Fn [(Ptr t)] (Ref t))
   "$t* $NAME($t* p)"
-  "$DECL { return p; }")
+  "$DECL { return p; }"
+)
 
 (deftemplate null-ptr (Fn [] (Ptr t))
   "$t* $NAME()"
-  "$DECL { return NULL; }")
+  "$DECL { return NULL; }"
+)
 
 (deftemplate ptr-cast (Fn [(Ptr a)] (Ptr b))
   "$b* $NAME($a* p)"
-  "$DECL { return p; }")
-
-(deftype Vector4 [x Double y Double z Double w Double])
-(defmodule Vector4
-  (defn init-zero [] (Vector4.init 0.0 0.0 0.0 0.0))
+  "$DECL { return p; }"
 )
 
-(deftype FieldEvent [
-  pos (Vector3 Double)
-  velocity (Vector3 Double)
-  shape-type Int
-  params Vector4
-  scale Double
-  max-scale Double
-  growth-speed Double
-  lifetime Double
-  max-lifetime Double
-  fields (Array FieldInitialVal)
-  color (Vector3 Double)
-  handle-id Int
-  update-fn (Fn [(Ptr ()) (Ref (Handle ())) (Ref FieldEvent) Double] ())
-])
-
-(deftype FieldKernelDef [
-  name String
-  slot Int
-  default-val Double
-  min-val Double
-  max-val Double
-])
-
-(deftype FieldInitialVal [
-  slot Int
-  val Double
-])
-
-(deftype KernelUpdate [
-  func (Fn [(Ptr ()) Double] ())
-])
-
 (deftype FieldDatabase [
-  active (Array Bool)
-  handles (Array (Handle ()))
-  shape-types (Array Int)
-  params (Array Vector4)
-  positions (Array (Vector3 Double))
-  rotations (Array Quaternion)
-  scales (Array Double)
-  root-csg-indices (Array Int)
-  colors (Array (Vector3 Double))
-  vector-fields (Array (Array (Vector3 Double)))
-  sdfs (Array (Maybe SDF))
-  handle-to-index (Array Int)
-  max-scale Double
-  events (Array FieldEvent)
-  next-virtual-id Int
-
+  entity-db-ptr (Ptr ())
   kernels (Array FieldKernelDef)
   influences (Array Double)
   kernel-updates (Array KernelUpdate)
   entity-scalars (Array (Array Double))
-  spatial-grid (SpatialGrid Int)
 ])
 
 (defmodule FieldDatabase
@@ -80,7 +29,84 @@
 
   (deftemplate voidptr->db-ref (Fn [(Ptr ())] (Ref FieldDatabase))
     "FieldDatabase* $NAME(void* p)"
-    "$DECL { return p; }")
+    "$DECL { return p; }"
+  )
+
+  (deftemplate entity-db (Fn [(Ref FieldDatabase)] (Ref EntityDatabase))
+    "EntityDatabase* $NAME(FieldDatabase* db)"
+    "$DECL { return (EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr); }")
+
+  ;; Delegating wrappers for EntityDatabase fields using deftemplates to preserve APIs and type safety
+  (deftemplate active (Fn [(Ref FieldDatabase)] (Ref (Array Bool)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->active); }")
+
+  (deftemplate handles (Fn [(Ref FieldDatabase)] (Ref (Array (Handle ()))))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->handles); }")
+
+  (deftemplate shape-types (Fn [(Ref FieldDatabase)] (Ref (Array Int)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->shape_MINUS_types); }")
+
+  (deftemplate params (Fn [(Ref FieldDatabase)] (Ref (Array Vector4)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->params); }")
+
+  (deftemplate positions (Fn [(Ref FieldDatabase)] (Ref (Array (Vector3 Double))))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->positions); }")
+
+  (deftemplate rotations (Fn [(Ref FieldDatabase)] (Ref (Array Quaternion)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->rotations); }")
+
+  (deftemplate scales (Fn [(Ref FieldDatabase)] (Ref (Array Double)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->scales); }")
+
+  (deftemplate root-csg-indices (Fn [(Ref FieldDatabase)] (Ref (Array Int)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->root_MINUS_csg_MINUS_indices); }")
+
+  (deftemplate colors (Fn [(Ref FieldDatabase)] (Ref (Array (Vector3 Double))))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->colors); }")
+
+  (deftemplate vector-fields (Fn [(Ref FieldDatabase)] (Ref (Array (Array (Vector3 Double)))))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->vector_MINUS_fields); }")
+
+  (deftemplate sdfs (Fn [(Ref FieldDatabase)] (Ref (Array (Maybe SDF))))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->sdfs); }")
+
+  (deftemplate handle-to-index (Fn [(Ref FieldDatabase)] (Ref (Array Int)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->handle_MINUS_to_MINUS_index); }")
+
+  (deftemplate max-scale (Fn [(Ref FieldDatabase)] (Ref Double))
+    "double* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->max_MINUS_scale); }")
+
+  (deftemplate events (Fn [(Ref FieldDatabase)] (Ref (Array FieldEvent)))
+    "Array* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->events); }")
+
+  (deftemplate next-virtual-id (Fn [(Ref FieldDatabase)] (Ref Int))
+    "int* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->next_MINUS_virtual_MINUS_id); }")
+
+  (deftemplate spatial-grid (Fn [(Ref FieldDatabase)] (Ref (SpatialGrid Int)))
+    "void* $NAME(FieldDatabase* db)"
+    "$DECL { return &(((EntityDatabase*)(db->entity_MINUS_db_MINUS_ptr))->spatial_MINUS_grid); }")
+
+  ;; Delegating wrappers for EntityDatabase mutations
+  (defn set-position! [db handle val] (EntityDatabase.set-position! (entity-db db) handle val))
+  (defn set-rotation! [db handle val] (EntityDatabase.set-rotation! (entity-db db) handle val))
+  (defn set-scale! [db handle val] (EntityDatabase.set-scale! (entity-db db) handle val))
+  (defn set-velocity! [db handle val] (EntityDatabase.set-velocity! (entity-db db) handle val))
+  (defn set-root-csg-index! [db handle val] (EntityDatabase.set-root-csg-index! (entity-db db) handle val))
 
   (sig new (Fn [] FieldDatabase))
   (sig register-kernel! (Fn [(Ref FieldDatabase) String Double Double Double (Fn [(Ptr ()) Double] ())] Int))
@@ -93,13 +119,8 @@
   (sig register-instance-generic! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double (Ref (Array FieldInitialVal)) (Maybe SDF)] Int))
   (sig register-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int Vector4 (Vector3 Double) Quaternion Double Int (Vector3 Double) Double Double Double Double Double Double Double Double (Vector3 Double) Double (Maybe SDF)] Int))
   (sig release-instance! (Fn [(Ref FieldDatabase) (Ref (Handle ()))] ()))
-  (sig set-scale! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-velocity! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
   (sig set-scalar-by-name! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Ref String) Double] ()))
-  (sig set-position! (Fn [(Ref FieldDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
-  (sig set-rotation! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Quaternion] ()))
   (sig set-influence! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Double] ()))
-  (sig set-root-csg-index! (Fn [(Ref FieldDatabase) (Ref (Handle ())) Int] ()))
   (sig noop-update (Fn [(Ptr ()) Double] ()))
   (sig diffuse-temperature! (Fn [(Ptr ()) Double] ()))
   (sig diffuse-humidity! (Fn [(Ptr ()) Double] ()))
@@ -112,288 +133,12 @@
   (sig tick! (Fn [(Ref FieldDatabase) Double] ()))
   (sig sample-analytical-field (Fn [(Ref FieldDatabase) Int (Ref (Vector3 Double)) Double] Double))
 
-  (defn ensure-capacity! [arr size default-val]
-    (while (< (Array.length arr) size)
-      (Array.push-back! arr default-val)))
-
-  (defn noop-update [db-ptr dt] ())
-
-  (defn diffuse-temperature! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          temp-slot 0
-          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          diffusion-rate 0.8
-          new-temps (Array.copy temp-arr)
-          grid (FieldDatabase.spatial-grid db)]
-      (do
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [t-i @(Array.unsafe-nth temp-arr i)
-                  pos-i (Array.unsafe-nth positions i)
-                  scale-i @(Array.unsafe-nth scales i)
-                  cooling-rate 0.1
-                  ambient-temp 0.0
-                  delta-temp (* (- ambient-temp t-i) (* cooling-rate dt))
-                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
-                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
-                  candidates (SpatialGrid.query-unique grid &aabb)
-                  num-cand (Array.length &candidates)]
-              (do
-                (for [k 0 num-cand]
-                  (let [j @(Array.unsafe-nth &candidates k)]
-                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                      (let [t-j @(Array.unsafe-nth temp-arr j)
-                            pos-j (Array.unsafe-nth positions j)
-                            scale-j @(Array.unsafe-nth scales j)
-                            to-j (Vector3.sub pos-j pos-i)
-                            dist (Vector3.mag &to-j)
-                            max-dist (+ scale-i scale-j)]
-                        (when (< dist max-dist)
-                          (let [factor (- 1.0 (/ dist max-dist))
-                                transfer (* (* (- t-j t-i) factor) dt)]
-                            (set! delta-temp (+ delta-temp (* transfer diffusion-rate)))))))))
-                (Array.aset! &new-temps i (+ t-i delta-temp))))))
-        (for [i 0 num-entities]
-          (Array.aset! temp-arr i @(Array.unsafe-nth &new-temps i))))))
-
-  (defn diffuse-humidity! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          hum-slot 2
-          temp-slot 0
-          hum-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) hum-slot)
-          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          diffusion-rate 0.6
-          new-hums (Array.copy hum-arr)
-          grid (FieldDatabase.spatial-grid db)]
-      (do
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [h-i @(Array.unsafe-nth hum-arr i)
-                  t-i @(Array.unsafe-nth temp-arr i)
-                  pos-i (Array.unsafe-nth positions i)
-                  scale-i @(Array.unsafe-nth scales i)
-                  ambient-hum 0.2
-                  dissipation-rate 0.05
-                  delta-hum (* (- ambient-hum h-i) (* dissipation-rate dt))
-                  evap-cond (if (> t-i 0.0)
-                                (* (* t-i 0.01) (* (- 1.0 h-i) dt))
-                                (* (* t-i 0.02) (* h-i dt)))
-                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
-                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
-                  candidates (SpatialGrid.query-unique grid &aabb)
-                  num-cand (Array.length &candidates)]
-              (do
-                (set! delta-hum (+ delta-hum evap-cond))
-                (for [k 0 num-cand]
-                  (let [j @(Array.unsafe-nth &candidates k)]
-                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                      (let [h-j @(Array.unsafe-nth hum-arr j)
-                            pos-j (Array.unsafe-nth positions j)
-                            scale-j @(Array.unsafe-nth scales j)
-                            to-j (Vector3.sub pos-j pos-i)
-                            dist (Vector3.mag &to-j)
-                            max-dist (+ scale-i scale-j)]
-                        (when (< dist max-dist)
-                          (let [factor (- 1.0 (/ dist max-dist))
-                                transfer (* (* (- h-j h-i) factor) dt)]
-                            (set! delta-hum (+ delta-hum (* transfer diffusion-rate)))))))))
-                (Array.aset! &new-hums i (Double.clamp 0.0 1.0 (+ h-i delta-hum)))))))
-        (for [i 0 num-entities]
-          (Array.aset! hum-arr i @(Array.unsafe-nth &new-hums i))))))
-
-  (defn diffuse-pressure! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          pres-slot 3
-          temp-slot 0
-          pres-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) pres-slot)
-          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          diffusion-rate 0.7
-          new-pres (Array.copy pres-arr)
-          grid (FieldDatabase.spatial-grid db)]
-      (do
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [p-i @(Array.unsafe-nth pres-arr i)
-                  t-i @(Array.unsafe-nth temp-arr i)
-                  pos-i (Array.unsafe-nth positions i)
-                  scale-i @(Array.unsafe-nth scales i)
-                  ambient-pres 0.0
-                  dissipation-rate 0.15
-                  delta-pres (* (- ambient-pres p-i) (* dissipation-rate dt))
-                  expansion-rate 0.25
-                  thermal-expansion (* (* t-i expansion-rate) dt)
-                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
-                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
-                  candidates (SpatialGrid.query-unique grid &aabb)
-                  num-cand (Array.length &candidates)]
-              (do
-                (set! delta-pres (+ delta-pres thermal-expansion))
-                (for [k 0 num-cand]
-                  (let [j @(Array.unsafe-nth &candidates k)]
-                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                      (let [p-j @(Array.unsafe-nth pres-arr j)
-                            pos-j (Array.unsafe-nth positions j)
-                            scale-j @(Array.unsafe-nth scales j)
-                            to-j (Vector3.sub pos-j pos-i)
-                            dist (Vector3.mag &to-j)
-                            max-dist (+ scale-i scale-j)]
-                        (when (< dist max-dist)
-                          (let [factor (- 1.0 (/ dist max-dist))
-                                transfer (* (* (- p-j p-i) factor) dt)]
-                            (set! delta-pres (+ delta-pres (* transfer diffusion-rate)))))))))
-                (Array.aset! &new-pres i (Double.clamp 0.0 100.0 (+ p-i delta-pres)))))))
-        (for [i 0 num-entities]
-          (Array.aset! pres-arr i @(Array.unsafe-nth &new-pres i))))))
-
-  (defn diffuse-charge! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          charge-slot 4
-          charge-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) charge-slot)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          diffusion-rate 0.9
-          new-chgs (Array.copy charge-arr)
-          grid (FieldDatabase.spatial-grid db)]
-      (do
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [c-i @(Array.unsafe-nth charge-arr i)
-                  pos-i (Array.unsafe-nth positions i)
-                  scale-i @(Array.unsafe-nth scales i)
-                  ambient-chg 0.0
-                  discharge-rate 0.1
-                  delta-charge (* (- ambient-chg c-i) (* discharge-rate dt))
-                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
-                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
-                  candidates (SpatialGrid.query-unique grid &aabb)
-                  num-cand (Array.length &candidates)]
-              (do
-                (for [k 0 num-cand]
-                  (let [j @(Array.unsafe-nth &candidates k)]
-                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                      (let [c-j @(Array.unsafe-nth charge-arr j)
-                            pos-j (Array.unsafe-nth positions j)
-                            scale-j @(Array.unsafe-nth scales j)
-                            to-j (Vector3.sub pos-j pos-i)
-                            dist (Vector3.mag &to-j)
-                            max-dist (+ scale-i scale-j)]
-                        (when (< dist max-dist)
-                          (let [factor (- 1.0 (/ dist max-dist))
-                                transfer (* (* (- c-j c-i) factor) dt)]
-                            (set! delta-charge (+ delta-charge (* transfer diffusion-rate)))))))))
-                (Array.aset! &new-chgs i (Double.clamp -10.0 10.0 (+ c-i delta-charge)))))))
-        (for [i 0 num-entities]
-          (Array.aset! charge-arr i @(Array.unsafe-nth &new-chgs i))))))
-
-  (defn diffuse-light! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          light-slot 1
-          light-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) light-slot)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          diffusion-rate 0.7
-          new-lights (Array.copy light-arr)
-          grid (FieldDatabase.spatial-grid db)]
-      (do
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [l-i @(Array.unsafe-nth light-arr i)
-                  pos-i (Array.unsafe-nth positions i)
-                  scale-i @(Array.unsafe-nth scales i)
-                  decay-rate 0.15
-                  ambient-light 0.0
-                  delta-light (* (- ambient-light l-i) (* decay-rate dt))
-                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
-                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
-                  candidates (SpatialGrid.query-unique grid &aabb)
-                  num-cand (Array.length &candidates)]
-              (do
-                (for [k 0 num-cand]
-                  (let [j @(Array.unsafe-nth &candidates k)]
-                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                      (let [l-j @(Array.unsafe-nth light-arr j)
-                            pos-j (Array.unsafe-nth positions j)
-                            scale-j @(Array.unsafe-nth scales j)
-                            to-j (Vector3.sub pos-j pos-i)
-                            dist (Vector3.mag &to-j)
-                            max-dist (+ scale-i scale-j)]
-                        (when (< dist max-dist)
-                          (let [factor (- 1.0 (/ dist max-dist))
-                                transfer (* (* (- l-j l-i) factor) dt)]
-                            (set! delta-light (+ delta-light (* transfer diffusion-rate)))))))))
-                (Array.aset! &new-lights i (Double.clamp 0.0 1.0 (+ l-i delta-light)))))))
-        (for [i 0 num-entities]
-          (Array.aset! light-arr i @(Array.unsafe-nth &new-lights i))))))
-
-  (defn diffuse-density! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          density-slot 6
-          density-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) density-slot)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          diffusion-rate 0.5
-          new-dens (Array.copy density-arr)
-          grid (FieldDatabase.spatial-grid db)]
-      (do
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [d-i @(Array.unsafe-nth density-arr i)
-                  pos-i (Array.unsafe-nth positions i)
-                  scale-i @(Array.unsafe-nth scales i)
-                  decay-rate 0.05
-                  delta-density (* (- 1.0 d-i) (* decay-rate dt))
-                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
-                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
-                  candidates (SpatialGrid.query-unique grid &aabb)
-                  num-cand (Array.length &candidates)]
-              (do
-                (for [k 0 num-cand]
-                  (let [j @(Array.unsafe-nth &candidates k)]
-                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
-                      (let [d-j @(Array.unsafe-nth density-arr j)
-                            pos-j (Array.unsafe-nth positions j)
-                            scale-j @(Array.unsafe-nth scales j)
-                            to-j (Vector3.sub pos-j pos-i)
-                            dist (Vector3.mag &to-j)
-                            max-dist (+ scale-i scale-j)]
-                        (when (< dist max-dist)
-                          (let [factor (- 1.0 (/ dist max-dist))
-                                transfer (* (* (- d-j d-i) factor) dt)]
-                            (set! delta-density (+ delta-density (* transfer diffusion-rate)))))))))
-                (Array.aset! &new-dens i (+ d-i delta-density))))))
-        (for [i 0 num-entities]
-          (Array.aset! density-arr i @(Array.unsafe-nth &new-dens i))))))
-
-  (defn tick-lifetime! [db-ptr dt]
-    (let [db (voidptr->db-ref db-ptr)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          lifetime-slot 7
-          lifetime-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) lifetime-slot)]
-      (for [i 0 num-entities]
-        (when @(Array.unsafe-nth active-arr i)
-          (let [curr-life @(Array.unsafe-nth lifetime-arr i)]
-            (Array.aset! lifetime-arr i (- curr-life dt)))))))
-
-
+  (defn new []
+    (let [kernels (the (Array FieldKernelDef) [])
+          influences (the (Array Double) (replicate 128 &1.0))
+          kernel-updates (the (Array KernelUpdate) [])
+          entity-scalars (the (Array (Array Double)) [])]
+      (FieldDatabase.init (the (Ptr ()) (null-ptr)) kernels influences kernel-updates entity-scalars)))
 
   (defn register-kernel! [db name default-val min-val max-val update-fn]
     (let [slot (Array.length (FieldDatabase.kernels db))
@@ -405,36 +150,8 @@
         (Array.push-back! (FieldDatabase.kernel-updates db) (KernelUpdate.init update-fn))
         slot)))
 
-  (defn new []
-    (let [n 128
-          act (the (Array Bool) (replicate n &false))
-          hnd (the (Array (Handle ())) (replicate n &(Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l))))
-          st (the (Array Int) (replicate n &-1))
-          pm (the (Array Vector4) (replicate n &(Vector4.init-zero)))
-          pos (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
-          rot (the (Array Quaternion) (replicate n &(Quaternion.identity)))
-          sc (the (Array Double) (replicate n &1.0))
-          csg (the (Array Int) (replicate n &-1))
-          col (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))
-          vec-fields [(the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
-          sdfs (the (Array (Maybe SDF)) (replicate n &(Maybe.Nothing)))
-          h-to-idx (the (Array Int) (replicate 1024 &-1))
-          kernels (the (Array FieldKernelDef) [])
-          influences (the (Array Double) (replicate n &1.0))
-          kernel-updates (the (Array KernelUpdate) [])
-          entity-scalars (the (Array (Array Double)) [])
-          grid (SpatialGrid.new-with-origin 8.0 32 32 32 (Vector3.init -128.0 -128.0 -128.0))]
-      (FieldDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 kernels influences kernel-updates entity-scalars grid)))
-
-
-  (defn FieldDatabase.get-index-by-handle [db handle]
-    (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
-      (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-          @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
-          -1)))
-
-
-
+  (defn get-index-by-handle [db handle]
+    (EntityDatabase.get-index-by-handle (entity-db db) handle))
 
   (defn get-kernel-slot [db name]
     (let [kernels-arr (FieldDatabase.kernels db)
@@ -463,11 +180,12 @@
         (Array.aset! arr i val))))
 
   (defn sample-analytical-field [db slot pos-ref def-val]
-    (let [active-arr (FieldDatabase.active db)
+    (let [edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
           num-entities (Array.length active-arr)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
-          influences (FieldDatabase.influences db)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          influences-arr (FieldDatabase.influences db)
           scalars-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) slot)
           accumulated-val 0.0
           total-weight 0.0]
@@ -480,7 +198,7 @@
                 (let [to-pos (Vector3.sub pos-i pos-ref)
                       dist (Vector3.mag &to-pos)]
                   (when (< dist scale-i)
-                    (let [influence @(Array.unsafe-nth influences i)
+                    (let [influence @(Array.unsafe-nth influences-arr i)
                           weight (* (- 1.0 (/ dist scale-i)) influence)
                           val @(Array.unsafe-nth scalars-arr i)]
                       (when (not (and (= slot 5) (= val -999.0)))
@@ -492,48 +210,20 @@
             def-val))))
 
   (defn register-instance-generic! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val influence-val initial-fields sdf-val]
-    (let [found-idx -1
-          active-arr (FieldDatabase.active db)
-          handles-arr (FieldDatabase.handles db)
-          len (Array.length active-arr)]
+    (let [edb (entity-db db)
+          found-idx (EntityDatabase.register-instance! edb handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val sdf-val)
+          len (Array.length (FieldDatabase.influences db))]
       (do
-        (for [i 0 len]
-          (when (not @(Array.unsafe-nth active-arr i))
-            (when (= found-idx -1)
-              (set! found-idx i))))
-        (when (= found-idx -1)
+        (while (<= len found-idx)
           (do
-            (Array.push-back! active-arr false)
-            (Array.push-back! handles-arr (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)))
-            (Array.push-back! (FieldDatabase.shape-types db) -1)
-            (Array.push-back! (FieldDatabase.params db) (Vector4.init-zero))
-            (Array.push-back! (FieldDatabase.positions db) (Vector3.init 0.0 0.0 0.0))
-            (Array.push-back! (FieldDatabase.rotations db) (Quaternion.identity))
-            (Array.push-back! (FieldDatabase.scales db) 1.0)
-            (Array.push-back! (FieldDatabase.root-csg-indices db) -1)
-            (Array.push-back! (FieldDatabase.colors db) (Vector3.init 0.0 0.0 0.0))
             (Array.push-back! (FieldDatabase.influences db) 1.0)
-            (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
-              (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
-                (Array.push-back! arr (Vector3.init 0.0 0.0 0.0))))
             (for [f 0 (Array.length (FieldDatabase.entity-scalars db))]
               (let [arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) f)
                     k (Array.unsafe-nth (FieldDatabase.kernels db) f)
                     def-val @(FieldKernelDef.default-val k)]
                 (Array.push-back! arr def-val)))
-            (Array.push-back! (FieldDatabase.sdfs db) (Maybe.Nothing))
-            (set! found-idx len)))
-        (Array.aset! active-arr found-idx true)
-        (Array.aset! handles-arr found-idx @handle)
-        (Array.aset! (FieldDatabase.shape-types db) found-idx shape-type-val)
-        (Array.aset! (FieldDatabase.params db) found-idx @&params-val)
-        (Array.aset! (FieldDatabase.positions db) found-idx @&pos-val)
-        (Array.aset! (FieldDatabase.rotations db) found-idx rot-val)
-        (Array.aset! (FieldDatabase.scales db) found-idx scale-val)
-        (Array.aset! (FieldDatabase.root-csg-indices db) found-idx csg-idx-val)
-        (Array.aset! (FieldDatabase.colors db) found-idx color-val)
+            (set! len (inc len))))
         (Array.aset! (FieldDatabase.influences db) found-idx influence-val)
-        (Array.aset! (FieldDatabase.sdfs db) found-idx sdf-val)
         
         ;; Set initial-fields
         (let [num-pairs (Array.length initial-fields)]
@@ -542,15 +232,7 @@
                   slot @(FieldInitialVal.slot p)
                   val @(FieldInitialVal.val p)]
               (set-scalar-field! db slot found-idx val))))
-
-        (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
-          (do
-            (ensure-capacity! (FieldDatabase.handle-to-index db) (inc h-idx) -1)
-            (Array.aset! (FieldDatabase.handle-to-index db) h-idx found-idx)
-            (let [ms (FieldDatabase.max-scale db)]
-              (when (> scale-val @ms)
-                (FieldDatabase.set-max-scale! db scale-val)))
-            (the Int found-idx))))))
+        found-idx)))
 
   (defn register-instance! [db handle shape-type-val params-val pos-val rot-val scale-val csg-idx-val color-val temp-val age-val hum-val pres-val charge-val gravity-val density-val lifetime-val vel-val influence-val sdf-val]
     (let [initial-fields (the (Array FieldInitialVal)
@@ -566,73 +248,25 @@
         (let [idx (the Int (register-instance-generic! db handle (the Int shape-type-val) (the Vector4 params-val) (the (Vector3 Double) pos-val) (the Quaternion rot-val) (the Double scale-val) (the Int csg-idx-val) (the (Vector3 Double) color-val) (the Double influence-val) &initial-fields (the (Maybe SDF) sdf-val)))]
           (do
             (when (>= idx 0)
-              (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) idx (the (Vector3 Double) vel-val)))
+              (let [edb (entity-db db)]
+                (Array.aset! (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0) idx (the (Vector3 Double) vel-val))))
             (the Int idx))))))
 
   (defn release-instance! [db handle]
-    (let [id (get-index-by-handle db handle)
-          h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
+    (let [edb (entity-db db)
+          id (get-index-by-handle db handle)]
       (do
         (when (>= id 0)
-          (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) id)
-                params (Array.unsafe-nth (FieldDatabase.params db) id)
-                pos (Array.unsafe-nth (FieldDatabase.positions db) id)
-                scale @(Array.unsafe-nth (FieldDatabase.scales db) id)
-                num-kernels (Array.length (FieldDatabase.kernels db))]
+          (let [num-kernels (Array.length (FieldDatabase.kernels db))]
             (do
-              ;; Reset grid cells and cache values back to defaults
+              ;; Reset cache values back to defaults in FieldDatabase
               (for [slot 0 num-kernels]
                 (let [k (Array.unsafe-nth (FieldDatabase.kernels db) slot)
                       def-val @(FieldKernelDef.default-val k)]
                   (set-scalar-field! db slot id def-val)))
-              
-              (Array.aset! (FieldDatabase.active db) id false)
-              (Array.aset! (FieldDatabase.shape-types db) id -1)
               (Array.aset! (FieldDatabase.influences db) id 1.0)
-              
-              (for [f 0 (Array.length (FieldDatabase.vector-fields db))]
-                (let [arr (Array.unsafe-nth (FieldDatabase.vector-fields db) f)]
-                  (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
-              (Array.aset! (FieldDatabase.sdfs db) id (Maybe.Nothing))
-              ())))
-        (when (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-          (do
-            (Array.aset! (FieldDatabase.handle-to-index db) h-idx -1)
-            ())))))
-
-  (defn set-scale! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (Array.aset! (FieldDatabase.scales db) id val)
-          (let [ms (FieldDatabase.max-scale db)]
-            (when (> val @ms)
-              (do
-                (FieldDatabase.set-max-scale! db val)
-                ())))
-          ()))))
-
-  (defn set-velocity! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) id val)
-          ()))))
-
-  (defn set-position! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (Array.aset! (FieldDatabase.positions db) id val)
-          ()))))
-
-  (defn set-rotation! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (Array.aset! (FieldDatabase.rotations db) id val)
-          ()))))
-
+              (EntityDatabase.release-instance! edb handle)
+              ()))))))
 
   (defn set-scalar-by-name! [db handle name val]
     (let [slot (get-kernel-slot db name)
@@ -649,12 +283,289 @@
           (Array.aset! (FieldDatabase.influences db) id val)
           ()))))
 
-  (defn set-root-csg-index! [db handle val]
-    (let [id (get-index-by-handle db handle)]
-      (when (>= id 0)
-        (do
-          (Array.aset! (FieldDatabase.root-csg-indices db) id val)
-          ()))))
+  (defn noop-update [db-ptr dt] ())
+
+  (defn diffuse-temperature! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          temp-slot 0
+          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          diffusion-rate 0.8
+          new-temps (Array.copy temp-arr)
+          grid (EntityDatabase.spatial-grid edb)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [t-i @(Array.unsafe-nth temp-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  cooling-rate 0.1
+                  ambient-temp 0.0
+                  delta-temp (* (- ambient-temp t-i) (* cooling-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
+              (do
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [t-j @(Array.unsafe-nth temp-arr j)
+                             pos-j (Array.unsafe-nth positions j)
+                             scale-j @(Array.unsafe-nth scales j)
+                             to-j (Vector3.sub pos-j pos-i)
+                             dist (Vector3.mag &to-j)
+                             max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- t-j t-i) factor) dt)]
+                            (set! delta-temp (+ delta-temp (* transfer diffusion-rate)))))))))
+                (Array.aset! &new-temps i (+ t-i delta-temp))))))
+        (for [i 0 num-entities]
+          (Array.aset! temp-arr i @(Array.unsafe-nth &new-temps i))))))
+
+  (defn diffuse-humidity! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          hum-slot 2
+          temp-slot 0
+          hum-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) hum-slot)
+          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          diffusion-rate 0.6
+          new-hums (Array.copy hum-arr)
+          grid (EntityDatabase.spatial-grid edb)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [h-i @(Array.unsafe-nth hum-arr i)
+                  t-i @(Array.unsafe-nth temp-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  ambient-hum 0.2
+                  dissipation-rate 0.05
+                  delta-hum (* (- ambient-hum h-i) (* dissipation-rate dt))
+                  evap-cond (if (> t-i 0.0)
+                                (* (* t-i 0.01) (* (- 1.0 h-i) dt))
+                                (* (* t-i 0.02) (* h-i dt)))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
+              (do
+                (set! delta-hum (+ delta-hum evap-cond))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [h-j @(Array.unsafe-nth hum-arr j)
+                             pos-j (Array.unsafe-nth positions j)
+                             scale-j @(Array.unsafe-nth scales j)
+                             to-j (Vector3.sub pos-j pos-i)
+                             dist (Vector3.mag &to-j)
+                             max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- h-j h-i) factor) dt)]
+                            (set! delta-hum (+ delta-hum (* transfer diffusion-rate)))))))))
+                (Array.aset! &new-hums i (Double.clamp 0.0 1.0 (+ h-i delta-hum)))))))
+        (for [i 0 num-entities]
+          (Array.aset! hum-arr i @(Array.unsafe-nth &new-hums i))))))
+
+  (defn diffuse-pressure! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          pres-slot 3
+          temp-slot 0
+          pres-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) pres-slot)
+          temp-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) temp-slot)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          diffusion-rate 0.7
+          new-pres (Array.copy pres-arr)
+          grid (EntityDatabase.spatial-grid edb)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [p-i @(Array.unsafe-nth pres-arr i)
+                  t-i @(Array.unsafe-nth temp-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  ambient-pres 0.0
+                  dissipation-rate 0.15
+                  delta-pres (* (- ambient-pres p-i) (* dissipation-rate dt))
+                  expansion-rate 0.25
+                  thermal-expansion (* (* t-i expansion-rate) dt)
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
+              (do
+                (set! delta-pres (+ delta-pres thermal-expansion))
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [p-j @(Array.unsafe-nth pres-arr j)
+                             pos-j (Array.unsafe-nth positions j)
+                             scale-j @(Array.unsafe-nth scales j)
+                             to-j (Vector3.sub pos-j pos-i)
+                             dist (Vector3.mag &to-j)
+                             max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- p-j p-i) factor) dt)]
+                            (set! delta-pres (+ delta-pres (* transfer diffusion-rate)))))))))
+                (Array.aset! &new-pres i (Double.clamp 0.0 100.0 (+ p-i delta-pres)))))))
+        (for [i 0 num-entities]
+          (Array.aset! pres-arr i @(Array.unsafe-nth &new-pres i))))))
+
+  (defn diffuse-charge! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          charge-slot 4
+          charge-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) charge-slot)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          diffusion-rate 0.9
+          new-chgs (Array.copy charge-arr)
+          grid (EntityDatabase.spatial-grid edb)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [c-i @(Array.unsafe-nth charge-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  ambient-chg 0.0
+                  discharge-rate 0.1
+                  delta-charge (* (- ambient-chg c-i) (* discharge-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
+              (do
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [c-j @(Array.unsafe-nth charge-arr j)
+                             pos-j (Array.unsafe-nth positions j)
+                             scale-j @(Array.unsafe-nth scales j)
+                             to-j (Vector3.sub pos-j pos-i)
+                             dist (Vector3.mag &to-j)
+                             max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- c-j c-i) factor) dt)]
+                            (set! delta-charge (+ delta-charge (* transfer diffusion-rate)))))))))
+                (Array.aset! &new-chgs i (Double.clamp -10.0 10.0 (+ c-i delta-charge)))))))
+        (for [i 0 num-entities]
+          (Array.aset! charge-arr i @(Array.unsafe-nth &new-chgs i))))))
+
+  (defn diffuse-light! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          light-slot 1
+          light-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) light-slot)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          diffusion-rate 0.7
+          new-lights (Array.copy light-arr)
+          grid (EntityDatabase.spatial-grid edb)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [l-i @(Array.unsafe-nth light-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  decay-rate 0.15
+                  ambient-light 0.0
+                  delta-light (* (- ambient-light l-i) (* decay-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
+              (do
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [l-j @(Array.unsafe-nth light-arr j)
+                             pos-j (Array.unsafe-nth positions j)
+                             scale-j @(Array.unsafe-nth scales j)
+                             to-j (Vector3.sub pos-j pos-i)
+                             dist (Vector3.mag &to-j)
+                             max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- l-j l-i) factor) dt)]
+                            (set! delta-light (+ delta-light (* transfer diffusion-rate)))))))))
+                (Array.aset! &new-lights i (Double.clamp 0.0 1.0 (+ l-i delta-light)))))))
+        (for [i 0 num-entities]
+          (Array.aset! light-arr i @(Array.unsafe-nth &new-lights i))))))
+
+  (defn diffuse-density! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          density-slot 6
+          density-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) density-slot)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          diffusion-rate 0.5
+          new-dens (Array.copy density-arr)
+          grid (EntityDatabase.spatial-grid edb)]
+      (do
+        (for [i 0 num-entities]
+          (when @(Array.unsafe-nth active-arr i)
+            (let [d-i @(Array.unsafe-nth density-arr i)
+                  pos-i (Array.unsafe-nth positions i)
+                  scale-i @(Array.unsafe-nth scales i)
+                  decay-rate 0.05
+                  delta-density (* (- 1.0 d-i) (* decay-rate dt))
+                  aabb (AABB.init (Vector3.sub pos-i &(Vector3.init scale-i scale-i scale-i))
+                                  (Vector3.add pos-i &(Vector3.init scale-i scale-i scale-i)))
+                  candidates (SpatialGrid.query-unique grid &aabb)
+                  num-cand (Array.length &candidates)]
+              (do
+                (for [k 0 num-cand]
+                  (let [j @(Array.unsafe-nth &candidates k)]
+                    (when (and (/= i j) @(Array.unsafe-nth active-arr j))
+                      (let [d-j @(Array.unsafe-nth density-arr j)
+                             pos-j (Array.unsafe-nth positions j)
+                             scale-j @(Array.unsafe-nth scales j)
+                             to-j (Vector3.sub pos-j pos-i)
+                             dist (Vector3.mag &to-j)
+                             max-dist (+ scale-i scale-j)]
+                        (when (< dist max-dist)
+                          (let [factor (- 1.0 (/ dist max-dist))
+                                transfer (* (* (- d-j d-i) factor) dt)]
+                            (set! delta-density (+ delta-density (* transfer diffusion-rate)))))))))
+                (Array.aset! &new-dens i (+ d-i delta-density))))))
+        (for [i 0 num-entities]
+          (Array.aset! density-arr i @(Array.unsafe-nth &new-dens i))))))
+
+  (defn tick-lifetime! [db-ptr dt]
+    (let [db (voidptr->db-ref db-ptr)
+          edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          num-entities (Array.length active-arr)
+          lifetime-slot 7
+          lifetime-arr (Array.unsafe-nth (FieldDatabase.entity-scalars db) lifetime-slot)]
+      (for [i 0 num-entities]
+        (when @(Array.unsafe-nth active-arr i)
+          (let [curr-life @(Array.unsafe-nth lifetime-arr i)]
+            (Array.aset! lifetime-arr i (- curr-life dt)))))))
 
   (defn sd-sphere [p s]
     (- (Vector3.mag p) s))
@@ -722,28 +633,29 @@
 
   (sig evaluate-scene-sdf-material (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector2 Double)))
   (defn evaluate-scene-sdf-material [db pos]
-    (let [active (FieldDatabase.active db)
-          len (Array.length active)
+    (let [edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
+          len (Array.length active-arr)
           min-d 10000.0
           mat-id 0.0]
       (do
         (for [i 0 len]
-          (when @(Array.unsafe-nth active i)
-            (let [inst-d (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) i)
+          (when @(Array.unsafe-nth active-arr i)
+            (let [inst-d (match-ref (Array.unsafe-nth (EntityDatabase.sdfs edb) i)
                            (Maybe.Just sdf) (SDF.distance-world sdf pos)
                            (Maybe.Nothing)
-                             (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)
-                                   params (Array.unsafe-nth (FieldDatabase.params db) i)
-                                   inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
-                                   rot (Array.unsafe-nth (FieldDatabase.rotations db) i)
-                                   scale @(Array.unsafe-nth (FieldDatabase.scales db) i)]
+                             (let [shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) i)
+                                   params (Array.unsafe-nth (EntityDatabase.params edb) i)
+                                   inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
+                                   rot (Array.unsafe-nth (EntityDatabase.rotations edb) i)
+                                   scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)]
                                (evaluate-csg-primitive pos shape-type inst-pos rot scale params)))]
               (when (< inst-d min-d)
                 (do
                   (set! min-d inst-d)
                   (set! mat-id (Double.from-int (inc i))))))))
         (Vector2.init min-d mat-id))))
- 
+
   (defn get-shape-bounding-radius [shape-type scale params]
     (if (= shape-type 1)
         (* @(Vector4.x params) scale) ;; Sphere
@@ -767,24 +679,26 @@
                         (if (= shape-type 6)
                             (* @(Vector4.x params) scale) ;; Octahedron
                             0.0)))))))
- 
+
+  (sig evaluate-scene-sdf-material-subset (Fn [(Ref FieldDatabase) (Ref (Vector3 Double)) (Ref (Array Int)) Double] (Vector2 Double)))
   (defn evaluate-scene-sdf-material-subset [db pos indices-ref base-d]
-    (let [len (Array.length indices-ref)
+    (let [edb (entity-db db)
+          len (Array.length indices-ref)
           min-d base-d
           mat-id 0.0]
       (do
         (for [k 0 len]
           (let [i @(Array.unsafe-nth indices-ref k)
-                inst-d (match-ref (Array.unsafe-nth (FieldDatabase.sdfs db) i)
+                inst-d (match-ref (Array.unsafe-nth (EntityDatabase.sdfs edb) i)
                           (Maybe.Just sdf) (SDF.distance-world sdf pos)
                           (Maybe.Nothing)
-                            (let [shape-type @(Array.unsafe-nth (FieldDatabase.shape-types db) i)
-                                  params (Array.unsafe-nth (FieldDatabase.params db) i)
-                                  inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
-                                  rot (Array.unsafe-nth (FieldDatabase.rotations db) i)
-                                  scale @(Array.unsafe-nth (FieldDatabase.scales db) i)]
+                            (let [shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) i)
+                                  params (Array.unsafe-nth (EntityDatabase.params edb) i)
+                                  inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
+                                  rot (Array.unsafe-nth (EntityDatabase.rotations edb) i)
+                                  scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)]
                               (evaluate-csg-primitive pos shape-type inst-pos rot scale params)))]
-            (let [csg-op @(Array.unsafe-nth (FieldDatabase.root-csg-indices db) i)]
+            (let [csg-op @(Array.unsafe-nth (EntityDatabase.root-csg-indices edb) i)]
               (if (= csg-op -2)
                   (set! min-d (max-double min-d (- 0.0 inst-d)))
                   (if (= csg-op -3)
@@ -797,19 +711,20 @@
 
   (sig calculate-pressure-gradient-grid (Fn [(Ref FieldDatabase) (Ref (Vector3 Double)) (Ptr (SpatialGrid Uint32))] (Vector3 Double)))
   (defn calculate-pressure-gradient-grid [db pos grid-ptr]
-    (let [sum-grad-S (Vector3.init 0.0 0.0 0.0)
+    (let [edb (entity-db db)
+          sum-grad-S (Vector3.init 0.0 0.0 0.0)
           sum-grad-W (Vector3.init 0.0 0.0 0.0)
           sum-S 0.0
           sum-W 0.0
-          active-arr (FieldDatabase.active db)
+          active-arr (EntityDatabase.active edb)
           epsilon 0.01]
       (do
         (if (null? grid-ptr)
           (let [len (Array.length active-arr)]
             (for [i 0 len]
               (when @(Array.unsafe-nth active-arr i)
-                (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
-                      scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
+                      scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)
                       pres @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.entity-scalars db) 3) i)
                       to-pos (Vector3.sub pos inst-pos)
                       dist (Vector3.mag &to-pos)
@@ -834,13 +749,13 @@
                 cand-len (Array.length &candidates)]
             (for [c 0 cand-len]
               (let [h-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth &candidates c))))
-                    i (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-                          @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
+                    i (if (< h-idx (Array.length (EntityDatabase.handle-to-index edb)))
+                          @(Array.unsafe-nth (EntityDatabase.handle-to-index edb) h-idx)
                           -1)]
                 (when (>= i 0)
                   (when @(Array.unsafe-nth active-arr i)
-                    (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
-                          scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
+                    (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
+                          scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)
                           pres @(Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.entity-scalars db) 3) i)
                           to-pos (Vector3.sub pos inst-pos)
                           dist (Vector3.mag &to-pos)
@@ -872,17 +787,18 @@
 
   (sig calculate-induced-velocity (Fn [(Ref FieldDatabase) (Ref (Vector3 Double))] (Vector3 Double)))
   (defn calculate-induced-velocity [db pos]
-    (let [sum-vel (Vector3.init 0.0 0.0 0.0)
+    (let [edb (entity-db db)
+          sum-vel (Vector3.init 0.0 0.0 0.0)
           sum-W 0.0
-          active-arr (FieldDatabase.active db)
+          active-arr (EntityDatabase.active edb)
           len (Array.length active-arr)
           epsilon 0.01]
       (do
         (for [i 0 len]
           (when @(Array.unsafe-nth active-arr i)
-            (let [inst-pos (Array.unsafe-nth (FieldDatabase.positions db) i)
-                  scale @(Array.unsafe-nth (FieldDatabase.scales db) i)
-                  vel (Array.unsafe-nth (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) i)
+            (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
+                  scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)
+                  vel (Array.unsafe-nth (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0) i)
                   to-pos (Vector3.sub pos inst-pos)
                   dist (Vector3.mag &to-pos)
                   d (- dist scale)
@@ -916,44 +832,33 @@
                 (set-scalar-field! db slot ent-idx val))))))))
 
   (defn dispatch-event! [db pos vel shape-type params start-scale max-scale growth-speed max-lifetime fields col update-fn]
-    (let [curr-id @(FieldDatabase.next-virtual-id db)
+    (let [edb (entity-db db)
+          curr-id @(EntityDatabase.next-virtual-id edb)
           h-id (if (>= curr-id 1020) 512 curr-id)
           handle (Handle.init (Uint64.from-long (Long.from-int h-id)) (Uint32.from-long 1l))
           event (FieldEvent.init @pos @vel shape-type @params start-scale max-scale growth-speed max-lifetime max-lifetime @fields @col h-id update-fn)]
       (do
-        (FieldDatabase.set-next-virtual-id! db (inc h-id))
+        (EntityDatabase.set-next-virtual-id! edb (inc h-id))
         (let [discard-idx (register-instance-generic! db &handle shape-type @params @pos (Quaternion.identity) start-scale -1 @col 1.0 fields (the (Maybe SDF) (Maybe.Nothing)))]
           ())
-            (let [idx (get-index-by-handle db &handle)]
+        (let [idx (get-index-by-handle db &handle)]
           (when (>= idx 0)
-            (Array.aset! (Array.unsafe-nth (FieldDatabase.vector-fields db) 0) idx @vel)))
-        (Array.push-back! (FieldDatabase.events db) event))))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0) idx @vel)))
+        (Array.push-back! (EntityDatabase.events edb) event))))
 
   (defn rebuild-spatial-grid! [db]
-    (let [grid (FieldDatabase.spatial-grid db)
-          active-arr (FieldDatabase.active db)
-          num-entities (Array.length active-arr)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)]
-      (do
-        (SpatialGrid.clear! grid)
-        (for [i 0 num-entities]
-          (when @(Array.unsafe-nth active-arr i)
-            (let [pos (Array.unsafe-nth positions i)
-                  scale @(Array.unsafe-nth scales i)
-                  aabb (AABB.init (Vector3.sub pos &(Vector3.init scale scale scale))
-                                  (Vector3.add pos &(Vector3.init scale scale scale)))]
-              (SpatialGrid.insert! grid &aabb i)))))))
+    (EntityDatabase.rebuild-spatial-grid! (entity-db db)))
 
   (defn diffuse-velocity! [db dt]
-    (let [active-arr (FieldDatabase.active db)
+    (let [edb (entity-db db)
+          active-arr (EntityDatabase.active edb)
           num-entities (Array.length active-arr)
-          vel-arr (Array.unsafe-nth (FieldDatabase.vector-fields db) 0)
-          positions (FieldDatabase.positions db)
-          scales (FieldDatabase.scales db)
+          vel-arr (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
           viscosity 0.4
           new-vels (Array.copy vel-arr)
-          grid (FieldDatabase.spatial-grid db)]
+          grid (EntityDatabase.spatial-grid edb)]
       (do
         (for [i 0 num-entities]
           (when @(Array.unsafe-nth active-arr i)
@@ -987,11 +892,12 @@
 
   (defn tick! [db dt]
     (let [db (the (Ref FieldDatabase) db)
-          ev-arr (FieldDatabase.events db)
+          edb (entity-db db)
+          ev-arr (EntityDatabase.events edb)
           len (Array.length ev-arr)
           keep-ev []]
       (do
-        (rebuild-spatial-grid! db)
+        (EntityDatabase.rebuild-spatial-grid! edb)
         (diffuse-velocity! db dt)
 
         (for [i 0 len]
@@ -1016,7 +922,7 @@
                       (@(FieldEvent.update-fn &ev) db-ptr &handle &updated-ev dt))
                     (Array.push-back! &keep-ev updated-ev)))
                 (FieldDatabase.release-instance! db &handle))))
-        (FieldDatabase.set-events! db keep-ev)
+        (EntityDatabase.set-events! edb keep-ev)
         
         ;; Dynamic kernel updates
         (let [updates-arr (FieldDatabase.kernel-updates db)

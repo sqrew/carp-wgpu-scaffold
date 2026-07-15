@@ -20,6 +20,7 @@
 ])
 
 (deftype World [
+  entity-db EntityDatabase
   field-db FieldDatabase
   grid-origin (Vector3 Double)
   cell-size Double
@@ -41,6 +42,7 @@
 
 (defmodule World
   (use Vector3)
+  (use EntityDatabase)
   (use FieldDatabase)
   (use SpatialGrid)
 
@@ -63,17 +65,21 @@
           cqz (the (Array Int) (replicate 64 &-999))
           cidx (the (Array Int) (replicate 64 &-1))
           total-cells (* w (* h d))
-          db (FieldDatabase.new)]
+          edb (EntityDatabase.new)
+          fdb (FieldDatabase.new)
+          world (World.init edb fdb origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res (the (Array Int) [0 0]))]
       (do
-        (ignore (FieldDatabase.register-kernel! &db @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!))
-        (ignore (FieldDatabase.register-kernel! &db @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!))
-        (ignore (FieldDatabase.register-kernel! &db @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!))
-        (ignore (FieldDatabase.register-kernel! &db @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!))
-        (ignore (FieldDatabase.register-kernel! &db @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!))
-        (ignore (FieldDatabase.register-kernel! &db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update))
-        (ignore (FieldDatabase.register-kernel! &db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!))
-        (ignore (FieldDatabase.register-kernel! &db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!))
-        (World.init db origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res (the (Array Int) [0 0])))))
+        (FieldDatabase.set-entity-db-ptr! (World.field-db &world) (the (Ptr ()) (ptr-cast (Pointer.address (World.entity-db &world)))))
+        (let [db (World.field-db &world)]
+          (let [t-idx (FieldDatabase.register-kernel! db @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!)
+                l-idx (FieldDatabase.register-kernel! db @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!)
+                h-idx (FieldDatabase.register-kernel! db @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!)
+                p-idx (FieldDatabase.register-kernel! db @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!)
+                c-idx (FieldDatabase.register-kernel! db @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!)
+                g-idx (FieldDatabase.register-kernel! db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update)
+                d-idx (FieldDatabase.register-kernel! db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!)
+                lt-idx (FieldDatabase.register-kernel! db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!)]
+            world)))))
 
   (defn init-gpu-buffers! [ctx world-data]
     (let [chunks (World.chunks world-data)

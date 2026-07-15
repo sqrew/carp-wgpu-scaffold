@@ -228,6 +228,7 @@
           scales (FieldDatabase.scales db)
           velocities (Array.unsafe-nth (FieldDatabase.vector-fields db) 0)
           influences (FieldDatabase.influences db)
+          h-to-idx (FieldDatabase.handle-to-index db)
           
           sum-vel (Vector3.init 0.0 0.0 0.0)
           sum-W 0.0
@@ -256,8 +257,8 @@
                 cand-len (Array.length &candidates)]
             (for [c 0 cand-len]
               (let [h-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth &candidates c))))
-                    i (if (< h-idx (Array.length (FieldDatabase.handle-to-index db)))
-                          @(Array.unsafe-nth (FieldDatabase.handle-to-index db) h-idx)
+                    i (if (< h-idx (Array.length h-to-idx))
+                          @(Array.unsafe-nth h-to-idx h-idx)
                           -1)]
                 (when (>= i 0)
                   (when @(Array.unsafe-nth active i)
