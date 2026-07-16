@@ -70,14 +70,14 @@
           world (World.init edb fdb origin cell-size w h d (create-initial-chunks voxel-res) -999 -999 -999 cqx cqy cqz cidx (the (Array Chunk) []) voxel-res (the (Array Int) [0 0]))]
       (do
         (let [db (World.field-db &world)]
-          (let [t-idx (FieldDatabase.register-kernel! db @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!)
-                l-idx (FieldDatabase.register-kernel! db @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!)
-                h-idx (FieldDatabase.register-kernel! db @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!)
-                p-idx (FieldDatabase.register-kernel! db @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!)
-                c-idx (FieldDatabase.register-kernel! db @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!)
-                g-idx (FieldDatabase.register-kernel! db @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update)
-                d-idx (FieldDatabase.register-kernel! db @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!)
-                lt-idx (FieldDatabase.register-kernel! db @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!)]
+          (let [t-idx (FieldDatabase.register-kernel! db FieldDatabase.temp-slot @"temperature" 0.0 -120.0 120.0 FieldDatabase.diffuse-temperature!)
+                l-idx (FieldDatabase.register-kernel! db FieldDatabase.light-slot @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!)
+                h-idx (FieldDatabase.register-kernel! db FieldDatabase.humidity-slot @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!)
+                p-idx (FieldDatabase.register-kernel! db FieldDatabase.pressure-slot @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!)
+                c-idx (FieldDatabase.register-kernel! db FieldDatabase.charge-slot @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!)
+                g-idx (FieldDatabase.register-kernel! db FieldDatabase.gravity-slot @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update)
+                d-idx (FieldDatabase.register-kernel! db FieldDatabase.density-slot @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!)
+                lt-idx (FieldDatabase.register-kernel! db FieldDatabase.lifetime-slot @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!)]
             world)))))
 
   (defn init-gpu-buffers! [ctx world-data]

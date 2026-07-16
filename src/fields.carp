@@ -231,7 +231,7 @@
           positions (EntityDatabase.positions edb)
           scales (EntityDatabase.scales edb)
           velocities (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
-          influences (FieldDatabase.influences db)
+          influences (EntityDatabase.influences edb)
           h-to-idx (EntityDatabase.handle-to-index edb)
           
           sum-vel (Vector3.init 0.0 0.0 0.0)

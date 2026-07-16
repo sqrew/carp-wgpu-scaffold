@@ -633,7 +633,7 @@ struct PointInstance {
                 d = clamp(abs(fields.x) / 120.0, 0.0, 1.0) * 0.6;
             } else if (view_mode == 2.0) {
                 // Light Field View
-                d = fields.y * 0.8;
+                d = fields.w * 0.8;
             } else if (view_mode == 3.0) {
                 // Humidity View
                 d = clamp(fields.z / 100.0, 0.0, 1.0) * 0.6;
@@ -653,8 +653,8 @@ struct PointInstance {
                 let norm_t = clamp(abs(fields.x) / 120.0, 0.0, 1.0);
                 return mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
             } else if (view_mode == 2.0) {
-                // Golden-white light field visualization
-                return mix(vec3<f32>(0.05, 0.04, 0.02), vec3<f32>(1.0, 0.9, 0.65), fields.y);
+                // RGB light field color visualization
+                return mix(vec3<f32>(0.05, 0.04, 0.02), fields.xyz, clamp(fields.w, 0.0, 1.0));
             } else if (view_mode == 3.0) {
                 let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
                 return mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
@@ -669,7 +669,7 @@ struct PointInstance {
             if (view_mode == 1.0) {
                 return clamp(abs(fields.x) / 5.0, 0.0, 1.0);
             } else if (view_mode == 2.0) {
-                return clamp(fields.y / 0.5, 0.0, 1.0);
+                return clamp(fields.w / 0.5, 0.0, 1.0);
             } else if (view_mode == 3.0) {
                 return clamp(fields.z / 5.0, 0.0, 1.0);
             } else if (view_mode == 4.0) {
@@ -1490,8 +1490,7 @@ struct PointInstance {
                 var lighting = direct_lighting + ambient + sss * vec3<f32>(0.85, 0.38, 0.22) * clamp(dominant_alt * 5.0, 0.0, 1.0);
                 
                 // Dynamic diffuse Light Field contribution
-                let light_field_val = fields.y;
-                lighting += vec3<f32>(1.0, 0.92, 0.72) * light_field_val * 1.6;
+                lighting += fields.xyz * 1.6;
 
                 // Determine the base terrain color at p using dynamic biome blending
                 let inside_p = p - normal * 0.4;

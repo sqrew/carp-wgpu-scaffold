@@ -55,6 +55,8 @@
   events (Array FieldEvent)
   next-virtual-id Int
   spatial-grid (SpatialGrid Int)
+  entity-scalars (Array (Array Double))
+  influences (Array Double)
 ])
 
 (defmodule EntityDatabase
@@ -98,8 +100,17 @@
           vec-fields [(the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 0.0 0.0)))]
           sdfs (the (Array (Maybe SDF)) (replicate n &(the (Maybe SDF) (Maybe.Nothing))))
           h-to-idx (the (Array Int) (replicate 1024 &-1))
-          grid (the (SpatialGrid Int) (SpatialGrid.new-with-origin 8.0 32 32 32 (Vector3.init -128.0 -128.0 -128.0)))]
-      (EntityDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 grid)))
+          grid (the (SpatialGrid Int) (SpatialGrid.new-with-origin 8.0 32 32 32 (Vector3.init -128.0 -128.0 -128.0)))
+          esc [(the (Array Double) (replicate n &0.0))
+               (the (Array Double) (replicate n &0.0))
+               (the (Array Double) (replicate n &0.2))
+               (the (Array Double) (replicate n &0.0))
+               (the (Array Double) (replicate n &0.0))
+               (the (Array Double) (replicate n &1.0))
+               (the (Array Double) (replicate n &1.0))
+               (the (Array Double) (replicate n &1.0))]
+          inf (the (Array Double) (replicate n &1.0))]
+      (EntityDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 grid esc inf)))
 
   (defn get-index-by-handle [db handle]
     (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
@@ -132,6 +143,15 @@
               (let [arr (Array.unsafe-nth (EntityDatabase.vector-fields db) f)]
                 (Array.push-back! arr (Vector3.init 0.0 0.0 0.0))))
             (Array.push-back! (EntityDatabase.sdfs db) (Maybe.Nothing))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 0) 0.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 1) 0.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 2) 0.2)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 3) 0.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 4) 0.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 5) 1.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 6) 1.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 7) 1.0)
+            (Array.push-back! (EntityDatabase.influences db) 1.0)
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
         (Array.aset! handles-arr found-idx @handle)
@@ -165,6 +185,15 @@
               (let [arr (Array.unsafe-nth (EntityDatabase.vector-fields db) f)]
                 (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
             (Array.aset! (EntityDatabase.sdfs db) id (Maybe.Nothing))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 0) id 0.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 1) id 0.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 2) id 0.2)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 3) id 0.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 4) id 0.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 5) id 1.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 6) id 1.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 7) id 1.0)
+            (Array.aset! (EntityDatabase.influences db) id 1.0)
             ()))
         (when (< h-idx (Array.length (EntityDatabase.handle-to-index db)))
           (do
