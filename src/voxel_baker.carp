@@ -9,6 +9,14 @@
   (use SDF)
   (use FieldDatabase)
 
+  (defmacro with-bind-group [create-expr bg :rest body]
+    (list 'match create-expr
+          (list 'Result.Error 'e) (list 'IO.println (list 'ref (list 'str* "Bind Group error: " (list 'ref 'e))))
+          (list 'Result.Success bg)
+            (list 'do
+                  (cons 'do body)
+                  (list 'WGPU.free-bind-group bg))))
+
   (def sdf-padding 6.0)
 
   (defn smin [a b k]
@@ -103,12 +111,8 @@
           (do
             (WGPU.write-floats ctx c-params-b &params-data)
             (let [bufs [v-gpu-b c-params-b]]
-              (match (WGPU.create-bind-group ctx pipe &bufs)
-                (Result.Error e) (IO.println &(format "Voxel action Bind Group error: %s" &e))
-                (Result.Success bg)
-                  (do
-                    (WGPU.dispatch ctx pipe bg dispatch-cnt)
-                    (WGPU.free-bind-group bg))))
+              (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
+                (WGPU.dispatch ctx pipe bg dispatch-cnt)))
             (pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
             )))))
 
@@ -482,17 +486,13 @@
           oy (* slot-y 32)
           oz (* slot-z 32)
           pack-bufs [f-scratch-b f-half-b]]
-      (match (WGPU.create-bind-group ctx pipe &pack-bufs)
-        (Result.Error e) (IO.println &(format "Pack Fields Bind Group error: %s" &e))
-        (Result.Success bg)
-          (do
-            (WGPU.dispatch ctx pipe bg 512)
-            (WGPU.free-bind-group bg)
-            (WGPURender.copy-buffer-to-3d-texture-offset 
-              ctx 
-              f-half-b 
-              @(WGPURenderer.fields-texture ren) 
-              ox oy oz 32 32 32)))))
+      (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+        (WGPU.dispatch ctx pipe bg 512)
+        (WGPURender.copy-buffer-to-3d-texture-offset 
+          ctx 
+          f-half-b 
+          @(WGPURenderer.fields-texture ren) 
+          ox oy oz 32 32 32))))
 
   (defn bake-fields-gpu! [ctx ren chunk num-instances field-script field-cache]
     (let [qx @(Chunk.coord-x chunk)
@@ -515,34 +515,26 @@
           bufs [f-scratch-b raw-u-b f-params-b]]
       (do
         (WGPU.write-floats ctx f-params-b &params-data)
-        (match (WGPU.create-bind-group ctx pipe &bufs)
-          (Result.Error e) (IO.println &(format "Fields Bake Bind Group error: %s" &e))
-          (Result.Success bg)
-            (do
-              (WGPU.dispatch ctx pipe bg 512)
-              (WGPU.free-bind-group bg)
-              (when (not (String.empty? field-script))
-                (let [pipe-maybe (Map.get-maybe field-cache field-script)]
-                  (match pipe-maybe
-                    (Maybe.Just field-pipe)
-                      (let [jit-info-b @(WGPURenderer.jit-info-buffer ren)
-                            chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
-                            voxel-tex @(WGPURenderer.voxel-texture ren)
-                            voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
-                            qx-f (Double.to-float (* (Double.from-int qx) 32.0))
-                            qy-f (Double.to-float (* (Double.from-int qy) 32.0))
-                            qz-f (Double.to-float (* (Double.from-int qz) 32.0))
-                            slot-f (Float.from-int @(Chunk.atlas-slot chunk))
-                            origin-data [qx-f qy-f qz-f slot-f]]
-                        (do
-                          (WGPU.write-floats ctx jit-info-b &origin-data)
-                          (match (WGPURender.create-jit-bind-group ctx field-pipe f-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex)
-                            (Result.Error err) (IO.println &(str* "Field JIT Bind Group error: " &err))
-                            (Result.Success field-bg)
-                              (do
-                                (WGPU.dispatch ctx field-pipe field-bg 512)
-                                (WGPU.free-bind-group field-bg)
-                                (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b f-scratch-b (* res (* res (* res 16))))))))
-                    _ ())))
-              (pack-and-copy-fields-chunk! ctx ren @(Chunk.atlas-slot chunk)))))))
+        (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
+          (WGPU.dispatch ctx pipe bg 512)
+          (when (not (String.empty? field-script))
+            (let [pipe-maybe (Map.get-maybe field-cache field-script)]
+              (match pipe-maybe
+                (Maybe.Just field-pipe)
+                  (let [jit-info-b @(WGPURenderer.jit-info-buffer ren)
+                        chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
+                        voxel-tex @(WGPURenderer.voxel-texture ren)
+                        voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+                        qx-f (Double.to-float (* (Double.from-int qx) 32.0))
+                        qy-f (Double.to-float (* (Double.from-int qy) 32.0))
+                        qz-f (Double.to-float (* (Double.from-int qz) 32.0))
+                        slot-f (Float.from-int @(Chunk.atlas-slot chunk))
+                        origin-data [qx-f qy-f qz-f slot-f]]
+                    (do
+                      (WGPU.write-floats ctx jit-info-b &origin-data)
+                      (with-bind-group (WGPURender.create-jit-bind-group ctx field-pipe f-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) field-bg
+                        (WGPU.dispatch ctx field-pipe field-bg 512)
+                        (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b f-scratch-b (* res (* res (* res 16)))))))
+                _ ())))
+          (pack-and-copy-fields-chunk! ctx ren @(Chunk.atlas-slot chunk))))))
 )
