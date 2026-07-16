@@ -49,6 +49,89 @@
   "void $NAME(Array* arr)"
   "$DECL { if (arr->data) { memset(arr->data, 0, arr->len * sizeof(float)); } }")
 
+(deftemplate wgpu-copy-3d-texture-to-buffer-offset (Fn [(Ptr WGPUContext) (Ptr WGPURenderTexture) Int Int Int WGPUBuffer Int Int Int Int] ())
+  "void $NAME(WGPUContext* ctx, WGPURenderTexture* rt, uint32_t src_x, uint32_t src_y, uint32_t src_z, WGPUBuffer buffer, uint64_t buffer_offset, uint32_t width, uint32_t height, uint32_t depth)"
+  "$DECL {
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(ctx->device, NULL);
+    
+    WGPUTexelCopyTextureInfo source = {
+        .texture = rt->texture,
+        .mipLevel = 0,
+        .origin = { .x = src_x, .y = src_y, .z = src_z },
+        .aspect = WGPUTextureAspect_All,
+    };
+
+    WGPUTexelCopyBufferLayout data_layout = {
+        .offset = buffer_offset,
+        .bytesPerRow = width * 8, // RGBA16Float = 8 bytes per pixel
+        .rowsPerImage = height,
+    };
+
+    WGPUTexelCopyBufferInfo destination = {
+        .buffer = buffer,
+        .layout = data_layout,
+    };
+
+    WGPUExtent3D write_size = {
+        .width = width,
+        .height = height,
+        .depthOrArrayLayers = depth,
+    };
+
+    wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &write_size);
+    
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, NULL);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuQueueSubmit(ctx->queue, 1, &cmd);
+    wgpuCommandBufferRelease(cmd);
+  }")
+
+(deftemplate wgpu-clear-3d-texture-atlas (Fn [(Ptr WGPUContext) (Ptr WGPURenderTexture) WGPUBuffer] ())
+  "void $NAME(WGPUContext* ctx, WGPURenderTexture* rt, WGPUBuffer zero_buf)"
+  "$DECL {
+    WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(ctx->device, NULL);
+    wgpuCommandEncoderClearBuffer(encoder, zero_buf, 0, wgpuBufferGetSize(zero_buf));
+    for (uint32_t slot = 0; slot < 1728; slot++) {
+        uint32_t slot_x = slot % 12;
+        uint32_t slot_y = (slot / 12) % 12;
+        uint32_t slot_z = slot / 144;
+        uint32_t dest_x = slot_x * 32;
+        uint32_t dest_y = slot_y * 32;
+        uint32_t dest_z = slot_z * 32;
+        
+        WGPUTexelCopyTextureInfo destination = {
+            .texture = rt->texture,
+            .mipLevel = 0,
+            .origin = { .x = dest_x, .y = dest_y, .z = dest_z },
+            .aspect = WGPUTextureAspect_All,
+        };
+
+        WGPUTexelCopyBufferLayout data_layout = {
+            .offset = 0,
+            .bytesPerRow = 32 * 8,
+            .rowsPerImage = 32,
+        };
+
+        WGPUTexelCopyBufferInfo source = {
+            .buffer = zero_buf,
+            .layout = data_layout,
+        };
+
+        WGPUExtent3D write_size = {
+            .width = 32,
+            .height = 32,
+            .depthOrArrayLayers = 32,
+        };
+
+        wgpuCommandEncoderCopyBufferToTexture(encoder, &source, &destination, &write_size);
+    }
+    WGPUCommandBuffer cmd = wgpuCommandEncoderFinish(encoder, NULL);
+    wgpuCommandEncoderRelease(encoder);
+    wgpuQueueSubmit(ctx->queue, 1, &cmd);
+    wgpuCommandBufferRelease(cmd);
+    wgpuDevicePoll(ctx->device, 1, NULL);
+  }")
+
 (deftype WGPURenderer [
   pipeline (Ptr WGPURenderPipelineWrapper)
   u-buffer (Ptr WGPUUniformBufferWrapper)
@@ -97,6 +180,7 @@
   water-half-buffer WGPUBuffer
   water-params-buffer WGPUBuffer
   water-splat-pipeline WGPUComputePipeline
+  unpack-pipeline WGPUComputePipeline
 ])
 
 (defmodule VoxelBaker
@@ -375,7 +459,7 @@
                                                                                                                         (match (WGPU.create-pipeline ctx &p-shader-src "main")
                                                                                                                           (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
                                                                                                                           (Result.Success p-pipe)
-                                                                                                                            (let [fs-shader-src (Shaders.light-splat-shader voxel-res)]
+                                                                                                                            (let [fs-shader-src (Shaders.light-splat-shader 32)]
                                                                                                                               (match (WGPU.create-pipeline ctx &fs-shader-src "main")
                                                                                                                                 (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Light splat pipeline failed: " e)))
                                                                                                                                 (Result.Success l-splat-pipe)
@@ -392,7 +476,7 @@
                                                                                                                                                 (match (WGPU.create-buffer ctx 48)
                                                                                                                                                   (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Interaction params buffer failed: " e)))
                                                                                                                                                   (Result.Success i-params-b)
-                                                                                                                                                    (let [is-shader-src (Shaders.interaction-splat-shader voxel-res)]
+                                                                                                                                                    (let [is-shader-src (Shaders.interaction-splat-shader 32)]
                                                                                                                                                       (match (WGPU.create-pipeline ctx &is-shader-src "main")
                                                                                                                                                         (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Interaction splat pipeline failed: " e)))
                                                                                                                                                         (Result.Success i-splat-pipe)
@@ -405,11 +489,19 @@
                                                                                                                                                                   (match (WGPU.create-buffer ctx 48)
                                                                                                                                                                     (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer w-half-b) (WGPU.free-buffer w-scratch-b) (WGPU.free-pipeline i-splat-pipe) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Water params buffer failed: " e)))
                                                                                                                                                                     (Result.Success w-params-b)
-                                                                                                                                                                      (let [ws-shader-src (Shaders.water-splat-shader voxel-res)]
+                                                                                                                                                                      (let [ws-shader-src (Shaders.water-splat-shader 32)]
                                                                                                                                                                         (match (WGPU.create-pipeline ctx &ws-shader-src "main")
                                                                                                                                                                           (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer w-params-b) (WGPU.free-buffer w-half-b) (WGPU.free-buffer w-scratch-b) (WGPU.free-pipeline i-splat-pipe) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Water splat pipeline failed: " e)))
                                                                                                                                                                           (Result.Success w-splat-pipe)
-                                                                                                                                                                            (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex light-tex interaction-tex voxel-samp [] true c-pipe p-pipe l-splat-pipe v-gpu-b v-half-b c-params-b l-scratch-b l-half-b l-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) jit-info-b @&format gui-pipe gui-ubo gui-bg font-tex font-samp i-scratch-b i-half-b i-params-b i-splat-pipe water-tex w-scratch-b w-half-b w-params-b w-splat-pipe)))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                                                                                            (let [un-shader-src (Shaders.unpack-shader voxel-res)]
+                                                                                                                                                                              (match (WGPU.create-pipeline ctx &un-shader-src "main")
+                                                                                                                                                                                (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer w-params-b) (WGPU.free-buffer w-half-b) (WGPU.free-buffer w-scratch-b) (WGPU.free-pipeline i-splat-pipe) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (WGPU.free-pipeline w-splat-pipe) (Result.Error (str* "Unpack pipeline failed: " e)))
+                                                                                                                                                                                (Result.Success unpack-pipe)
+                                                                                                                                                                                   (do
+                                                                                                                                                                                     (WGPURender.wgpu-clear-3d-texture-atlas ctx light-tex w-half-b)
+                                                                                                                                                                                     (WGPURender.wgpu-clear-3d-texture-atlas ctx interaction-tex w-half-b)
+                                                                                                                                                                                     (WGPURender.wgpu-clear-3d-texture-atlas ctx water-tex w-half-b)
+                                                                                                                                                                                     (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex light-tex interaction-tex voxel-samp [] true c-pipe p-pipe l-splat-pipe v-gpu-b v-half-b c-params-b l-scratch-b l-half-b l-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) jit-info-b @&format gui-pipe gui-ubo gui-bg font-tex font-samp i-scratch-b i-half-b i-params-b i-splat-pipe water-tex w-scratch-b w-half-b w-params-b w-splat-pipe unpack-pipe))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 
   (defn clear! [ren]

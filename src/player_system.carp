@@ -299,6 +299,6 @@
             b-scale (* p-scale 1.5)
             data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel b-scale false true)
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
-        (Coordinator.dispatch! (Engine.coordinator e) ev)))))))
+        (Coordinator.dispatch! (Engine.coordinator e) ev))))))
   )
 )

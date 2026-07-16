@@ -646,6 +646,8 @@
                     instance-type (if (= final-csg-idx -10) 1.0
                                     (if (= final-csg-idx -5) 2.0
                                       (if (<= final-csg-idx -99) 3.0 0.0)))
+                    _ (when (= instance-type 2.0)
+                        (IO.println &(str* "Active Water Bullet Packed: id=" (Int.str id) " pos=" (Vector3.str pos) " csg=" (Int.str final-csg-idx) " scale=" (Double.str rad-scale))))
                     base (+ (/ WGPURenderer.header-size 4) (* id 24))]
                 (do
                   (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))

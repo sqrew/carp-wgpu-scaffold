@@ -70,20 +70,19 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         if (radius <= 0.0) { continue; }
 
         let inst_type = inst.shape_info.y;
-        if (inst_type == 2.0) { // Water Source/Emitter
+        if (i32(round(inst_type)) == 2) { // Water Source/Emitter
             let dist = length(p - inst.pos_scale.xyz);
-            if (dist < radius) {
-                let weight = 1.0 - (dist / radius);
+            let splat_radius = radius * 3.5; 
+            if (dist < splat_radius) {
+                let weight = 1.0 - (dist / splat_radius);
                 water_vol = max(water_vol, weight);
-                // Assign a small downward velocity by default
-                water_vel = vec3<f32>(0.0, -1.0, 0.0);
+                water_vel = vec3<f32>(0.0, -0.5, 0.0);
             }
         }
     }
 
     if (water_vol > 0.0) {
-        water_gpu_buffer[idx] = vec4<f32>(water_vol, water_vel);
-    } else {
-        water_gpu_buffer[idx] = vec4<f32>(0.0);
+        let existing = water_gpu_buffer[idx];
+        water_gpu_buffer[idx] = vec4<f32>(clamp(existing.x + water_vol, 0.0, 1.0), existing.yzw + water_vel);
     }
 }

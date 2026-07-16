@@ -634,12 +634,32 @@
                        (Double.to-float num-instances)
                        0.0f 0.0f 0.0f]
           w-scratch-b @(WGPURenderer.water-scratch-buffer ren)
+          w-half-b @(WGPURenderer.water-half-buffer ren)
           w-params-b @(WGPURenderer.water-params-buffer ren)
           pipe @(WGPURenderer.water-splat-pipeline ren)
           u-b @(WGPURenderer.u-buffer ren)
           raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
-          bufs [w-scratch-b raw-u-b w-params-b]]
+          bufs [w-scratch-b raw-u-b w-params-b]
+          slot @(Chunk.atlas-slot chunk)
+          slot-x (Int.mod slot 12)
+          slot-y (Int.mod (/ slot 12) 12)
+          slot-z (/ slot 144)
+          ox-tex (* slot-x 32)
+          oy-tex (* slot-y 32)
+          oz-tex (* slot-z 32)]
       (do
+        (IO.println &(str* "[GPU Water Bake] Chunk: (" (Int.str qx) "," (Int.str qy) "," (Int.str qz) ") slot=" (Int.str slot) " instances=" (Double.str num-instances)))
+        (wgpu-copy-3d-texture-to-buffer-offset
+          ctx
+          @(WGPURenderer.water-texture ren)
+          ox-tex oy-tex oz-tex
+          w-half-b
+          0
+          32 32 32)
+        (let [unpack-pipe @(WGPURenderer.unpack-pipeline ren)
+              unpack-bufs [w-half-b w-scratch-b]]
+          (with-bind-group (WGPU.create-bind-group ctx unpack-pipe &unpack-bufs) bg
+            (WGPU.dispatch ctx unpack-pipe bg 512)))
         (WGPU.write-floats ctx w-params-b &params-data)
         (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
           (WGPU.dispatch ctx pipe bg 512)

@@ -218,9 +218,9 @@ struct PointInstance {
           let qy = gy >> {{LOG_RES}}u;
           let qz = gz >> {{LOG_RES}}u;
           
-          let lx = i32(u32(gx) & {{VOXEL_RES_SUB_1}}u);
-          let ly = i32(u32(gy) & {{VOXEL_RES_SUB_1}}u);
-          let lz = i32(u32(gz) & {{VOXEL_RES_SUB_1}}u);
+          let lx = gx & {{VOXEL_RES_SUB_1}}i;
+          let ly = gy & {{VOXEL_RES_SUB_1}}i;
+          let lz = gz & {{VOXEL_RES_SUB_1}}i;
           
           let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
           
@@ -297,9 +297,9 @@ struct PointInstance {
             let c0 = vec3<i32>(floor(tx));
             let f = fract(tx);
             
-            let lx = i32(u32(c0.x) & {{VOXEL_RES_SUB_1}}u);
-            let ly = i32(u32(c0.y) & {{VOXEL_RES_SUB_1}}u);
-            let lz = i32(u32(c0.z) & {{VOXEL_RES_SUB_1}}u);
+            let lx = c0.x & {{VOXEL_RES_SUB_1}}i;
+            let ly = c0.y & {{VOXEL_RES_SUB_1}}i;
+            let lz = c0.z & {{VOXEL_RES_SUB_1}}i;
             
             var v0 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
             var v1 = vec4<f32>(1000.0, 0.0, 0.0, 0.0);
@@ -374,14 +374,105 @@ struct PointInstance {
            return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
        }
 
+      fn getWaterAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> 5u;
+          let qy = gy >> 5u;
+          let qz = gz >> 5u;
+          
+          let lx = gx & 31i;
+          let ly = gy & 31i;
+          let lz = gz & 31i;
+          
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
+          
+          if (slot >= 0) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              
+              let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
+              return textureLoad(water_texture, atlas_coord, 0);
+          } else {
+              return vec4<f32>(0.0);
+          }
+      }
+
+      fn sampleWaterGrid(p: vec3<f32>) -> vec4<f32> {
+          let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
+          
+          if (slot < 0) {
+              return vec4<f32>(0.0);
+          }
+          
+          let tx = p / 1.0 - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(tx));
+          let f = fract(tx);
+          
+          let lx = c0.x & 31i;
+          let ly = c0.y & 31i;
+          let lz = c0.z & 31i;
+          
+          var tex_val = vec4<f32>(0.0);
+          let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>(31.0))) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              let base_uv3d = vec3<i32>(slot_x * 32i, slot_y * 32i, slot_z * 32i);
+              
+              let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
+              let sub_fp = fract(local_pos - vec3<f32>(0.5));
+              
+              let v0 = textureLoad(water_texture, base_uv3d + ip, 0);
+              let v1 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 0, 0), 0);
+              let v2 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(0, 1, 0), 0);
+              let v3 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 1, 0), 0);
+              let v4 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(0, 0, 1), 0);
+              let v5 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 0, 1), 0);
+              let v6 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(0, 1, 1), 0);
+              let v7 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 1, 1), 0);
+              
+              let v_01 = mix(v0, v1, sub_fp.x);
+              let v_23 = mix(v2, v3, sub_fp.x);
+              let v_45 = mix(v4, v5, sub_fp.x);
+              let v_67 = mix(v6, v7, sub_fp.x);
+              
+              let v_0123 = mix(v_01, v_23, sub_fp.y);
+              let v_4567 = mix(v_45, v_67, sub_fp.y);
+              
+              tex_val = mix(v_0123, v_4567, sub_fp.z);
+          } else {
+             let v0 = getWaterAt(c0.x,     c0.y,     c0.z);
+             let v1 = getWaterAt(c0.x + 1, c0.y,     c0.z);
+             let v2 = getWaterAt(c0.x,     c0.y + 1, c0.z);
+             let v3 = getWaterAt(c0.x + 1, c0.y + 1, c0.z);
+             let v4 = getWaterAt(c0.x,     c0.y,     c0.z + 1);
+             let v5 = getWaterAt(c0.x + 1, c0.y,     c0.z + 1);
+             let v6 = getWaterAt(c0.x,     c0.y + 1, c0.z + 1);
+             let v7 = getWaterAt(c0.x + 1, c0.y + 1, c0.z + 1);
+             
+             let v_01 = mix(v0, v1, f.x);
+             let v_23 = mix(v2, v3, f.x);
+             let v_45 = mix(v4, v5, f.x);
+             let v_67 = mix(v6, v7, f.x);
+             
+             let v_y0 = mix(v_01, v_23, f.y);
+             let v_y1 = mix(v_45, v_67, f.y);
+             
+             tex_val = mix(v_y0, v_y1, f.z);
+          }
+          
+          return tex_val;
+      }
+
         fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
           let qx = gx >> {{LOG_RES}}u;
           let qy = gy >> {{LOG_RES}}u;
           let qz = gz >> {{LOG_RES}}u;
           
-          let lx = i32(u32(gx) & {{VOXEL_RES_SUB_1}}u);
-          let ly = i32(u32(gy) & {{VOXEL_RES_SUB_1}}u);
-          let lz = i32(u32(gz) & {{VOXEL_RES_SUB_1}}u);
+          let lx = gx & {{VOXEL_RES_SUB_1}}i;
+          let ly = gy & {{VOXEL_RES_SUB_1}}i;
+          let lz = gz & {{VOXEL_RES_SUB_1}}i;
           
           let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
           
@@ -401,9 +492,9 @@ struct PointInstance {
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
           
-          let lx = i32(u32(c0.x) & {{VOXEL_RES_SUB_1}}u);
-          let ly = i32(u32(c0.y) & {{VOXEL_RES_SUB_1}}u);
-          let lz = i32(u32(c0.z) & {{VOXEL_RES_SUB_1}}u);
+          let lx = c0.x & {{VOXEL_RES_SUB_1}}i;
+          let ly = c0.y & {{VOXEL_RES_SUB_1}}i;
+          let lz = c0.z & {{VOXEL_RES_SUB_1}}i;
           
           let qx = c0.x >> {{LOG_RES}}u;
           let qy = c0.y >> {{LOG_RES}}u;
@@ -429,9 +520,29 @@ struct PointInstance {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
-              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
-              tex_val = textureSampleLevel(light_texture, voxel_sampler, sample_coords, 0.0);
+              let base_uv3d = vec3<i32>(slot_x * {{VOXEL_RES}}i, slot_y * {{VOXEL_RES}}i, slot_z * {{VOXEL_RES}}i);
+              
+              let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
+              let fp = fract(local_pos - vec3<f32>(0.5));
+              
+              let v0 = textureLoad(light_texture, base_uv3d + ip, 0);
+              let v1 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 0, 0), 0);
+              let v2 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(0, 1, 0), 0);
+              let v3 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 1, 0), 0);
+              let v4 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(0, 0, 1), 0);
+              let v5 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 0, 1), 0);
+              let v6 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(0, 1, 1), 0);
+              let v7 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 1, 1), 0);
+              
+              let v_01 = mix(v0, v1, fp.x);
+              let v_23 = mix(v2, v3, fp.x);
+              let v_45 = mix(v4, v5, fp.x);
+              let v_67 = mix(v6, v7, fp.x);
+              
+              let v_0123 = mix(v_01, v_23, fp.y);
+              let v_4567 = mix(v_45, v_67, fp.y);
+              
+              tex_val = mix(v_0123, v_4567, fp.z);
           } else {
               v0 = getFieldsAt(c0.x,     c0.y,     c0.z);
               v1 = getFieldsAt(c0.x + 1, c0.y,     c0.z);
@@ -1230,11 +1341,12 @@ struct PointInstance {
             let dither_threshold = getDitherThreshold(frag_in.position.xy);
             let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, SHADOW_STEPS);
            
-           var t = 0.0;
+            var t = 0.0;
             var hitId = -1.0;
             var final_metaball_d = 10000.0;
             var fog_optical_depth = 0.0;
             var fog_color_accum = vec3<f32>(0.0);
+            var max_water_sampled = 0.0;
             let is_volumetric = u.shadow_ao_quality.z > 0.5;
 
             if (!is_volumetric) {
@@ -1244,6 +1356,10 @@ struct PointInstance {
                     let res = worldSDF(p, rd, dither_threshold, true);
                     hitId = res.z;
                     final_metaball_d = res.w;
+                    
+                    let water_d = sampleWaterGrid(p).x;
+                    max_water_sampled = max(max_water_sampled, water_d);
+
                     if (res.y < 0.001) { break; }
                     t += res.y * 0.95;
                     if (t > 800.0) { break; }
@@ -1254,22 +1370,26 @@ struct PointInstance {
                         let res = worldSDF(p, rd, dither_threshold, true);
                         hitId = res.z;
                         final_metaball_d = res.w;
+
+                        let water_d = sampleWaterGrid(p).x;
+                        max_water_sampled = max(max_water_sampled, water_d);
+
                         t += res.y * 0.5;
                     }
                 }
                 fog_optical_depth = 0.0035 * t;
             } else {
-                // Volumetric raymarching path
-                // Jitter starting distance to break up wood-grain banding artifacts
-                t = dither_threshold * 0.35;
-                for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
-                    let p = ro + rd * t;
-                    let res = worldSDF(p, rd, dither_threshold, true);
-                    hitId = res.z;
-                    final_metaball_d = res.w;
-                    if (res.y < 0.001) { break; }
-                    
-                    let view_mode = u.grid_origin.w;
+                 // Volumetric raymarching path
+                 // Jitter starting distance to break up wood-grain banding artifacts
+                 t = dither_threshold * 0.35;
+                 for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
+                     let p = ro + rd * t;
+                     let res = worldSDF(p, rd, dither_threshold, true);
+                     hitId = res.z;
+                     final_metaball_d = res.w;
+                     if (res.y < 0.001) { break; }
+                     
+                     let view_mode = u.grid_origin.w;
                     var sdf_density = 0.0;
                     if (view_mode == 0.0) {
                          if (res.y < 0.0) {
@@ -1281,10 +1401,15 @@ struct PointInstance {
                     
                     let interp_data = getInterpolatedFieldsAndColor(p);
                     let fields = interp_data.fields;
-                    let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
+                    let water_d = sampleWaterGrid(p).x;
+                    max_water_sampled = max(max_water_sampled, water_d);
+                    let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density + water_d * 2.0;
                     
                     let base_sky = getSkyColor(rd);
                     var local_fog_col = base_sky;
+                    if (water_d > 0.08) {
+                        local_fog_col = mix(local_fog_col, vec3<f32>(0.05, 0.25, 0.6), water_d);
+                    }
                     if (sdf_density > 0.0) {
                          let height_factor = clamp((p.y - 5.0) / 15.0, 0.0, 1.0);
                          let terr_col = mix(vec3<f32>(0.18, 0.38, 0.12), vec3<f32>(0.42, 0.42, 0.45), height_factor);
@@ -1883,9 +2008,13 @@ struct PointInstance {
             }
 
             let transmittance = exp(-fog_optical_depth);
-           color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
-           let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
-           color += vec3<f32>(dither_noise) * (1.0 / 255.0);
+            color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
+            if (max_water_sampled > 0.001) {
+                let water_col = mix(vec3<f32>(0.01, 0.20, 0.50), vec3<f32>(0.05, 0.60, 0.85), clamp(max_water_sampled, 0.0, 1.0));
+                color = mix(color, water_col, clamp(max_water_sampled * 2.5, 0.0, 0.85));
+            }
+            let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
+            color += vec3<f32>(dither_noise) * (1.0 / 255.0);
 
           if (u.bg_color.w > 0.5) {
               let dx = abs(frag_in.uv.x) * u.width * 0.5;

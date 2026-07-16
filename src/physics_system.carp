@@ -9,6 +9,7 @@
   (use ECS)
   (use InputManager)
   (use BouncyTag)
+  (use FieldInstance)
   (def fixed-dt 0.00833)
   (def gravity (Vector3.init 0.0 -9.81 0.0))
   (def iterations 8)
@@ -119,6 +120,18 @@
               total-force (let [tf (Vector3.add &temp-sum &drag-force)]
                             (PhysicsSystem.clamp-vector3 &tf 1000.0))]
           (RigidBody.apply-force! rb &total-force)))))
+
+  (sig is-digging-bullet? (Fn [(Ref GameWorld) (Ref ECS.Entity)] Bool))
+  (defn is-digging-bullet? [world ent]
+    (and (ECS.has-component? world ent Lifetime)
+         (and (not (ECS.has-component? world ent BouncyTag))
+              (if (ECS.has-component? world ent FieldInstance)
+                  (let [w-val false]
+                    (do
+                      (ECS.with-components world @ent [e (fi FieldInstance)]
+                        (set! w-val (not (= @(FieldInstance.csg-index fi) -5))))
+                      w-val))
+                  true))))
 
   (defn step-ecs! [e world grid]
     (let [world-data (Engine.world-data e)
@@ -301,8 +314,7 @@
                       _ ())
                     (when (not (Array.empty? &contacts))
                       (let [m (ContactSet.init @(Collidable.handle col1) (get-static-world-handle world) @&contacts)
-                            is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
-                                                 (not (ECS.has-component? world &ent1 BouncyTag)))]
+                            is-dig-bullet-1 (PhysicsSystem.is-digging-bullet? world &ent1)]
                         (if is-dig-bullet-1
                             (let [bullet-ent &ent1]
                               (do
