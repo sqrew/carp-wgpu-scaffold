@@ -324,9 +324,19 @@
                                   (Coordinator.dispatch! coord event))
                                 (ECS.with-components world @bullet-ent [e (lt Lifetime)]
                                   (Lifetime.set-time! lt 0.0))))
-                            (do
-                               (set! collision-occurred true)
-                               (Array.push-back! &manifolds m)))))))
+                            (let [is-water-bullet (if (ECS.has-component? world &ent1 FieldInstance)
+                                                     (let [w-val false]
+                                                       (do
+                                                         (ECS.with-components world @&ent1 [e (fi FieldInstance)]
+                                                           (set! w-val (= @(FieldInstance.csg-index fi) -5)))
+                                                         w-val))
+                                                     false)]
+                              (if is-water-bullet
+                                  (ECS.with-components world @&ent1 [e (lt Lifetime)]
+                                    (Lifetime.set-time! lt 0.0))
+                                  (do
+                                     (set! collision-occurred true)
+                                     (Array.push-back! &manifolds m)))))))))
  
                 (for [c 0 (Array.length &candidates)]
                   (let [id2 (Array.unsafe-nth &candidates c)

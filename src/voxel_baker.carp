@@ -476,8 +476,7 @@
                             (Array.aset! voxel-data (+ idx-full 1) m-id))))))))))))))
 
   (defn pack-and-copy-light-chunk! [ctx ren slot res]
-    (let [l-scratch-b @(WGPURenderer.light-scratch-buffer ren)
-          l-half-b @(WGPURenderer.light-half-buffer ren)
+    (let [l-half-b @(WGPURenderer.light-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
@@ -487,9 +486,9 @@
           ox (* slot-x res)
           oy (* slot-y res)
           oz (* slot-z res)
-          pack-bufs [l-scratch-b l-half-b]
+          bg @(WGPURenderer.light-pack-bind-group ren)
           dispatch-cnt (/ (* res (* res res)) 64)]
-      (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+      (do
         (WGPU.dispatch ctx pipe bg dispatch-cnt)
         (WGPURender.copy-buffer-to-3d-texture-offset 
           ctx 
@@ -542,8 +541,7 @@
           (pack-and-copy-light-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))
 
   (defn pack-and-copy-interaction-chunk! [ctx ren slot res]
-    (let [i-scratch-b @(WGPURenderer.interaction-scratch-buffer ren)
-          i-half-b @(WGPURenderer.interaction-half-buffer ren)
+    (let [i-half-b @(WGPURenderer.interaction-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
@@ -553,9 +551,9 @@
           ox (* slot-x res)
           oy (* slot-y res)
           oz (* slot-z res)
-          pack-bufs [i-scratch-b i-half-b]
+          bg @(WGPURenderer.interaction-pack-bind-group ren)
           dispatch-cnt (/ (* res (* res res)) 64)]
-      (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+      (do
         (WGPU.dispatch ctx pipe bg dispatch-cnt)
         (WGPURender.copy-buffer-to-3d-texture-offset 
           ctx 
@@ -608,8 +606,7 @@
           (pack-and-copy-interaction-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))
 
   (defn pack-and-copy-water-chunk! [ctx ren slot res]
-    (let [w-scratch-b @(WGPURenderer.water-scratch-buffer ren)
-          w-half-b @(WGPURenderer.water-half-buffer ren)
+    (let [w-half-b @(WGPURenderer.water-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
@@ -619,9 +616,9 @@
           ox (* slot-x res)
           oy (* slot-y res)
           oz (* slot-z res)
-          pack-bufs [w-scratch-b w-half-b]
+          bg @(WGPURenderer.water-pack-bind-group ren)
           dispatch-cnt (/ (* res (* res res)) 64)]
-      (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+      (do
         (WGPU.dispatch ctx pipe bg dispatch-cnt)
         (WGPURender.copy-buffer-to-3d-texture-offset 
           ctx 
@@ -659,7 +656,7 @@
           oz-tex (* slot-z res)
           dispatch-cnt (/ (* res (* res res)) 64)]
       (do
-        (IO.println &(str* "[GPU Water Bake] Chunk: (" (Int.str qx) "," (Int.str qy) "," (Int.str qz) ") slot=" (Int.str slot) " instances=" (Double.str num-instances)))
+
         (wgpu-copy-3d-texture-to-buffer-offset
           ctx
           @(WGPURenderer.water-texture ren)
@@ -690,9 +687,25 @@
                     (do
                       (WGPU.write-floats ctx jit-info-b &origin-data)
                       (let [water-tex @(WGPURenderer.water-texture ren)]
-                        (with-bind-group (WGPURender.create-jit-bind-group-water ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex water-tex) water-bg
-                          (WGPU.dispatch ctx water-pipe water-bg dispatch-cnt)
-                          (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16))))))))
+                        (do
+                          (when (not (= (WGPURenderer.jit-water-script ren) water-script))
+                            (let [old-bg @(WGPURenderer.jit-water-bind-group ren)
+                                  new-bg-res (WGPURender.create-jit-bind-group-water ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex water-tex)]
+                              (match new-bg-res
+                                (Result.Success new-bg)
+                                  (do
+                                    (when (not (= (WGPURenderer.jit-water-script ren) ""))
+                                      (WGPURender.free-bind-group old-bg))
+                                    (WGPURenderer.set-jit-water-bind-group! ren new-bg)
+                                    (WGPURenderer.set-jit-water-script! ren @water-script))
+                                (Result.Error e)
+                                  (IO.println &(str* "JIT Bind Group creation failed: " e)))))
+                          (let [water-bg @(WGPURenderer.jit-water-bind-group ren)]
+                            (for [step 0 3]
+                              (do
+                                (WGPU.dispatch ctx water-pipe water-bg dispatch-cnt)
+                                (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16))))
+                                (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res))))))))
                 _ ())))
           (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))
 )

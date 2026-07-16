@@ -635,7 +635,7 @@
         (let [active-arr (EntityDatabase.active edb)
               len (Array.length active-arr)]
           (for [id 0 len]
-            (when @(Array.unsafe-nth active-arr id)
+            (if @(Array.unsafe-nth active-arr id)
               (let [pos (Array.unsafe-nth (EntityDatabase.positions edb) id)
                     rot (Array.unsafe-nth (EntityDatabase.rotations edb) id)
                     rad-scale @(Array.unsafe-nth (EntityDatabase.scales edb) id)
@@ -678,7 +678,15 @@
                   (Array.aset! u-data (+ base 20) (Double.to-float (Double.from-int shape-type)))
                   (Array.aset! u-data (+ base 21) (Double.to-float instance-type))
                   (Array.aset! u-data (+ base 22) (Double.to-float (Double.from-int final-csg-idx)))
-                  (Array.aset! u-data (+ base 23) 0.0f)))))))))
+                  (Array.aset! u-data (+ base 23) 0.0f)))
+              (let [base (+ (/ WGPURenderer.header-size 4) (* id 24))]
+                (do
+                  (Array.aset! u-data base 0.0f)
+                  (Array.aset! u-data (+ base 1) 0.0f)
+                  (Array.aset! u-data (+ base 2) 0.0f)
+                  (Array.aset! u-data (+ base 3) 0.0f)
+                  (Array.aset! u-data (+ base 21) 0.0f)
+                  ()))))))))
 
   (defn update-voxel-chunks! [e ctx ren world-data cam-pos]
     (when @(Engine.chunk-loading-enabled e)
@@ -993,7 +1001,12 @@
           num-active (Array.length active-arr)
           voxel-res @(World.voxel-resolution world-data)
           active-ticks (WGPURenderer.fields-active-ticks ren)
-          active-slots (WGPURenderer.fields-active-slots ren)]
+          active-slots (WGPURenderer.fields-active-slots ren)
+          cam (Engine.camera e)
+          cam-pos (Camera.pos cam)
+          cam-qx (World.camera-chunk-qx cam-pos)
+          cam-qy (World.camera-chunk-qy cam-pos)
+          cam-qz (World.camera-chunk-qz cam-pos)]
       (do
         ; 1. First pass: check overlaps and propagate active ticks to neighbors
         (for [i 0 num-chunks]
@@ -1011,7 +1024,7 @@
                           (set! overlaps true)))))))
               (if overlaps
                 (do
-                  (Array.aset! active-ticks slot 180) ; Keep active for 180 frames (3 seconds)
+                  (Array.aset! active-ticks slot 90) ; Keep active for 180 frames (3 seconds)
                   (Array.aset! active-slots slot true))
                 (when (and (> current-ticks 0) @(Array.unsafe-nth active-slots slot))
                   (let [cx @(Chunk.coord-x chunk)
@@ -1024,27 +1037,27 @@
                       ; Left
                       (match (World.find-chunk world-data nx-l cy cz)
                         (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
-                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                                          (when (< nt (- current-ticks 30)) (do (Array.aset! active-ticks ns (- current-ticks 30)) (Array.aset! active-slots ns true)))) _ ())
                       ; Right
                       (match (World.find-chunk world-data nx-r cy cz)
                         (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
-                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                                          (when (< nt (- current-ticks 30)) (do (Array.aset! active-ticks ns (- current-ticks 30)) (Array.aset! active-slots ns true)))) _ ())
                       ; Down
                       (match (World.find-chunk world-data cx ny-d cz)
                         (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
-                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                                          (when (< nt (- current-ticks 30)) (do (Array.aset! active-ticks ns (- current-ticks 30)) (Array.aset! active-slots ns true)))) _ ())
                       ; Up
                       (match (World.find-chunk world-data cx ny-u cz)
                         (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
-                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                                          (when (< nt (- current-ticks 30)) (do (Array.aset! active-ticks ns (- current-ticks 30)) (Array.aset! active-slots ns true)))) _ ())
                       ; Back
                       (match (World.find-chunk world-data cx cy nz-b)
                         (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
-                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                                          (when (< nt (- current-ticks 30)) (do (Array.aset! active-ticks ns (- current-ticks 30)) (Array.aset! active-slots ns true)))) _ ())
                       ; Front
                       (match (World.find-chunk world-data cx cy nz-f)
                         (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
-                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ()))))))))
+                                          (when (< nt (- current-ticks 30)) (do (Array.aset! active-ticks ns (- current-ticks 30)) (Array.aset! active-slots ns true)))) _ ()))))))))
         
         ; 2. Second pass: run simulation for all active chunks and decrement ticks
         (for [i 0 num-chunks]
@@ -1052,11 +1065,20 @@
                 slot @(Chunk.atlas-slot chunk)
                 current-ticks @(Array.unsafe-nth active-ticks slot)
                 is-active @(Array.unsafe-nth active-slots slot)
-                is-time-sliced-frame (= (Int.mod i 16) field-bake-frame-counter)]
-            (when (or is-active is-time-sliced-frame)
+                cx @(Chunk.coord-x chunk)
+                cy @(Chunk.coord-y chunk)
+                cz @(Chunk.coord-z chunk)
+                dx (Int.abs (- cx cam-qx))
+                dy (Int.abs (- cy cam-qy))
+                dz (Int.abs (- cz cam-qz))
+                near-player (and (<= dx 1) (and (<= dy 1) (<= dz 1)))
+                is-time-sliced-frame (= (Int.mod i 128) field-bake-frame-counter)]
+            (when near-player
               (do
-                (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res)
-                (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res)
+                (when is-time-sliced-frame
+                  (do
+                    (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res)
+                    (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res)))
                 (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
                 (if (> current-ticks 0)
                   (let [new-ticks (dec current-ticks)]
@@ -1064,7 +1086,7 @@
                       (Array.aset! active-ticks slot new-ticks)
                       (Array.aset! active-slots slot (> new-ticks 0))))
                   (Array.aset! active-slots slot false))))))
-        (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 16)))))
+        (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 128)))))
 
   (defn sync-render-db! [e ctx ren]
     (let [r-db (Engine.render-db e)
