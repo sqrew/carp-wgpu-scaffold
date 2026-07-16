@@ -45,7 +45,11 @@ if (self_voxel.x <= 0.08) {
     
     var flow_from_above = 0.0;
     if (!sol_above) {
-        flow_from_above = min(w_above, 1.0 - new_volume + flow_down);
+        var flow_self_below = 0.0;
+        if (!sol_below) {
+            flow_self_below = min(new_volume, 1.0 - w_below);
+        }
+        flow_from_above = min(w_above, 1.0 - new_volume + flow_self_below);
     }
     
     new_volume = new_volume - flow_down + flow_from_above;
@@ -56,14 +60,11 @@ if (self_voxel.x <= 0.08) {
     var flow_back  = 0.0;
     var flow_front = 0.0;
     
-    // Only spread horizontally if not falling (mass-conserving stability)
-    if (flow_down == 0.0) {
-        let spread_factor = 0.15;
-        if (!sol_left)  { flow_left  = (water.x - w_left)  * spread_factor; }
-        if (!sol_right) { flow_right = (water.x - w_right) * spread_factor; }
-        if (!sol_back)  { flow_back  = (water.x - w_back)  * spread_factor; }
-        if (!sol_front) { flow_front = (water.x - w_front) * spread_factor; }
-    }
+    let spread_factor = 0.15;
+    if (!sol_left)  { flow_left  = (water.x - w_left)  * spread_factor; }
+    if (!sol_right) { flow_right = (water.x - w_right) * spread_factor; }
+    if (!sol_back)  { flow_back  = (water.x - w_back)  * spread_factor; }
+    if (!sol_front) { flow_front = (water.x - w_front) * spread_factor; }
     
     new_volume -= (flow_left + flow_right + flow_back + flow_front);
 
