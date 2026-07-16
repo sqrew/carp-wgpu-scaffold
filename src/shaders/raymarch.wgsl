@@ -375,13 +375,13 @@ struct PointInstance {
        }
 
       fn getWaterAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
-          let qx = gx >> 5u;
-          let qy = gy >> 5u;
-          let qz = gz >> 5u;
+          let qx = gx >> {{LOG_RES}}u;
+          let qy = gy >> {{LOG_RES}}u;
+          let qz = gz >> {{LOG_RES}}u;
           
-          let lx = gx & 31i;
-          let ly = gy & 31i;
-          let lz = gz & 31i;
+          let lx = gx & {{VOXEL_RES_SUB_1}}i;
+          let ly = gy & {{VOXEL_RES_SUB_1}}i;
+          let lz = gz & {{VOXEL_RES_SUB_1}}i;
           
           let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
           
@@ -390,7 +390,7 @@ struct PointInstance {
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
               
-              let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
+              let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
               return textureLoad(water_texture, atlas_coord, 0);
           } else {
               return vec4<f32>(0.0);
@@ -404,21 +404,21 @@ struct PointInstance {
               return vec4<f32>(0.0);
           }
           
-          let tx = p / 1.0 - vec3<f32>(0.5);
+          let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
           
-          let lx = c0.x & 31i;
-          let ly = c0.y & 31i;
-          let lz = c0.z & 31i;
+          let lx = c0.x & {{VOXEL_RES_SUB_1}}i;
+          let ly = c0.y & {{VOXEL_RES_SUB_1}}i;
+          let lz = c0.z & {{VOXEL_RES_SUB_1}}i;
           
           var tex_val = vec4<f32>(0.0);
           let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
-          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>(31.0))) {
+          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let base_uv3d = vec3<i32>(slot_x * 32i, slot_y * 32i, slot_z * 32i);
+              let base_uv3d = vec3<i32>(slot_x * {{VOXEL_RES}}i, slot_y * {{VOXEL_RES}}i, slot_z * {{VOXEL_RES}}i);
               
               let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
               let sub_fp = fract(local_pos - vec3<f32>(0.5));

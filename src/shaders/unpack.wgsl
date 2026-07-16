@@ -4,7 +4,7 @@
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let idx = global_id.x;
-    if (idx >= {{TOTAL_VOXELS}}u) { return; }
+
 
     let val = voxel_half_buffer[idx];
     let p1 = unpack2x16float(val.x);

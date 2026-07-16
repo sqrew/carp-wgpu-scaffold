@@ -990,7 +990,8 @@
           num-chunks (Array.length chunks)
           num-instances (Double.from-int (Array.length (EntityDatabase.active edb)))
           active-arr (EntityDatabase.active edb)
-          num-active (Array.length active-arr)]
+          num-active (Array.length active-arr)
+          voxel-res @(World.voxel-resolution world-data)]
       (do
         (for [i 0 num-chunks]
           (let [chunk (Array.unsafe-nth chunks i)
@@ -1010,9 +1011,9 @@
                               (set! overlaps true)))))))
                   (when (or overlaps had-fields)
                     (do
-                      (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e))
-                      (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e))
-                      (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e))
+                      (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res)
+                      (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res)
+                      (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
                       (Array.aset! active-slots slot overlaps))))))))
         (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 16)))))
 
