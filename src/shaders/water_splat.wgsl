@@ -77,7 +77,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             // If flying fast, leave a thin, low-density trail of water.
             // If stopped or impacting, make a big full-density splash.
             var splat_radius = radius * 1.5;
-            var density_mult = 0.20; // thin, low-density trail in the air
+            var density_mult = 0.35; // visible, medium-density trail in the air
             
             if (speed < 1.5) {
                 splat_radius = radius * 4.5; // big splash radius
@@ -94,6 +94,6 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     if (water_vol > 0.0) {
         let existing = water_gpu_buffer[idx];
-        water_gpu_buffer[idx] = vec4<f32>(clamp(existing.x + water_vol, 0.0, 1.0), existing.yzw + water_vel);
+        water_gpu_buffer[idx] = vec4<f32>(max(existing.x, water_vol), existing.yzw + water_vel);
     }
 }
