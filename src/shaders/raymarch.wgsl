@@ -456,88 +456,6 @@ struct PointInstance {
           return tex_val;
       }
 
-      fn getWaterAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
-          let qx = gx >> {{LOG_RES}}u;
-          let qy = gy >> {{LOG_RES}}u;
-          let qz = gz >> {{LOG_RES}}u;
-          
-          let lx = i32(u32(gx) & {{VOXEL_RES_SUB_1}}u);
-          let ly = i32(u32(gy) & {{VOXEL_RES_SUB_1}}u);
-          let lz = i32(u32(gz) & {{VOXEL_RES_SUB_1}}u);
-          
-          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
-          
-          if (slot >= 0) {
-              let slot_x = slot % {{SLOTS_PER_DIM}};
-              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
-              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
-              return textureLoad(water_texture, atlas_coord, 0);
-          } else {
-              return vec4<f32>(0.0);
-          }
-      }
-
-      fn sampleWaterGrid(p: vec3<f32>) -> vec4<f32> {
-          let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
-          let c0 = vec3<i32>(floor(tx));
-          let f = fract(tx);
-          
-          let lx = i32(u32(c0.x) & {{VOXEL_RES_SUB_1}}u);
-          let ly = i32(u32(c0.y) & {{VOXEL_RES_SUB_1}}u);
-          let lz = i32(u32(c0.z) & {{VOXEL_RES_SUB_1}}u);
-          
-          let qx = c0.x >> {{LOG_RES}}u;
-          let qy = c0.y >> {{LOG_RES}}u;
-          let qz = c0.z >> {{LOG_RES}}u;
-          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
-          
-          if (slot < 0) {
-              return vec4<f32>(0.0);
-          }
-          
-          var v0 = vec4<f32>(0.0);
-          var v1 = vec4<f32>(0.0);
-          var v2 = vec4<f32>(0.0);
-          var v3 = vec4<f32>(0.0);
-          var v4 = vec4<f32>(0.0);
-          var v5 = vec4<f32>(0.0);
-          var v6 = vec4<f32>(0.0);
-          var v7 = vec4<f32>(0.0);
-          
-          var tex_val = vec4<f32>(0.0);
-          let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
-          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
-              let slot_x = slot % {{SLOTS_PER_DIM}};
-              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
-              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
-              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
-              tex_val = textureSampleLevel(water_texture, voxel_sampler, sample_coords, 0.0);
-          } else {
-              v0 = getWaterAt(c0.x,     c0.y,     c0.z);
-              v1 = getWaterAt(c0.x + 1, c0.y,     c0.z);
-              v2 = getWaterAt(c0.x,     c0.y + 1, c0.z);
-              v3 = getWaterAt(c0.x + 1, c0.y + 1, c0.z);
-              v4 = getWaterAt(c0.x,     c0.y,     c0.z + 1);
-              v5 = getWaterAt(c0.x + 1, c0.y,     c0.z + 1);
-              v6 = getWaterAt(c0.x,     c0.y + 1, c0.z + 1);
-              v7 = getWaterAt(c0.x + 1, c0.y + 1, c0.z + 1);
-              
-              let sf = f;
-              let v_01 = mix(v0, v1, sf.x);
-              let v_23 = mix(v2, v3, sf.x);
-              let v_45 = mix(v4, v5, sf.x);
-              let v_67 = mix(v6, v7, sf.x);
-              
-              let v_y0 = mix(v_01, v_23, sf.y);
-              let v_y1 = mix(v_45, v_67, sf.y);
-              
-              tex_val = mix(v_y0, v_y1, sf.z);
-          }
-          return tex_val;
-      }
-
         fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
             let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
             
@@ -1352,9 +1270,6 @@ struct PointInstance {
                     if (res.y < 0.001) { break; }
                     
                     let view_mode = u.grid_origin.w;
-                    let water_val = sampleWaterGrid(p);
-                    let water_density = water_val.x;
-                    
                     var sdf_density = 0.0;
                     if (view_mode == 0.0) {
                          if (res.y < 0.0) {
@@ -1366,10 +1281,7 @@ struct PointInstance {
                     
                     let interp_data = getInterpolatedFieldsAndColor(p);
                     let fields = interp_data.fields;
-                    var density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
-                    if (view_mode == 0.0) {
-                        density += water_density * 4.0;
-                    }
+                    let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density;
                     
                     let base_sky = getSkyColor(rd);
                     var local_fog_col = base_sky;
@@ -1379,11 +1291,6 @@ struct PointInstance {
                          let glow_factor = clamp(-res.y / 4.0, 0.0, 1.0);
                          let sdf_col = mix(terr_col * 0.6, vec3<f32>(0.1, 0.3, 0.6), glow_factor);
                          local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
-                    }
-                    
-                    if (view_mode == 0.0 && water_density > 0.0) {
-                         let water_col = vec3<f32>(0.05, 0.25, 0.7);
-                         local_fog_col = mix(local_fog_col, water_col, (water_density * 4.0) / (density + 0.0001));
                     }
                     
                     let color_weight = getFieldColorWeight(fields, view_mode);
