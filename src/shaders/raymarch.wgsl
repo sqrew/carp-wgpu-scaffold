@@ -122,16 +122,18 @@ struct PointInstance {
           return t * t * (3.0 - 2.0 * t);
       }
 
-      fn get_terrain_height(x: f32, z: f32) -> f32 {
+      fn getBiomeWeights(x: f32, z: f32) -> vec3<f32> {
           let b_val = noise2d(x * 0.003, z * 0.003);
           let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
           let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
           let w3 = clamp(1.0 - abs(b_val - 0.8) / 0.35, 0.0, 1.0);
           let sum = w1 + w2 + w3;
           let sum_safe = select(sum, 0.0001, sum < 0.0001);
-          let W1 = w1 / sum_safe;
-          let W2 = w2 / sum_safe;
-          let W3 = w3 / sum_safe;
+          return vec3<f32>(w1, w2, w3) / sum_safe;
+      }
+
+      fn get_terrain_height(x: f32, z: f32) -> f32 {
+          let W = getBiomeWeights(x, z);
           
           let plains_scale = u.terrain_params1.x;
           let plains_offset = u.terrain_params1.y;
@@ -151,7 +153,7 @@ struct PointInstance {
           
           let h_mountains = rigid_fbm2d(x * 0.01, z * 0.01) * mountains_scale + mountains_offset;
           
-          return W1 * h_plains + W2 * h_canyons + W3 * h_mountains;
+          return W.x * h_plains + W.y * h_canyons + W.z * h_mountains;
       }
 
       fn hash3d(x: f32, y: f32, z: f32) -> f32 {
@@ -192,6 +194,22 @@ struct PointInstance {
           return mix(y0, y1, w);
       }
 
+      fn getChunkSlot(chunk_q: vec3<i32>) -> i32 {
+          if (any(chunk_q < vec3<i32>(0)) || any(chunk_q >= vec3<i32>(32))) {
+              return -1;
+          }
+          let mx = u32(chunk_q.x) >> 2u;
+          let my = u32(chunk_q.y) >> 2u;
+          let mz = u32(chunk_q.z) >> 2u;
+          let skip_idx = mx + (my << 3u) + (mz << 6u);
+          let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+          if (skip_val == 0) {
+              return -1;
+          }
+          let idx = chunk_q.x + chunk_q.y * 32 + chunk_q.z * 1024;
+          return i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
+      }
+
       fn getVoxelAt(gx: i32, gy: i32, gz: i32, only_dist: bool) -> vec4<f32> {
           let qx = gx >> {{LOG_RES}}u;
           let qy = gy >> {{LOG_RES}}u;
@@ -201,26 +219,9 @@ struct PointInstance {
           let ly = i32(u32(gy) & {{VOXEL_RES_SUB_1}}u);
           let lz = i32(u32(gz) & {{VOXEL_RES_SUB_1}}u);
           
-          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-          var is_loaded = false;
-          var slot = -1;
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
           
-          if (!(any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32)))) {
-              let mx = u32(local_q.x) >> 2u;
-              let my = u32(local_q.y) >> 2u;
-              let mz = u32(local_q.z) >> 2u;
-              let skip_idx = mx + (my << 3u) + (mz << 6u);
-              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-              if (skip_val != 0) {
-                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                  if (slot >= 0) {
-                      is_loaded = true;
-                  }
-              }
-          }
-          
-          if (is_loaded) {
+          if (slot >= 0) {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
@@ -275,25 +276,9 @@ struct PointInstance {
       }
 
         fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
-            let chunk_q = vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz;
-            var chunk_is_loaded = false;
-            var slot = -1;
-            if (all(chunk_q >= vec3<i32>(0)) && all(chunk_q < vec3<i32>(32))) {
-                let mx = u32(chunk_q.x) >> 2u;
-                let my = u32(chunk_q.y) >> 2u;
-                let mz = u32(chunk_q.z) >> 2u;
-                let skip_idx = mx + (my << 3u) + (mz << 6u);
-                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-                if (skip_val != 0) {
-                    let idx = chunk_q.x + chunk_q.y * 32 + chunk_q.z * 1024;
-                    slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                    if (slot >= 0) {
-                        chunk_is_loaded = true;
-                    }
-                }
-            }
+            let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
             
-            if (!chunk_is_loaded) {
+            if (slot < 0) {
                 let final_h = get_terrain_height(p.x, p.z);
                 
                 let dist_xz = length(p.xz - u.cam_pos.xz);
@@ -386,7 +371,7 @@ struct PointInstance {
            return vec4<f32>(tex_val.r + dummy, best_mat, tex_val.z, tex_val.w);
        }
 
-       fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+        fn getFieldsAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
           let qx = gx >> {{LOG_RES}}u;
           let qy = gy >> {{LOG_RES}}u;
           let qz = gz >> {{LOG_RES}}u;
@@ -395,26 +380,9 @@ struct PointInstance {
           let ly = i32(u32(gy) & {{VOXEL_RES_SUB_1}}u);
           let lz = i32(u32(gz) & {{VOXEL_RES_SUB_1}}u);
           
-          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-          var is_loaded = false;
-          var slot = -1;
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
           
-          if (!(any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32)))) {
-              let mx = u32(local_q.x) >> 2u;
-              let my = u32(local_q.y) >> 2u;
-              let mz = u32(local_q.z) >> 2u;
-              let skip_idx = mx + (my << 3u) + (mz << 6u);
-              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-              if (skip_val != 0) {
-                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                  if (slot >= 0) {
-                      is_loaded = true;
-                  }
-              }
-          }
-          
-          if (is_loaded) {
+          if (slot >= 0) {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
@@ -425,7 +393,7 @@ struct PointInstance {
           }
       }
 
-       fn sampleFieldsGrid(p: vec3<f32>) -> vec4<f32> {
+        fn sampleFieldsGrid(p: vec3<f32>) -> vec4<f32> {
           let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
           let c0 = vec3<i32>(floor(tx));
           let f = fract(tx);
@@ -437,25 +405,9 @@ struct PointInstance {
           let qx = c0.x >> {{LOG_RES}}u;
           let qy = c0.y >> {{LOG_RES}}u;
           let qz = c0.z >> {{LOG_RES}}u;
-          let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-          var chunk_is_loaded = false;
-          var slot = -1;
-          if (all(local_q >= vec3<i32>(0)) && all(local_q < vec3<i32>(32))) {
-              let mx = u32(local_q.x) >> 2u;
-              let my = u32(local_q.y) >> 2u;
-              let mz = u32(local_q.z) >> 2u;
-              let skip_idx = mx + (my << 3u) + (mz << 6u);
-              let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-              if (skip_val != 0) {
-                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                  slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                  if (slot >= 0) {
-                      chunk_is_loaded = true;
-                  }
-              }
-          }
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
           
-          if (!chunk_is_loaded) {
+          if (slot < 0) {
               return vec4<f32>(0.0);
           }
           
@@ -502,25 +454,9 @@ struct PointInstance {
       }
 
         fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
-            let chunk_q = vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz;
-            var is_loaded = false;
-            var slot = -1;
-            if (all(chunk_q >= vec3<i32>(0)) && all(chunk_q < vec3<i32>(32))) {
-                let mx = u32(chunk_q.x) >> 2u;
-                let my = u32(chunk_q.y) >> 2u;
-                let mz = u32(chunk_q.z) >> 2u;
-                let skip_idx = mx + (my << 3u) + (mz << 6u);
-                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-                if (skip_val != 0) {
-                    let idx = chunk_q.x + chunk_q.y * 32 + chunk_q.z * 1024;
-                    slot = i32(chunk_lookup.slots[u32(idx) >> 2u][idx & 3]);
-                    if (slot >= 0) {
-                        is_loaded = true;
-                    }
-                }
-            }
+            let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
             
-            if (is_loaded) {
+            if (slot >= 0) {
                 let tx = p / {{VOXEL_CELL_SIZE}};
                 let c0 = vec3<i32>(floor(tx));
                 let val = getVoxelAt(c0.x, c0.y, c0.z, only_dist);
@@ -608,7 +544,7 @@ struct PointInstance {
                             s = f32(-99 - csg_root_idx) / 100.0;
                             if (s < 0.05) { s = 0.6; }
                         }
-                        let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                        let local_p = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                         let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                         let d = (length(squashed_p) - raw_w) * min(1.0, s);
                         let w_color = 1.0 / (d * d + 0.01);
@@ -672,7 +608,7 @@ struct PointInstance {
                             if (s < 0.05) { s = 0.6; }
                         }
                         let to_entity = p - s_data.pos_scale.xyz;
-                        let local_p = rotateVector(to_entity, q_inv(s_data.rot));
+                        let local_p = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                         let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                         let d = (length(squashed_p) - raw_w) * min(1.0, s);
                         
@@ -815,8 +751,12 @@ struct PointInstance {
           return v + q.w * t + cross(q.xyz, t);
       }
 
+      fn toLocalSpace(p: vec3<f32>, pos: vec3<f32>, rot: vec4<f32>) -> vec3<f32> {
+          return rotateVector(p - pos, q_inv(rot));
+      }
+
       fn evaluateCsgPrimitive(p: vec3<f32>, shape_type: u32, pos: vec3<f32>, scale: f32, rot: vec4<f32>, params: vec4<f32>) -> f32 {
-          let local_p = rotateVector(p - pos, q_inv(rot));
+          let local_p = toLocalSpace(p, pos, rot);
           var d = 10000.0;
           if (shape_type == 1u) {
               d = sdSphere(local_p, params.x * scale);
@@ -895,10 +835,10 @@ struct PointInstance {
           return d;
       }
 
-       fn getInstanceDist(p: vec3<f32>, s_idx: i32) -> f32 {
-           let s_data = u.instances[s_idx];
-           let raw_w = s_data.pos_scale.w;
-           let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+        fn getInstanceDist(p: vec3<f32>, s_idx: i32) -> f32 {
+            let s_data = u.instances[s_idx];
+            let raw_w = s_data.pos_scale.w;
+            let local_p = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
            let inst_type = i32(round(s_data.shape_info.y));
            if (inst_type == 0) {
                let csg_root_idx = i32(round(s_data.shape_info.z));
@@ -1020,7 +960,7 @@ struct PointInstance {
                         let raw_w = s_data.pos_scale.w;
                         if (raw_w != 0.0) {
                           var local_dist = 10000.0;
-                          let local_p = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                          let local_p = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                           let inst_type = i32(round(s_data.shape_info.y));
                           let csg_root_idx = i32(round(s_data.shape_info.z));
                           if (csg_root_idx == -3) {
@@ -1038,8 +978,7 @@ struct PointInstance {
                               let dist_to_center = length(p - s_data.pos_scale.xyz);
                               let d_singularity = dist_to_center - singularity_r;
                               
-                              let to_center = p - s_data.pos_scale.xyz;
-                              let local_to_center = rotateVector(to_center, q_inv(s_data.rot));
+                              let local_to_center = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                               let d_accretion = sdTorus(local_to_center, vec2<f32>(accretion_r, accretion_h));
                               
                                let orig_dx = d.x;
@@ -1649,15 +1588,7 @@ struct PointInstance {
                     terr_col = vec3<f32>(0.35, 0.25, 0.18);
                     terr_col += noise3d(p.x * 0.1, p.y * 0.1, p.z * 0.1) * 0.03;
                 } else if (mat_id == 1 || mat_id == 2 || hitId == -1.0) {
-                    let b_val = noise2d(p.x * 0.003, p.z * 0.003);
-                    let w1 = clamp(1.0 - abs(b_val - 0.2) / 0.35, 0.0, 1.0);
-                    let w2 = clamp(1.0 - abs(b_val - 0.5) / 0.35, 0.0, 1.0);
-                    let w3 = clamp(1.0 - abs(b_val - 0.8) / 0.35, 0.0, 1.0);
-                    let sum = w1 + w2 + w3;
-                    let sum_safe = select(sum, 0.0001, sum < 0.0001);
-                    let W1 = w1 / sum_safe;
-                    let W2 = w2 / sum_safe;
-                    let W3 = w3 / sum_safe;
+                    let W = getBiomeWeights(p.x, p.z);
                     
                     // 1. Lush Plains Biome: Blend greens and add dark soil on steep banks/slopes
                     let grass_noise = fbm2d(p.x * 0.15, p.z * 0.15);
@@ -1706,9 +1637,9 @@ struct PointInstance {
                     let extreme_altitude = clamp((p.y - 22.0) / 10.0, 0.0, 1.0);
                     let snow_accum = clamp(altitude_factor * slope_factor + extreme_altitude * smoothstep(0.20, 0.45, normal.y), 0.0, 1.0);
                     
-                     let col_mountains = mix(mountain_rock, mountain_snow, snow_accum);
+                    let col_mountains = mix(mountain_rock, mountain_snow, snow_accum);
                     
-                    terr_col = W1 * col_plains + W2 * col_canyons + W3 * col_mountains;
+                    terr_col = W.x * col_plains + W.y * col_canyons + W.z * col_mountains;
                 }
 
                  var base_col = terr_col;
@@ -1718,7 +1649,7 @@ struct PointInstance {
                     let s_idx = i32(hitId);
                     let s_data = u.instances[s_idx];
                     let inst_type = i32(round(s_data.shape_info.y));
-                    let lp = rotateVector(p - s_data.pos_scale.xyz, q_inv(s_data.rot));
+                    let lp = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                     if (inst_type == 2) {
                         let width = s_data.sph_fields.x;
                         let height = s_data.sph_fields.y;
