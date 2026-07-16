@@ -291,7 +291,7 @@
             look-rot (Quaternion.mul &q-yaw &q-pitch)
             p-dir (Transform.forward-quat &look-rot)
             bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir (* 1.6 p-scale)))
-            bullet-vel (Vector3.mul &p-dir 10.0)
+            bullet-vel (Vector3.mul &p-dir 30.0)
             rand-x (Double.random-between -10.0 10.0)
             rand-y (Double.random-between -10.0 10.0)
             rand-z (Double.random-between -10.0 10.0)

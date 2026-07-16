@@ -678,7 +678,10 @@
                   (Array.aset! u-data (+ base 20) (Double.to-float (Double.from-int shape-type)))
                   (Array.aset! u-data (+ base 21) (Double.to-float instance-type))
                   (Array.aset! u-data (+ base 22) (Double.to-float (Double.from-int final-csg-idx)))
-                  (Array.aset! u-data (+ base 23) 0.0f)))
+                  (let [vel-arr (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
+                        vel-ref (Array.unsafe-nth vel-arr id)
+                        speed (Vector3.mag vel-ref)]
+                    (Array.aset! u-data (+ base 23) (Double.to-float speed)))))
               (let [base (+ (/ WGPURenderer.header-size 4) (* id 24))]
                 (do
                   (Array.aset! u-data base 0.0f)

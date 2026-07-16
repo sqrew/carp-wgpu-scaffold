@@ -71,10 +71,21 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
         let inst_type = inst.shape_info.y;
         if (i32(round(inst_type)) == 2) { // Water Source/Emitter
+            let speed = inst.shape_info.w;
             let dist = length(p - inst.pos_scale.xyz);
-            let splat_radius = radius * 3.5; 
+            
+            // If flying fast, leave a thin, low-density trail of water.
+            // If stopped or impacting, make a big full-density splash.
+            var splat_radius = radius * 1.5;
+            var density_mult = 0.20; // thin, low-density trail in the air
+            
+            if (speed < 1.5) {
+                splat_radius = radius * 4.5; // big splash radius
+                density_mult = 1.0;          // full density splash
+            }
+            
             if (dist < splat_radius) {
-                let weight = 1.0 - (dist / splat_radius);
+                let weight = (1.0 - (dist / splat_radius)) * density_mult;
                 water_vol = max(water_vol, weight);
                 water_vel = vec3<f32>(0.0, -0.5, 0.0);
             }
