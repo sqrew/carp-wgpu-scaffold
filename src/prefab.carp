@@ -15,7 +15,7 @@
   (use Color)
   (use Lifetime)
   (use BouncyTag)
-  (defn spawn-bullet! [world db pos vel ang-vel scale bouncy]
+  (defn spawn-bullet! [world db pos vel ang-vel scale bouncy water]
     (let [bullet-ent (GameWorld.create-entity! world)
           rb (if bouncy
                  (RigidBody.new @pos (Quaternion.identity) 0.5 0.05 0.1 0.95 0.95 1.0)
@@ -31,14 +31,16 @@
                   (SDF.set-scale! &c-sdf scale)
                   (Volume.Sdf c-sdf)))
           col (Collidable.init @(ECS.Entity.handle &bullet-ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
-          color (Color.init (if bouncy
-                                (Vector3.init 0.1 0.5 1.0)
-                                (cond (= shape-type 0) (Vector3.init 1.0 1.0 0.0)
-                                      (= shape-type 1) (Vector3.init 0.0 1.0 1.0)
-                                      (= shape-type 2) (Vector3.init 1.0 0.0 1.0)
-                                      (= shape-type 3) (Vector3.init 1.0 0.5 0.0)
-                                      (= shape-type 4) (Vector3.init 0.0 1.0 0.0)
-                                      (Vector3.init 0.5 0.5 1.0))))
+          color (Color.init (if water
+                                (Vector3.init 0.05 0.25 0.9)
+                                (if bouncy
+                                    (Vector3.init 0.1 0.5 1.0)
+                                    (cond (= shape-type 0) (Vector3.init 1.0 1.0 0.0)
+                                          (= shape-type 1) (Vector3.init 0.0 1.0 1.0)
+                                          (= shape-type 2) (Vector3.init 1.0 0.0 1.0)
+                                          (= shape-type 3) (Vector3.init 1.0 0.5 0.0)
+                                          (= shape-type 4) (Vector3.init 0.0 1.0 0.0)
+                                          (Vector3.init 0.5 0.5 1.0)))))
           c-val (Color.v &color)
           p-x 0.4 p-y 0.4 p-z 0.4 p-w 0.0
           _ (cond (= shape-type 0) (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0))
@@ -48,7 +50,7 @@
                   (= shape-type 4) (do (set! p-x 0.4) (set! p-y 0.1) (set! p-z 0.0))
                   (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0)))
           params (Vector4.init p-x p-y p-z p-w)
-          root-csg-idx (if bouncy -99 -1)
+          root-csg-idx (if water -5 (if bouncy -99 -1))
           fi (FieldInstance.init (+ shape-type 1) params scale root-csg-idx 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)

@@ -197,9 +197,10 @@
                       vel (BulletSpawnData.vel data)
                       ang-vel (BulletSpawnData.ang-vel data)
                       scale @(BulletSpawnData.scale data)
-                      bouncy @(BulletSpawnData.bouncy data)]
+                      bouncy @(BulletSpawnData.bouncy data)
+                      water @(BulletSpawnData.water data)]
                   (do
-                    (Prefab.spawn-bullet! (Engine.world e) (Engine.db e) pos vel ang-vel scale bouncy)
+                    (Prefab.spawn-bullet! (Engine.world e) (Engine.db e) pos vel ang-vel scale bouncy water)
                     (Engine.set-grid-dirty! e true)
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)

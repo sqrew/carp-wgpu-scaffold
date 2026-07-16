@@ -109,7 +109,7 @@
             bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
             
             b-scale (if bouncy (* p-scale (Double.random-between 0.2 2.0)) p-scale)
-            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel b-scale bouncy)
+            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel b-scale bouncy false)
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
         (Coordinator.dispatch! (Engine.coordinator e) ev)))))))
 
@@ -274,4 +274,30 @@
               (IO.println &(str* "Implosion hit at " &(Vector3.str hit-p) ", spawning implosion of radius " &(Double.str rad)))
               (Coordinator.dispatch! (Engine.coordinator e) ev)))
           (IO.println "Implosion missed!"))))
+  (defn spawn-water-bullet! [e]
+    (let [current-time (Clock.total (Engine.clock e))]
+      (when (>= (- current-time @&last-fire-time) 0.05)
+        (do
+          (set! last-fire-time current-time)
+          (ECS.query (Engine.world e) [p-ent (p-rb RigidBody) (p-col Collidable) (p-rot RotationState) (p-tag PlayerTag)]
+      (let [p-pos (RigidBody.position p-rb)
+            p-scale (match-ref (Collidable.volume p-col)
+                      (Volume.Ball sphere) @(Sphere.radius sphere)
+                      _ 1.0)
+            yaw-axis (Vector3.init 0.0 1.0 0.0)
+            pitch-axis (Vector3.init 1.0 0.0 0.0)
+            q-yaw (Quaternion.from-axis-angle yaw-axis @(RotationState.yaw p-rot))
+            q-pitch (Quaternion.from-axis-angle pitch-axis @(RotationState.pitch p-rot))
+            look-rot (Quaternion.mul &q-yaw &q-pitch)
+            p-dir (Transform.forward-quat &look-rot)
+            bullet-pos (Vector3.add p-pos &(Vector3.mul &p-dir (* 1.6 p-scale)))
+            bullet-vel (Vector3.mul &p-dir 10.0)
+            rand-x (Double.random-between -10.0 10.0)
+            rand-y (Double.random-between -10.0 10.0)
+            rand-z (Double.random-between -10.0 10.0)
+            bullet-ang-vel (Vector3.init rand-x rand-y rand-z)
+            b-scale (* p-scale 1.5)
+            data (BulletSpawnData.init bullet-pos bullet-vel bullet-ang-vel b-scale false true)
+            ev (EventKind.Game (GameEvent.SpawnBullet data))]
+        (Coordinator.dispatch! (Engine.coordinator e) ev)))))))
 )

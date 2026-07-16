@@ -17,25 +17,25 @@
 let voxel_self = get_voxel(0, 0, 0);
 
 // Only simulate inside solid voxel boundaries
-if (voxel_self.x < 0.0) {
-    // Sample surrounding neighborhood for temperature diffusion
-    // In our fields system, temp is mapped to fields.x
-    // (Note: we use a small offset in texture coordinates via the JIT's get_voxel helper)
-    var neighbor_temp = 0.0;
+// if (voxel_self.x < 0.0) {
+//     // Sample surrounding neighborhood for temperature diffusion
+//     // In our fields system, temp is mapped to fields.x
+//     // (Note: we use a small offset in texture coordinates via the JIT's get_voxel helper)
+//     var neighbor_temp = 0.0;
     
-    // We can query neighbor voxel properties (though fields is currently read/write for self,
-    // we can diffuse based on nearby state if they have been splatted/baked).
-    // For now, let's diffuse heat locally:
-    fields.x += (neighbor_temp - fields.x) * dt * 0.5;
+//     // We can query neighbor voxel properties (though fields is currently read/write for self,
+//     // we can diffuse based on nearby state if they have been splatted/baked).
+//     // For now, let's diffuse heat locally:
+//     fields.x += (neighbor_temp - fields.x) * dt * 0.5;
 
-    // Combustion/Melting simulation:
-    // If the voxel gets extremely hot (Temp > 100.0), it begins to burn/consume density
-    if (fields.x > 100.0) {
-        fields.y = max(0.0, fields.y - dt * 5.0); // burn density
+//     // Combustion/Melting simulation:
+//     // If the voxel gets extremely hot (Temp > 100.0), it begins to burn/consume density
+//     if (fields.x > 100.0) {
+//         fields.y = max(0.0, fields.y - dt * 5.0); // burn density
         
-        // If density is fully consumed, destroy the material (turn to ID 0 / Air)
-        if (fields.y <= 0.0) {
-            fields.w = 0.0; 
-        }
-    }
-}
+//         // If density is fully consumed, destroy the material (turn to ID 0 / Air)
+//         if (fields.y <= 0.0) {
+//             fields.w = 0.0; 
+//         }
+//     }
+// }
