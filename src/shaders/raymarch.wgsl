@@ -755,23 +755,27 @@ struct PointInstance {
           return rotateVector(p - pos, q_inv(rot));
       }
 
-      fn evaluateCsgPrimitive(p: vec3<f32>, shape_type: u32, pos: vec3<f32>, scale: f32, rot: vec4<f32>, params: vec4<f32>) -> f32 {
-          let local_p = toLocalSpace(p, pos, rot);
+      fn getShapeDistance(p: vec3<f32>, shape_type: u32, size: vec3<f32>) -> f32 {
           var d = 10000.0;
           if (shape_type == 1u) {
-              d = sdSphere(local_p, params.x * scale);
+              d = sdSphere(p, size.x);
           } else if (shape_type == 2u) {
-              d = sdBox(local_p, params.xyz * scale);
+              d = sdBox(p, size);
           } else if (shape_type == 3u) {
-              d = sdCylinder(local_p, params.x * scale, params.y * scale);
+              d = sdCylinder(p, size.x, size.y);
           } else if (shape_type == 4u) {
-              d = sdCapsule(local_p, params.x * scale, params.y * scale);
+              d = sdCapsule(p, size.x, size.y);
           } else if (shape_type == 5u) {
-              d = sdTorus(local_p, params.xy * scale);
+              d = sdTorus(p, size.xy);
           } else if (shape_type == 6u) {
-              d = sdOctahedron(local_p, params.x * scale);
+              d = sdOctahedron(p, size.x);
           }
           return d;
+      }
+
+      fn evaluateCsgPrimitive(p: vec3<f32>, shape_type: u32, pos: vec3<f32>, scale: f32, rot: vec4<f32>, params: vec4<f32>) -> f32 {
+          let local_p = toLocalSpace(p, pos, rot);
+          return getShapeDistance(local_p, shape_type, params.xyz * scale);
       }
 
        fn evaluateNoise(p: vec3<f32>) -> f32 {
@@ -845,22 +849,9 @@ struct PointInstance {
                if (csg_root_idx >= 0) {
                    return evaluateCsgTree(local_p, csg_root_idx);
                } else {
-                   let shape_type = u32(round(s_data.shape_info.x));
-                   var d = 10000.0;
-                   if (shape_type == 1u) {
-                       d = sdSphere(local_p, raw_w);
-                   } else if (shape_type == 2u) {
-                       d = sdBox(local_p, vec3<f32>(raw_w));
-                   } else if (shape_type == 3u) {
-                       d = sdCylinder(local_p, raw_w, raw_w);
-                   } else if (shape_type == 4u) {
-                       d = sdCapsule(local_p, raw_w, raw_w);
-                   } else if (shape_type == 5u) {
-                       d = sdTorus(local_p, vec2<f32>(raw_w, 0.25 * raw_w));
-                   } else if (shape_type == 6u) {
-                       d = sdOctahedron(local_p, raw_w);
-                   }
-                   return d;
+                    let shape_type = u32(round(s_data.shape_info.x));
+                    let size = select(vec3<f32>(raw_w), vec3<f32>(raw_w, 0.25 * raw_w, raw_w), shape_type == 5u);
+                    return getShapeDistance(local_p, shape_type, size);
                }
            }
            return 10000.0;
@@ -1030,22 +1021,11 @@ struct PointInstance {
                               if (csg_root_idx >= 0) {
                                   local_dist = evaluateCsgTree(local_p, csg_root_idx);
                               } else {
-                                  if (shape_type == 1u) {
-                                    if (s_data.sph_fields.x != 0.0) {
-                                        continue;
-                                    }
-                                    local_dist = sdSphere(local_p, raw_w);
-                                  } else if (shape_type == 2u) {
-                                    local_dist = sdBox(local_p, vec3<f32>(raw_w));
-                                  } else if (shape_type == 4u) {
-                                    local_dist = sdCapsule(local_p, raw_w, raw_w);
-                                  } else if (shape_type == 3u) {
-                                    local_dist = sdCylinder(local_p, raw_w, raw_w);
-                                  } else if (shape_type == 5u) {
-                                    local_dist = sdTorus(local_p, vec2<f32>(raw_w, 0.25 * raw_w));
-                                  } else if (shape_type == 6u) {
-                                    local_dist = sdOctahedron(local_p, raw_w);
+                                  if (shape_type == 1u && s_data.sph_fields.x != 0.0) {
+                                      continue;
                                   }
+                                  let size = select(vec3<f32>(raw_w), vec3<f32>(raw_w, 0.25 * raw_w, raw_w), shape_type == 5u);
+                                  local_dist = getShapeDistance(local_p, shape_type, size);
                               }
                               if (local_dist < d.x) { d = vec2<f32>(local_dist, f32(s_idx)); }
                           }

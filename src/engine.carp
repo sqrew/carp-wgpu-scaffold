@@ -944,16 +944,14 @@
                           op @(CraterSpawnData.op-type crater)]
                       (when (VoxelBaker.chunk-overlaps-sphere? chunk pos rad)
                         (do
-                          (Diagnostics.start-zone! diag "Bake: Carve CPU")
-                          (if (= op 0.0)
-                              (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad res cell-size)
-                              (VoxelBaker.build-voxel-grid-cpu! chunk pos rad res cell-size op))
-                          (Diagnostics.end-zone! diag "Bake: Carve CPU")
-                          (Diagnostics.start-zone! diag "Bake: Carve GPU")
-                          (if (= op 0.0)
-                              (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad res)
-                              (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res op))
-                          (Diagnostics.end-zone! diag "Bake: Carve GPU")
+                          (Diagnostics.with-zone diag "Bake: Carve CPU"
+                            (if (= op 0.0)
+                                (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad res cell-size)
+                                (VoxelBaker.build-voxel-grid-cpu! chunk pos rad res cell-size op)))
+                          (Diagnostics.with-zone diag "Bake: Carve GPU"
+                            (if (= op 0.0)
+                                (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad res)
+                                (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res op)))
                           (Chunk.set-modified! chunk true)
                           (set! overlapped true)))))
                   (when overlapped
@@ -1040,60 +1038,53 @@
             (array-zero-floats! flat-grid)))
 
         ;; 1. Pack Uniform Header (indices 0 to 115)
-        (Diagnostics.start-zone! diag "Sync: Pack Uniforms")
-        (let [lac WGPURenderer.lacunarity
-              gn WGPURenderer.gain
-              suns-ref (Engine.suns e)]
-          (Engine.pack-uniform-header! u-data cam-pos cam-dir cam-right cam-up &bg-color
-                                       cell-size cols rows layers origin
-                                       view-mode shadow-quality @(Engine.volumetric-sdf e) show-debug
-                                       suns-ref lac gn))
-        (Diagnostics.end-zone! diag "Sync: Pack Uniforms")
+        (Diagnostics.with-zone diag "Sync: Pack Uniforms"
+          (let [lac WGPURenderer.lacunarity
+                gn WGPURenderer.gain
+                suns-ref (Engine.suns e)]
+            (Engine.pack-uniform-header! u-data cam-pos cam-dir cam-right cam-up &bg-color
+                                         cell-size cols rows layers origin
+                                         view-mode shadow-quality @(Engine.volumetric-sdf e) show-debug
+                                         suns-ref lac gn)))
 
         ;; 2. Pack CSG Node Hierarchies & Active Instances (index >= 36)
-        (Diagnostics.start-zone! diag "Sync: Pack CSG Instances")
-        (Engine.pack-instances! world db (Engine.entity-db e) u-data csg-data csg-dirty)
-        (Diagnostics.end-zone! diag "Sync: Pack CSG Instances")
+        (Diagnostics.with-zone diag "Sync: Pack CSG Instances"
+          (Engine.pack-instances! world db (Engine.entity-db e) u-data csg-data csg-dirty))
 
         ;; 3. Dynamic Chunk Loading / progressive baking
-        (Diagnostics.start-zone! diag "Sync: Update Voxel Chunks")
-        (Engine.update-voxel-chunks! e ctx ren world-data cam-pos)
-        (Diagnostics.end-zone! diag "Sync: Update Voxel Chunks")
+        (Diagnostics.with-zone diag "Sync: Update Voxel Chunks"
+          (Engine.update-voxel-chunks! e ctx ren world-data cam-pos))
 
         ;; 4. Build Chunk Lookup Data
-        (Diagnostics.start-zone! diag "Sync: Build Chunk Lookup")
-        (let [cam-qx (World.camera-chunk-qx cam-pos)
-              cam-qy (World.camera-chunk-qy cam-pos)
-              cam-qz (World.camera-chunk-qz cam-pos)
-              origin-x (- cam-qx 16)
-              origin-y (- cam-qy 16)
-              origin-z (- cam-qz 16)
-              new-lookup-data (World.build-chunk-lookup-data world-data origin-x origin-y origin-z)]
-          (copy-ints! lookup-data &new-lookup-data))
-        (Diagnostics.end-zone! diag "Sync: Build Chunk Lookup")
+        (Diagnostics.with-zone diag "Sync: Build Chunk Lookup"
+          (let [cam-qx (World.camera-chunk-qx cam-pos)
+                cam-qy (World.camera-chunk-qy cam-pos)
+                cam-qz (World.camera-chunk-qz cam-pos)
+                origin-x (- cam-qx 16)
+                origin-y (- cam-qy 16)
+                origin-z (- cam-qz 16)
+                new-lookup-data (World.build-chunk-lookup-data world-data origin-x origin-y origin-z)]
+            (copy-ints! lookup-data &new-lookup-data)))
 
         ;; 5. Bake voxel grid (if dirty)
-        (Diagnostics.start-zone! diag "Sync: Bake Voxels")
-        (Engine.bake-voxels-if-dirty! e ctx ren grid world world-data craters voxel-dirty)
-        (Engine.set-craters! e [])
-        (Diagnostics.end-zone! diag "Sync: Bake Voxels")
+        (Diagnostics.with-zone diag "Sync: Bake Voxels"
+          (do
+            (Engine.bake-voxels-if-dirty! e ctx ren grid world world-data craters voxel-dirty)
+            (Engine.set-craters! e [])))
 
         ;; 5.5 Bake dynamic fields on the GPU
-        (Diagnostics.start-zone! diag "Sync: Bake Fields GPU")
-        (Engine.bake-all-fields-gpu! e ctx ren)
-        (Diagnostics.end-zone! diag "Sync: Bake Fields GPU")
+        (Diagnostics.with-zone diag "Sync: Bake Fields GPU"
+          (Engine.bake-all-fields-gpu! e ctx ren))
 
         ;; 6. Flatten Spatial Grid (if dirty)
-        (Diagnostics.start-zone! diag "Sync: Flatten Spatial Grid")
-        (when grid-dirty
-          (GPUSpatial.flatten-in-place! (Engine.entity-db e) world grid 64 flat-grid geom-map))
-        (Diagnostics.end-zone! diag "Sync: Flatten Spatial Grid"))))
+        (Diagnostics.with-zone diag "Sync: Flatten Spatial Grid"
+          (when grid-dirty
+            (GPUSpatial.flatten-in-place! (Engine.entity-db e) world grid 64 flat-grid geom-map))))))
 
   (defn tick! [e ctx ren width height]
     (let [dt (Clock.unscaled-dt (Engine.clock e))
           diag (Engine.diagnostics e)]
-      (do
-        (Diagnostics.start-zone! diag "Total Frame Time")
+      (Diagnostics.with-zone diag "Total Frame Time"
         (Clock.tick! (Engine.clock e))
         (let [suns-ref (Engine.suns e)]
           (for [i 0 (Array.length suns-ref)]
@@ -1131,40 +1122,33 @@
                     b (+ 0.18 (* t (- 0.02 0.18)))]
                 (Engine.set-bg-color! e (Vector3.init r g b))))))
         (Engine.tick-events! e)
-        (Diagnostics.start-zone! diag "Input Handling")
-        (Engine.tick-input! e dt)
-        (Diagnostics.end-zone! diag "Input Handling")
+        (Diagnostics.with-zone diag "Input Handling"
+          (Engine.tick-input! e dt))
         (Engine.tick-ui! e dt width height)
-        (Diagnostics.start-zone! diag "Physics Simulation")
-        (Engine.tick-simulation! e dt)
-        (Diagnostics.end-zone! diag "Physics Simulation")
-        (Diagnostics.start-zone! diag "ECS Lifecycle")
-        (Engine.tick-lifecycle! e dt)
-        (Diagnostics.end-zone! diag "ECS Lifecycle")
-        (Diagnostics.start-zone! diag "Field DB Sync")
-        (Engine.tick-field-db-sync! e)
-        (FieldDatabase.tick! (Engine.db e) (Engine.entity-db e) dt)
-        (when (> (Array.length (EntityDatabase.events (Engine.entity-db e))) 0)
-          (Engine.set-grid-dirty! e true))
-        (Diagnostics.end-zone! diag "Field DB Sync")
-        (Diagnostics.start-zone! diag "Render Submit & Sync")
-        (Diagnostics.start-zone! diag "Sync: JIT Hot Reload")
-        (Engine.evaluate-jit-hot-reload! e ctx ren)
-        (Engine.evaluate-render-hot-reload! e ctx ren)
-        (Engine.evaluate-carve-hot-reload! e ctx ren)
-        (Engine.evaluate-field-rule-hot-reload! e ctx ren)
-        (Diagnostics.end-zone! diag "Sync: JIT Hot Reload")
-        (Diagnostics.start-zone! diag "Sync: JIT Physics Loop")
-        (Engine.run-jit-physics-loop! e ctx ren)
-        (Diagnostics.end-zone! diag "Sync: JIT Physics Loop")
-        (Diagnostics.start-zone! diag "Sync: Submit Render Cmds")
-        (Engine.submit-render-commands! e)
-        (Diagnostics.end-zone! diag "Sync: Submit Render Cmds")
-        (Diagnostics.start-zone! diag "Sync: Render DB Update")
-        (Engine.sync-render-db! e ctx ren)
-        (Diagnostics.end-zone! diag "Sync: Render DB Update")
-        (Diagnostics.end-zone! diag "Render Submit & Sync")
-        (Diagnostics.end-zone! diag "Total Frame Time"))))
+        (Diagnostics.with-zone diag "Physics Simulation"
+          (Engine.tick-simulation! e dt))
+        (Diagnostics.with-zone diag "ECS Lifecycle"
+          (Engine.tick-lifecycle! e dt))
+        (Diagnostics.with-zone diag "Field DB Sync"
+          (do
+            (Engine.tick-field-db-sync! e)
+            (FieldDatabase.tick! (Engine.db e) (Engine.entity-db e) dt)
+            (when (> (Array.length (EntityDatabase.events (Engine.entity-db e))) 0)
+              (Engine.set-grid-dirty! e true))))
+        (Diagnostics.with-zone diag "Render Submit & Sync"
+          (do
+            (Diagnostics.with-zone diag "Sync: JIT Hot Reload"
+              (do
+                (Engine.evaluate-jit-hot-reload! e ctx ren)
+                (Engine.evaluate-render-hot-reload! e ctx ren)
+                (Engine.evaluate-carve-hot-reload! e ctx ren)
+                (Engine.evaluate-field-rule-hot-reload! e ctx ren)))
+            (Diagnostics.with-zone diag "Sync: JIT Physics Loop"
+              (Engine.run-jit-physics-loop! e ctx ren))
+            (Diagnostics.with-zone diag "Sync: Submit Render Cmds"
+              (Engine.submit-render-commands! e))
+            (Diagnostics.with-zone diag "Sync: Render DB Update"
+              (Engine.sync-render-db! e ctx ren)))))))
 
   (sig reload-settings! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn reload-settings! [e ctx ren]
