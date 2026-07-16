@@ -44,6 +44,8 @@
   (sig get-kernel-slot (Fn [(Ref FieldDatabase) (Ref String)] Int))
   (sig set-scalar-field! (Fn [(Ref EntityDatabase) Int Int Double] ()))
   (sig get-entity-scalar (Fn [(Ref EntityDatabase) Int Int] Double))
+  (sig set-field-vector! (Fn [(Ref EntityDatabase) Int Int (Ref Vector4)] ()))
+  (sig get-field-vector (Fn [(Ref EntityDatabase) Int Int] Vector4))
   (sig get-shape-bounding-radius (Fn [Int Double (Ref Vector4)] Double))
   (sig evaluate-csg-primitive (Fn [(Ref (Vector3 Double)) Int (Ref (Vector3 Double)) (Ref Quaternion) Double (Ref Vector4)] Double))
   (sig noop-update (Fn [(Ptr ()) (Ptr ()) Double] ()))
@@ -86,13 +88,25 @@
         found-slot)))
 
   (defn set-scalar-field! [edb slot entity-idx val]
-    (let [arr (Array.unsafe-nth (EntityDatabase.entity-scalars edb) slot)]
+    (let [arr (Array.unsafe-nth (EntityDatabase.entity-fields edb) slot)]
       (if (and (>= entity-idx 0) (< entity-idx (Array.length arr)))
-          (Array.aset! arr entity-idx val)
+          (let [v (Array.unsafe-nth arr entity-idx)]
+            (Array.aset! arr entity-idx (Vector4.init val @(Vector4.y v) @(Vector4.z v) @(Vector4.w v))))
           ())))
 
   (defn get-entity-scalar [edb slot entity-idx]
-    (let [arr (Array.unsafe-nth (EntityDatabase.entity-scalars edb) slot)]
+    (let [arr (Array.unsafe-nth (EntityDatabase.entity-fields edb) slot)
+          v (Array.unsafe-nth arr entity-idx)]
+      @(Vector4.x v)))
+
+  (defn set-field-vector! [edb slot entity-idx val-ref]
+    (let [arr (Array.unsafe-nth (EntityDatabase.entity-fields edb) slot)]
+      (if (and (>= entity-idx 0) (< entity-idx (Array.length arr)))
+          (Array.aset! arr entity-idx @val-ref)
+          ())))
+
+  (defn get-field-vector [edb slot entity-idx]
+    (let [arr (Array.unsafe-nth (EntityDatabase.entity-fields edb) slot)]
       @(Array.unsafe-nth arr entity-idx)))
 
   (defn clear-grid-to-val! [arr val]
@@ -106,7 +120,7 @@
           positions (EntityDatabase.positions edb)
           scales (EntityDatabase.scales edb)
           influences-arr (EntityDatabase.influences edb)
-          scalars-arr (Array.unsafe-nth (EntityDatabase.entity-scalars edb) slot)
+          fields-arr (Array.unsafe-nth (EntityDatabase.entity-fields edb) slot)
           accumulated-val 0.0
           total-weight 0.0]
       (do
@@ -120,7 +134,8 @@
                   (when (< dist scale-i)
                     (let [influence @(Array.unsafe-nth influences-arr i)
                           weight (* (- 1.0 (/ dist scale-i)) influence)
-                          val @(Array.unsafe-nth scalars-arr i)]
+                          v (Array.unsafe-nth fields-arr i)
+                          val @(Vector4.x v)]
                       (when (not (and (= slot gravity-slot) (= val -999.0)))
                         (do
                           (set! accumulated-val (+ accumulated-val (* val weight)))
@@ -309,7 +324,7 @@
               (when @(Array.unsafe-nth active-arr i)
                 (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
                       scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)
-                      pres @(Array.unsafe-nth (Array.unsafe-nth (EntityDatabase.entity-scalars edb) pressure-slot) i)
+                      pres @(Vector4.x (Array.unsafe-nth (Array.unsafe-nth (EntityDatabase.entity-fields edb) pressure-slot) i))
                       to-pos (Vector3.sub pos inst-pos)
                       dist (Vector3.mag &to-pos)
                       d (- dist scale)
@@ -340,7 +355,7 @@
                   (when @(Array.unsafe-nth active-arr i)
                     (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) i)
                           scale @(Array.unsafe-nth (EntityDatabase.scales edb) i)
-                          pres @(Array.unsafe-nth (Array.unsafe-nth (EntityDatabase.entity-scalars edb) pressure-slot) i)
+                          pres @(Vector4.x (Array.unsafe-nth (Array.unsafe-nth (EntityDatabase.entity-fields edb) pressure-slot) i))
                           to-pos (Vector3.sub pos inst-pos)
                           dist (Vector3.mag &to-pos)
                           d (- dist scale)

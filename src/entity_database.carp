@@ -3,6 +3,8 @@
 (deftype Vector4 [x Double y Double z Double w Double])
 (defmodule Vector4
   (defn init-zero [] (Vector4.init 0.0 0.0 0.0 0.0))
+  (defn copy [v]
+    (Vector4.init @(Vector4.x v) @(Vector4.y v) @(Vector4.z v) @(Vector4.w v)))
 )
 
 (deftype FieldInitialVal [
@@ -55,7 +57,7 @@
   events (Array FieldEvent)
   next-virtual-id Int
   spatial-grid (SpatialGrid Int)
-  entity-scalars (Array (Array Double))
+  entity-fields (Array (Array Vector4))
   influences (Array Double)
 ])
 
@@ -101,14 +103,14 @@
           sdfs (the (Array (Maybe SDF)) (replicate n &(the (Maybe SDF) (Maybe.Nothing))))
           h-to-idx (the (Array Int) (replicate 1024 &-1))
           grid (the (SpatialGrid Int) (SpatialGrid.new-with-origin 8.0 32 32 32 (Vector3.init -128.0 -128.0 -128.0)))
-          esc [(the (Array Double) (replicate n &0.0))
-               (the (Array Double) (replicate n &0.0))
-               (the (Array Double) (replicate n &0.2))
-               (the (Array Double) (replicate n &0.0))
-               (the (Array Double) (replicate n &0.0))
-               (the (Array Double) (replicate n &1.0))
-               (the (Array Double) (replicate n &1.0))
-               (the (Array Double) (replicate n &1.0))]
+          esc [(the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.2 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 1.0 1.0 1.0 1.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 1.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 1.0 0.0 0.0 0.0)))]
           inf (the (Array Double) (replicate n &1.0))]
       (EntityDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 grid esc inf)))
 
@@ -143,14 +145,14 @@
               (let [arr (Array.unsafe-nth (EntityDatabase.vector-fields db) f)]
                 (Array.push-back! arr (Vector3.init 0.0 0.0 0.0))))
             (Array.push-back! (EntityDatabase.sdfs db) (Maybe.Nothing))
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 0) 0.0)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 1) 0.0)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 2) 0.2)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 3) 0.0)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 4) 0.0)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 5) 1.0)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 6) 1.0)
-            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 7) 1.0)
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 0) (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 1) (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 2) (Vector4.init 0.2 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 3) (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 4) (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 5) (Vector4.init 1.0 1.0 1.0 1.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 6) (Vector4.init 1.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 7) (Vector4.init 1.0 0.0 0.0 0.0))
             (Array.push-back! (EntityDatabase.influences db) 1.0)
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
@@ -185,14 +187,14 @@
               (let [arr (Array.unsafe-nth (EntityDatabase.vector-fields db) f)]
                 (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
             (Array.aset! (EntityDatabase.sdfs db) id (Maybe.Nothing))
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 0) id 0.0)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 1) id 0.0)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 2) id 0.2)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 3) id 0.0)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 4) id 0.0)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 5) id 1.0)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 6) id 1.0)
-            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-scalars db) 7) id 1.0)
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 0) id (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 1) id (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 2) id (Vector4.init 0.2 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 3) id (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 4) id (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 5) id (Vector4.init 1.0 1.0 1.0 1.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 6) id (Vector4.init 1.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 7) id (Vector4.init 1.0 0.0 0.0 0.0))
             (Array.aset! (EntityDatabase.influences db) id 1.0)
             ()))
         (when (< h-idx (Array.length (EntityDatabase.handle-to-index db)))
