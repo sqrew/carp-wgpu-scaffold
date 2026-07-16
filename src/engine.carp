@@ -991,30 +991,79 @@
           num-instances (Double.from-int (Array.length (EntityDatabase.active edb)))
           active-arr (EntityDatabase.active edb)
           num-active (Array.length active-arr)
-          voxel-res @(World.voxel-resolution world-data)]
+          voxel-res @(World.voxel-resolution world-data)
+          active-ticks (WGPURenderer.fields-active-ticks ren)
+          active-slots (WGPURenderer.fields-active-slots ren)]
       (do
+        ; 1. First pass: check overlaps and propagate active ticks to neighbors
         (for [i 0 num-chunks]
           (let [chunk (Array.unsafe-nth chunks i)
                 slot @(Chunk.atlas-slot chunk)
-                active-slots (WGPURenderer.fields-active-slots ren)
-                had-fields @(Array.unsafe-nth active-slots slot)
-                is-time-sliced-frame (= (Int.mod i 16) field-bake-frame-counter)]
-            (when (or had-fields is-time-sliced-frame)
-              (let [overlaps false]
+                current-ticks @(Array.unsafe-nth active-ticks slot)
+                overlaps false]
+            (do
+              (for [k 0 num-active]
+                (when @(Array.unsafe-nth active-arr k)
+                  (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) k)]
+                    (when (> scale 0.0)
+                      (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) k)]
+                        (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
+                          (set! overlaps true)))))))
+              (if overlaps
                 (do
-                  (for [k 0 num-active]
-                    (when @(Array.unsafe-nth active-arr k)
-                      (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) k)]
-                        (when (> scale 0.0)
-                          (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) k)]
-                            (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
-                              (set! overlaps true)))))))
-                  (when (or overlaps had-fields)
+                  (Array.aset! active-ticks slot 180) ; Keep active for 180 frames (3 seconds)
+                  (Array.aset! active-slots slot true))
+                (when (and (> current-ticks 0) @(Array.unsafe-nth active-slots slot))
+                  (let [cx @(Chunk.coord-x chunk)
+                        cy @(Chunk.coord-y chunk)
+                        cz @(Chunk.coord-z chunk)
+                        nx-l (dec cx) nx-r (inc cx)
+                        ny-d (dec cy) ny-u (inc cy)
+                        nz-b (dec cz) nz-f (inc cz)]
                     (do
-                      (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res)
-                      (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res)
-                      (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
-                      (Array.aset! active-slots slot overlaps))))))))
+                      ; Left
+                      (match (World.find-chunk world-data nx-l cy cz)
+                        (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
+                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                      ; Right
+                      (match (World.find-chunk world-data nx-r cy cz)
+                        (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
+                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                      ; Down
+                      (match (World.find-chunk world-data cx ny-d cz)
+                        (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
+                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                      ; Up
+                      (match (World.find-chunk world-data cx ny-u cz)
+                        (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
+                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                      ; Back
+                      (match (World.find-chunk world-data cx cy nz-b)
+                        (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
+                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ())
+                      ; Front
+                      (match (World.find-chunk world-data cx cy nz-f)
+                        (Maybe.Just nc) (let [ns @(Chunk.atlas-slot &nc) nt @(Array.unsafe-nth active-ticks ns)]
+                                          (when (< nt (- current-ticks 2)) (do (Array.aset! active-ticks ns (- current-ticks 2)) (Array.aset! active-slots ns true)))) _ ()))))))))
+        
+        ; 2. Second pass: run simulation for all active chunks and decrement ticks
+        (for [i 0 num-chunks]
+          (let [chunk (Array.unsafe-nth chunks i)
+                slot @(Chunk.atlas-slot chunk)
+                current-ticks @(Array.unsafe-nth active-ticks slot)
+                is-active @(Array.unsafe-nth active-slots slot)
+                is-time-sliced-frame (= (Int.mod i 16) field-bake-frame-counter)]
+            (when (or is-active is-time-sliced-frame)
+              (do
+                (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res)
+                (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res)
+                (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
+                (if (> current-ticks 0)
+                  (let [new-ticks (dec current-ticks)]
+                    (do
+                      (Array.aset! active-ticks slot new-ticks)
+                      (Array.aset! active-slots slot (> new-ticks 0))))
+                  (Array.aset! active-slots slot false))))))
         (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 16)))))
 
   (defn sync-render-db! [e ctx ren]

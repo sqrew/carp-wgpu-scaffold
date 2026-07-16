@@ -689,9 +689,10 @@
                         origin-data [qx-f qy-f qz-f slot-f]]
                     (do
                       (WGPU.write-floats ctx jit-info-b &origin-data)
-                      (with-bind-group (WGPURender.create-jit-bind-group ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) water-bg
-                        (WGPU.dispatch ctx water-pipe water-bg dispatch-cnt)
-                        (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16)))))))
+                      (let [water-tex @(WGPURenderer.water-texture ren)]
+                        (with-bind-group (WGPURender.create-jit-bind-group-water ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex water-tex) water-bg
+                          (WGPU.dispatch ctx water-pipe water-bg dispatch-cnt)
+                          (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16))))))))
                 _ ())))
           (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))
 )

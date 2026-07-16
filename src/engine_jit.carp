@@ -300,7 +300,58 @@
             @group(0) @binding(3) var<storage, read> chunk_info: ChunkInfo;
             @group(0) @binding(4) var<storage, read> chunk_lookup: ChunkLookup;
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
-
+            const GRID_RES: i32 = " @&res-str "i;
+"
+            (if (= var-name &@"water")
+              (str*
+                "            @group(0) @binding(6) var water_texture: texture_3d<f32>;\n\n"
+                "            fn get_water(x: i32, y: i32, z: i32) -> vec4<f32> {\n"
+                "                let world_v = vec3<i32>(floor(chunk_info.origin_slot.xyz / u.cell_size)) + vec3<i32>(x, y, z);\n"
+                "                let qx = world_v.x >> " @&log-res-str "u;\n"
+                "                let qy = world_v.y >> " @&log-res-str "u;\n"
+                "                let qz = world_v.z >> " @&log-res-str "u;\n"
+                "                \n"
+                "                let lx = world_v.x & " @&voxel-res-sub-1-str "i;\n"
+                "                let ly = world_v.y & " @&voxel-res-sub-1-str "i;\n"
+                "                let lz = world_v.z & " @&voxel-res-sub-1-str "i;\n"
+                "                \n"
+                "                let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;\n"
+                "                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {\n"
+                "                    return vec4<f32>(0.0);\n"
+                "                }\n"
+                "                \n"
+                "                let mx = u32(local_q.x) >> 2u;\n"
+                "                let my = u32(local_q.y) >> 2u;\n"
+                "                let mz = u32(local_q.z) >> 2u;\n"
+                "                let skip_idx = mx + (my << 3u) + (mz << 6u);\n"
+                "                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];\n"
+                "                if (skip_val == 0) {\n"
+                "                    return vec4<f32>(0.0);\n"
+                "                }\n"
+                "                \n"
+                "                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;\n"
+                "                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];\n"
+                "                if (slot < 0) {\n"
+                "                    return vec4<f32>(0.0);\n"
+                "                }\n"
+                "                \n"
+                "                let slot_x = slot % " @&slots-per-dim-str "i;\n"
+                "                let slot_y = (slot / " @&slots-per-dim-str "i) % " @&slots-per-dim-str "i;\n"
+                "                let slot_z = slot / " @&slots-per-dim-sq-str "i;\n"
+                "                \n"
+                "                let atlas_coord = vec3<i32>((slot_x * " @&res-str "i) + lx, (slot_y * " @&res-str "i) + ly, (slot_z * " @&res-str "i) + lz);\n"
+                "                return textureLoad(water_texture, atlas_coord, 0);\n"
+                "            }\n\n"
+                "            fn get_water_volume(x: i32, y: i32, z: i32) -> f32 {\n"
+                "                if (x >= 0 && x < " @&res-str "i && y >= 0 && y < " @&res-str "i && z >= 0 && z < " @&res-str "i) {\n"
+                "                    let idx = x + y * " @&res-str "i + z * " @&res-sq-str "i;\n"
+                "                    return input_fields[idx].x;\n"
+                "                } else {\n"
+                "                    return get_water(x, y, z).x;\n"
+                "                }\n"
+                "            }\n\n")
+              @"")
+"
             fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
                 let world_v = vec3<i32>(floor(chunk_info.origin_slot.xyz / u.cell_size)) + vec3<i32>(x, y, z);
                 let qx = world_v.x >> " @&log-res-str "u;

@@ -167,6 +167,7 @@
   noise-sampler WGPUSampler
   pack-bind-group WGPUBindGroup
   fields-active-slots (Array Bool)
+  fields-active-ticks (Array Int)
   jit-info-buffer WGPUBuffer
   format String
   gui-pipeline (Ptr WGPUGeomPipelineWrapper)
@@ -504,7 +505,7 @@
                                                                                                                                                                                      (WGPURender.wgpu-clear-3d-texture-atlas ctx light-tex w-half-b voxel-res)
                                                                                                                                                                                      (WGPURender.wgpu-clear-3d-texture-atlas ctx interaction-tex w-half-b voxel-res)
                                                                                                                                                                                      (WGPURender.wgpu-clear-3d-texture-atlas ctx water-tex w-half-b voxel-res)
-                                                                                                                                                                                     (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex light-tex interaction-tex voxel-samp [] true c-pipe p-pipe l-splat-pipe v-gpu-b v-half-b c-params-b l-scratch-b l-half-b l-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) jit-info-b @&format gui-pipe gui-ubo gui-bg font-tex font-samp i-scratch-b i-half-b i-params-b i-splat-pipe water-tex w-scratch-b w-half-b w-params-b w-splat-pipe unpack-pipe))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                                                                                                     (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex light-tex interaction-tex voxel-samp [] true c-pipe p-pipe l-splat-pipe v-gpu-b v-half-b c-params-b l-scratch-b l-half-b l-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) (replicate 1728 &0) jit-info-b @&format gui-pipe gui-ubo gui-bg font-tex font-samp i-scratch-b i-half-b i-params-b i-splat-pipe water-tex w-scratch-b w-half-b w-params-b w-splat-pipe unpack-pipe))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 
   (defn clear! [ren]
