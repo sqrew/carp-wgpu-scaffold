@@ -121,11 +121,11 @@
     (do
       (when (not cache-initialized)
         (do
-          (set! cache-qx-arr (replicate 65536 &-999999))
-          (set! cache-qz-arr (replicate 65536 &-999999))
-          (set! cache-qy-arr (replicate 65536 &0))
+          (set! cache-qx-arr (replicate 2048 &-999999))
+          (set! cache-qz-arr (replicate 2048 &-999999))
+          (set! cache-qy-arr (replicate 2048 &0))
           (set! cache-initialized true)))
-      (let [hash-idx (Int.mod (Int.abs (+ (* qx 73856093) (* qz 19349663))) 65536)
+      (let [hash-idx (Int.mod (Int.abs (+ (* qx 73856093) (* qz 19349663))) 2048)
             cached-qx @(Array.unsafe-nth &cache-qx-arr hash-idx)
             cached-qz @(Array.unsafe-nth &cache-qz-arr hash-idx)]
         (if (and (= qx cached-qx) (= qz cached-qz))
