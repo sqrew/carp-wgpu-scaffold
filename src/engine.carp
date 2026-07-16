@@ -25,6 +25,23 @@
   (use Raymarch)
   (use Ray)
 
+  (defmacro with-zone [d-ref name body]
+    `(let [d-val %d-ref]
+       (do
+         (Diagnostics.start-zone! d-val %name)
+         (let [result %body]
+           (do
+             (Diagnostics.end-zone! d-val %name)
+             result)))))
+
+  (defmacro with-temp-bind-group [ctx pipe bufs bg-var body]
+    `(match (WGPU.create-bind-group %ctx %pipe %bufs)
+       (Result.Error e) (IO.println &(format "GPU Bind Group Error: %s" &e))
+       (Result.Success %bg-var)
+         (do
+           %body
+           (WGPU.free-bind-group %bg-var))))
+
   (defn new [win aspect backend cfg]
     (let [mgr (InputManager.create win backend)
           grid-origin (Vector3.init -120.0 -300.0 -120.0)
@@ -784,9 +801,9 @@
                                        (and (and (>= dy 0) (< dy 49))
                                              (and (>= dz 0) (< dz 33))))
                               (Array.aset! &lookup-grid (+ dx (+ (* dy 33) (* (* dz 33) 49))) true))))
-                        (let [r 0]
-                          (do
-                            (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Scan and Load")
+                        (with-zone (Engine.diagnostics e) "Chunks: Scan and Load"
+                          (let [r 0]
+                            (do
                         (while (and (< r 15) (not loaded-any))
                           (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))
                                 offsets (if (= limit-r 0)
@@ -991,8 +1008,7 @@
                                           (set! dz (inc dz))))))
                                   (set! r (inc r))))
                             (when (not loaded-any)
-                              (Engine.set-need-chunk-scan! e false))
-                            (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load"))))))))))))))))))
+                              (Engine.set-need-chunk-scan! e false))))))))))))))))))))
 
   (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
