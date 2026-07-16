@@ -993,20 +993,21 @@
           num-active (Array.length active-arr)]
       (do
         (for [i 0 num-chunks]
-          (when (= (Int.mod i 16) field-bake-frame-counter)
-            (let [chunk (Array.unsafe-nth chunks i)
-                  slot @(Chunk.atlas-slot chunk)
-                  overlaps false]
-               (do
-                 (for [k 0 num-active]
-                   (when @(Array.unsafe-nth active-arr k)
-                     (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) k)]
-                       (when (> scale 0.0)
-                         (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) k)]
-                           (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
-                             (set! overlaps true)))))))
-                (let [active-slots (WGPURenderer.fields-active-slots ren)
-                      had-fields @(Array.unsafe-nth active-slots slot)]
+          (let [chunk (Array.unsafe-nth chunks i)
+                slot @(Chunk.atlas-slot chunk)
+                active-slots (WGPURenderer.fields-active-slots ren)
+                had-fields @(Array.unsafe-nth active-slots slot)
+                is-time-sliced-frame (= (Int.mod i 16) field-bake-frame-counter)]
+            (when (or had-fields is-time-sliced-frame)
+              (let [overlaps false]
+                (do
+                  (for [k 0 num-active]
+                    (when @(Array.unsafe-nth active-arr k)
+                      (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) k)]
+                        (when (> scale 0.0)
+                          (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) k)]
+                            (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
+                              (set! overlaps true)))))))
                   (when (or overlaps had-fields)
                     (do
                       (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e))
