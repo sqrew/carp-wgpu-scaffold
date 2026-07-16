@@ -4,7 +4,8 @@ struct PointInstance {
           pos_scale: vec4<f32>,
           rot: vec4<f32>,
           color_csg: vec4<f32>,
-          sph_fields: vec4<f32>,
+          light_fields: vec4<f32>,
+          interaction_fields: vec4<f32>,
           shape_info: vec4<f32>,
       }
       struct Cell {
@@ -57,7 +58,9 @@ struct PointInstance {
       @group(0) @binding(5) var<storage, read> chunk_lookup: ChunkLookup;
       @group(0) @binding(6) var noise_texture: texture_3d<f32>;
       @group(0) @binding(7) var noise_sampler: sampler;
-      @group(0) @binding(8) var fields_texture: texture_3d<f32>;
+      @group(0) @binding(8) var light_texture: texture_3d<f32>;
+      @group(0) @binding(9) var interaction_texture: texture_3d<f32>;
+      @group(0) @binding(10) var water_texture: texture_3d<f32>;
 
       fn positive_mod(n: i32, m: i32) -> i32 {
           let r = n % m;
@@ -387,7 +390,7 @@ struct PointInstance {
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
               let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
-              return textureLoad(fields_texture, atlas_coord, 0);
+              return textureLoad(light_texture, atlas_coord, 0);
           } else {
               return vec4<f32>(0.0);
           }
@@ -428,7 +431,7 @@ struct PointInstance {
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
               let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
               let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
-              tex_val = textureSampleLevel(fields_texture, voxel_sampler, sample_coords, 0.0);
+              tex_val = textureSampleLevel(light_texture, voxel_sampler, sample_coords, 0.0);
           } else {
               v0 = getFieldsAt(c0.x,     c0.y,     c0.z);
               v1 = getFieldsAt(c0.x + 1, c0.y,     c0.z);
@@ -550,7 +553,7 @@ struct PointInstance {
                         let w_color = 1.0 / (d * d + 0.01);
                         var w_fields = w_color;
                         
-                        var instance_fields = s_data.sph_fields;
+                        var instance_fields = s_data.light_fields;
                         if (instance_fields.w > 0.0) {
                             let wave_phase = u.time * 8.0 - d * 2.0;
                             instance_fields.w += instance_fields.w * (sin(wave_phase) * 0.4 / (d * 0.2 + 1.0));
@@ -600,7 +603,7 @@ struct PointInstance {
                       let s_data = u.instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
-                        if (s_data.sph_fields.x > 0.0) { continue; } // Ignore explosion colors in default fog/fluid
+                        if (s_data.light_fields.x > 0.0) { continue; } // Ignore explosion colors in default fog/fluid
                         let csg_root_idx = i32(round(s_data.color_csg.w));
                         var s = 1.0;
                         if (csg_root_idx <= -99) {
@@ -612,7 +615,7 @@ struct PointInstance {
                         let squashed_p = vec3<f32>(local_p.x, local_p.y / s, local_p.z);
                         let d = (length(squashed_p) - raw_w) * min(1.0, s);
                         
-                        let energy = length(s_data.sph_fields.xyz);
+                        let energy = length(s_data.light_fields.xyz);
                         if (d < 16.0 && energy > 0.0) {
                             let wave_phase = u.time * 12.0 - d * 2.5;
                             let amp = cos(wave_phase) * exp(-d * 0.15) * 0.08;
@@ -929,13 +932,13 @@ struct PointInstance {
                       if (s_idx >= 0 && s_idx < 1024) {
                         let s_data = u.instances[s_idx];
                         let raw_w = s_data.pos_scale.w;
-                        if (raw_w != 0.0 && s_data.sph_fields.w != 0.0) {
+                        if (raw_w != 0.0 && s_data.light_fields.w != 0.0) {
                           let dist_to_center = length(p - s_data.pos_scale.xyz);
                           let d_front = dist_to_center - raw_w;
                           if (dist_to_center < 16.0 && abs(d_front) < 4.0) {
                             let wave_phase = d_front * 3.0;
                             let envelope = exp(-pow(d_front / 2.0, 2.0));
-                            let amp = sin(wave_phase) * envelope * 0.35 * (s_data.sph_fields.w / 30.0);
+                            let amp = sin(wave_phase) * envelope * 0.35 * (s_data.light_fields.w / 30.0);
                             wave_deformation += amp;
                           }
                         }
@@ -961,10 +964,10 @@ struct PointInstance {
 
                           if (inst_type == 1) { // Black hole
                               let singularity_r = raw_w;
-                              let accretion_r = max(s_data.sph_fields.x, 0.1);
-                              let accretion_h = max(s_data.sph_fields.y, 0.01);
-                              let k1 = max(s_data.sph_fields.z, 0.01);
-                              let k2 = max(s_data.sph_fields.w, 0.01);
+                              let accretion_r = max(s_data.light_fields.x, 0.1);
+                              let accretion_h = max(s_data.light_fields.y, 0.01);
+                              let k1 = max(s_data.light_fields.z, 0.01);
+                              let k2 = max(s_data.light_fields.w, 0.01);
                               
                               let dist_to_center = length(p - s_data.pos_scale.xyz);
                               let d_singularity = dist_to_center - singularity_r;
@@ -985,10 +988,10 @@ struct PointInstance {
                               continue;
                           }
                           if (inst_type == 2) { // GUI Panel
-                               let width = s_data.sph_fields.x;
-                               let height = s_data.sph_fields.y;
-                               let slider1_val = s_data.sph_fields.z;
-                               let slider2_val = s_data.sph_fields.w;
+                               let width = s_data.light_fields.x;
+                               let height = s_data.light_fields.y;
+                               let slider1_val = s_data.light_fields.z;
+                               let slider2_val = s_data.light_fields.w;
 
                                let board_half = vec3<f32>(width * 0.5, height * 0.5, 0.015);
                                let board_d = sdBox(local_p, board_half) - 0.005;
@@ -1021,7 +1024,7 @@ struct PointInstance {
                               if (csg_root_idx >= 0) {
                                   local_dist = evaluateCsgTree(local_p, csg_root_idx);
                               } else {
-                                  if (shape_type == 1u && s_data.sph_fields.x != 0.0) {
+                                  if (shape_type == 1u && s_data.light_fields.x != 0.0) {
                                       continue;
                                   }
                                   let size = select(vec3<f32>(raw_w), vec3<f32>(raw_w, 0.25 * raw_w, raw_w), shape_type == 5u);
@@ -1196,8 +1199,12 @@ struct PointInstance {
 
        @fragment
         fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
-            let dummy_fields = textureSampleLevel(fields_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
-            if (dummy_fields.w > 9999.0) { return vec4<f32>(dummy_fields.xyz, 1.0); }
+            let dummy_light = textureSampleLevel(light_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
+            let dummy_interaction = textureSampleLevel(interaction_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
+            let dummy_water = textureSampleLevel(water_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
+            if (dummy_light.w > 9999.0 || dummy_interaction.w > 9999.0 || dummy_water.w > 9999.0) {
+                return vec4<f32>(dummy_light.xyz + dummy_interaction.xyz + dummy_water.xyz, 1.0);
+            }
             let aspect = u.width / u.height;
             let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
             let ro = u.cam_pos.xyz;
@@ -1214,7 +1221,7 @@ struct PointInstance {
                         let to_ray = s_data.pos_scale.xyz - closest_p;
                         let min_dist = length(to_ray);
                         
-                        let gravity = max(s_data.sph_fields.w * 0.45, 0.05);
+                        let gravity = max(s_data.light_fields.w * 0.45, 0.05);
                         let deflection = normalize(to_ray) * (gravity / (min_dist * min_dist + 0.08));
                         rd = normalize(rd + deflection);
                     }
@@ -1327,7 +1334,7 @@ struct PointInstance {
                     let shape_type = u32(round(s_data.shape_info.x));
                     let inst_type = i32(round(s_data.shape_info.y));
                     let csg_root_idx = i32(round(s_data.shape_info.z));
-                    if (shape_type == 1u && inst_type == 0 && csg_root_idx < 0 && s_data.sph_fields.x == 0.0) {
+                    if (shape_type == 1u && inst_type == 0 && csg_root_idx < 0 && s_data.light_fields.x == 0.0) {
                         is_sphere = true;
                     }
                 }
@@ -1630,10 +1637,10 @@ struct PointInstance {
                     let inst_type = i32(round(s_data.shape_info.y));
                     let lp = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                     if (inst_type == 2) {
-                        let width = s_data.sph_fields.x;
-                        let height = s_data.sph_fields.y;
-                        let slider1_val = s_data.sph_fields.z;
-                        let slider2_val = s_data.sph_fields.w;
+                        let width = s_data.light_fields.x;
+                        let height = s_data.light_fields.y;
+                        let slider1_val = s_data.light_fields.z;
+                        let slider2_val = s_data.light_fields.w;
                         let slider3_val = s_data.color_csg.x;
                         let slider4_val = s_data.color_csg.y;
                         let slider5_val = s_data.color_csg.z;
@@ -1701,15 +1708,15 @@ struct PointInstance {
                                 }
                             }
                         }
-                    } else if (s_data.sph_fields.x != 0.0) {
-                        let temp_factor = clamp(abs(s_data.sph_fields.x) / 120.0, 0.0, 1.0);
+                    } else if (s_data.light_fields.x != 0.0) {
+                        let temp_factor = clamp(abs(s_data.light_fields.x) / 120.0, 0.0, 1.0);
                         let scroll_col = vec3<f32>(0.0);
                         let base_noise = evaluateFbm(lp * 4.0 - scroll_col);
                         let detail_noise = evaluateFbm(lp * 12.0 - scroll_col * 1.5);
                         let n_col = clamp(base_noise * 0.7 + detail_noise * 0.3, 0.0, 1.0);
                         
                         var fire_core = s_data.color_csg.rgb;
-                        if (s_data.sph_fields.x < 0.0) {
+                        if (s_data.light_fields.x < 0.0) {
                             // Cold cyan-blue implosion core
                             let implosion_glow = min(fire_core * 1.8 + vec3<f32>(0.0, 0.3, 0.5), vec3<f32>(1.0, 1.0, 1.0));
                             let energy = mix(fire_core, implosion_glow, n_col);

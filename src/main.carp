@@ -597,7 +597,7 @@
                                               cv @(Color.v color)
                                               cx @(Vector3.x &cv)
                                               cz @(Vector3.z &cv)]
-                                          (match (Context.slider gui-ctx-ref "chg_slider" curr-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type target-fi) 7) "Disk Thickness" "Charge")))
+                                          (match (Context.slider gui-ctx-ref "chg_slider" curr-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type target-fi) 7) "Disk Thickness" "Stress")))
                                             (Maybe.Just nv)
                                               (let [d-nv (Double.from-float nv)]
                                                 (do
@@ -605,7 +605,7 @@
                                                   (Color.set-v! color (Vector3.init cx d-nv cz))
                                                   (Engine.apply-control-value! eng-ref @&target-handle 3 d-nv)))
                                             (Maybe.Nothing) ()))
-                                        (Context.tooltip gui-ctx-ref "Electro-static charge field value mapped to GREEN shader color channel.")
+                                        (Context.tooltip gui-ctx-ref "Physical stress/structural load value.")
                                         
                                         (let [ctrl (Array.unsafe-nth controls 4)
                                               curr-val (Double.to-float @(UiControl.value ctrl))

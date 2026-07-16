@@ -38,7 +38,7 @@
           temp-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 0) FieldKernelStorage.sample FieldKernelStorage.update)
           light-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
           hum-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 2) FieldKernelStorage.sample FieldKernelStorage.update)
-          ch-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
+          stress-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
           grav-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)
           diag (Diagnostics.new @"/home/sqrew/Desktop/carp-wgpu-scaffold/diagnostics.log")]
       (do
@@ -75,7 +75,7 @@
             temp-field
             light-field
             hum-field
-            ch-field
+            stress-field
             grav-field
             r-db
             @(Settings.volumetric-sdf &cfg)
@@ -83,6 +83,8 @@
             diag
             (Maybe.Nothing)
             (Map.create)
+            (the String @"")
+            (the String @"")
             (the String @"")
             (the String @"")
             (the String @"")
@@ -159,7 +161,7 @@
           temp-field (Engine.temperature-field e)
           light-field (Engine.light-field e)
           hum-field (Engine.humidity-field e)
-          ch-field (Engine.charge-field e)
+          stress-field (Engine.stress-field e)
           grav-field (Engine.gravity-field e)]
       (do
         (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
@@ -177,9 +179,9 @@
         (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
         (FieldKernelStorage.set-entity-db-ptr! (Field.storage hum-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage hum-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage ch-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage ch-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage ch-field) grid-ptr)
+        (FieldKernelStorage.set-db-ptr! (Field.storage stress-field) db-ptr)
+        (FieldKernelStorage.set-entity-db-ptr! (Field.storage stress-field) entity-db-ptr)
+        (FieldKernelStorage.set-grid-ptr! (Field.storage stress-field) grid-ptr)
         (FieldKernelStorage.set-db-ptr! (Field.storage grav-field) db-ptr)
         (FieldKernelStorage.set-entity-db-ptr! (Field.storage grav-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage grav-field) grid-ptr))))
@@ -443,7 +445,7 @@
                             (FieldDatabase.set-field-vector! edb FieldDatabase.light-slot new-idx &l-vec))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.humidity-slot new-idx @(FieldInstance.humidity fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.pressure-slot new-idx @(FieldInstance.pressure fi))
-                          (FieldDatabase.set-scalar-field! edb FieldDatabase.charge-slot new-idx @(FieldInstance.charge fi))
+                          (FieldDatabase.set-scalar-field! edb FieldDatabase.stress-slot new-idx @(FieldInstance.stress fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.gravity-slot new-idx @(FieldInstance.gravity fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.density-slot new-idx @(FieldInstance.density fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.lifetime-slot new-idx @(FieldInstance.lifetime fi))
@@ -483,7 +485,7 @@
                     (FieldDatabase.set-field-vector! edb FieldDatabase.light-slot idx &l-vec))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.humidity-slot idx @(FieldInstance.humidity fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.pressure-slot idx @(FieldInstance.pressure fi))
-                  (FieldDatabase.set-scalar-field! edb FieldDatabase.charge-slot idx @(FieldInstance.charge fi))
+                  (FieldDatabase.set-scalar-field! edb FieldDatabase.stress-slot idx @(FieldInstance.stress fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.gravity-slot idx @(FieldInstance.gravity fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.density-slot idx @(FieldInstance.density fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.lifetime-slot idx @(FieldInstance.lifetime fi))
@@ -643,7 +645,7 @@
                     instance-type (if (= final-csg-idx -10) 1.0
                                     (if (= final-csg-idx -5) 2.0
                                       (if (<= final-csg-idx -99) 3.0 0.0)))
-                    base (+ (/ WGPURenderer.header-size 4) (* id 20))]
+                    base (+ (/ WGPURenderer.header-size 4) (* id 24))]
                 (do
                   (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
                   (Array.aset! u-data (+ base 1) (Double.to-float @(Vector3.y pos)))
@@ -661,10 +663,19 @@
                   (Array.aset! u-data (+ base 13) (Double.to-float @(Vector4.y &light-val)))
                   (Array.aset! u-data (+ base 14) (Double.to-float @(Vector4.z &light-val)))
                   (Array.aset! u-data (+ base 15) (Double.to-float @(Vector4.w &light-val)))
-                  (Array.aset! u-data (+ base 16) (Double.to-float (Double.from-int shape-type)))
-                  (Array.aset! u-data (+ base 17) (Double.to-float instance-type))
-                  (Array.aset! u-data (+ base 18) (Double.to-float (Double.from-int final-csg-idx)))
-                  (Array.aset! u-data (+ base 19) 0.0f)))))))))
+                  (let [temp (FieldDatabase.get-entity-scalar edb FieldDatabase.temp-slot id)
+                        density (FieldDatabase.get-entity-scalar edb FieldDatabase.density-slot id)
+                        stress (FieldDatabase.get-entity-scalar edb FieldDatabase.stress-slot id)
+                        mat-id (Double.from-int shape-type)]
+                    (do
+                      (Array.aset! u-data (+ base 16) (Double.to-float temp))
+                      (Array.aset! u-data (+ base 17) (Double.to-float density))
+                      (Array.aset! u-data (+ base 18) (Double.to-float stress))
+                      (Array.aset! u-data (+ base 19) (Double.to-float mat-id))))
+                  (Array.aset! u-data (+ base 20) (Double.to-float (Double.from-int shape-type)))
+                  (Array.aset! u-data (+ base 21) (Double.to-float instance-type))
+                  (Array.aset! u-data (+ base 22) (Double.to-float (Double.from-int final-csg-idx)))
+                  (Array.aset! u-data (+ base 23) 0.0f)))))))))
 
   (defn update-voxel-chunks! [e ctx ren world-data cam-pos]
     (when @(Engine.chunk-loading-enabled e)
@@ -995,7 +1006,9 @@
                       had-fields @(Array.unsafe-nth active-slots slot)]
                   (when (or overlaps had-fields)
                     (do
-                      (VoxelBaker.bake-fields-gpu! ctx ren chunk num-instances (Engine.last-known-field-rule e) (Engine.jit-cache e))
+                      (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e))
+                      (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e))
+                      (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e))
                       (Array.aset! active-slots slot overlaps))))))))
         (set! field-bake-frame-counter (Int.mod (inc field-bake-frame-counter) 16)))))
 
@@ -1144,7 +1157,9 @@
                 (Engine.evaluate-jit-hot-reload! e ctx ren)
                 (Engine.evaluate-render-hot-reload! e ctx ren)
                 (Engine.evaluate-carve-hot-reload! e ctx ren)
-                (Engine.evaluate-field-rule-hot-reload! e ctx ren)))
+                (Engine.evaluate-light-rule-hot-reload! e ctx ren)
+                (Engine.evaluate-interaction-rule-hot-reload! e ctx ren)
+                (Engine.evaluate-water-rule-hot-reload! e ctx ren)))
             (Diagnostics.with-zone diag "Sync: JIT Physics Loop"
               (Engine.run-jit-physics-loop! e ctx ren))
             (Diagnostics.with-zone diag "Sync: Submit Render Cmds"
@@ -1190,7 +1205,9 @@
                                             @(WGPURenderer.csg-buffer ren) 
                                             @(WGPURenderer.u-buffer ren) 
                                             @(WGPURenderer.voxel-texture ren) 
-                                            @(WGPURenderer.fields-texture ren) 
+                                            @(WGPURenderer.light-texture ren) 
+                                            @(WGPURenderer.interaction-texture ren) 
+                                            @(WGPURenderer.water-texture ren) 
                                             @(WGPURenderer.voxel-sampler ren) 
                                             @(WGPURenderer.chunk-lookup-buffer ren) 
                                             @(WGPURenderer.noise-texture ren) 

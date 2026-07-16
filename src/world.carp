@@ -74,7 +74,7 @@
                 l-idx (FieldDatabase.register-kernel! db FieldDatabase.light-slot @"light" 0.0 0.0 1.0 FieldDatabase.diffuse-light!)
                 h-idx (FieldDatabase.register-kernel! db FieldDatabase.humidity-slot @"humidity" 0.2 0.0 1.0 FieldDatabase.diffuse-humidity!)
                 p-idx (FieldDatabase.register-kernel! db FieldDatabase.pressure-slot @"pressure" 0.0 0.0 100.0 FieldDatabase.diffuse-pressure!)
-                c-idx (FieldDatabase.register-kernel! db FieldDatabase.charge-slot @"charge" 0.0 -10.0 10.0 FieldDatabase.diffuse-charge!)
+                c-idx (FieldDatabase.register-kernel! db FieldDatabase.stress-slot @"stress" 0.0 0.0 1000.0 FieldDatabase.noop-update)
                 g-idx (FieldDatabase.register-kernel! db FieldDatabase.gravity-slot @"gravity" 1.0 -50.0 50.0 FieldDatabase.noop-update)
                 d-idx (FieldDatabase.register-kernel! db FieldDatabase.density-slot @"density" 1.0 0.0 100.0 FieldDatabase.diffuse-density!)
                 lt-idx (FieldDatabase.register-kernel! db FieldDatabase.lifetime-slot @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!)]

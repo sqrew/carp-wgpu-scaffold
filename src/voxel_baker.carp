@@ -475,9 +475,9 @@
                                          @(Array.unsafe-nth voxel-data (+ idx-full 1)))]
                             (Array.aset! voxel-data (+ idx-full 1) m-id))))))))))))))
 
-  (defn pack-and-copy-fields-chunk! [ctx ren slot]
-    (let [f-scratch-b @(WGPURenderer.fields-scratch-buffer ren)
-          f-half-b @(WGPURenderer.fields-half-buffer ren)
+  (defn pack-and-copy-light-chunk! [ctx ren slot]
+    (let [l-scratch-b @(WGPURenderer.light-scratch-buffer ren)
+          l-half-b @(WGPURenderer.light-half-buffer ren)
           pipe @(WGPURenderer.pack-pipeline ren)
           slot-x (Int.mod slot 12)
           slot-y (Int.mod (/ slot 12) 12)
@@ -485,16 +485,16 @@
           ox (* slot-x 32)
           oy (* slot-y 32)
           oz (* slot-z 32)
-          pack-bufs [f-scratch-b f-half-b]]
+          pack-bufs [l-scratch-b l-half-b]]
       (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
         (WGPU.dispatch ctx pipe bg 512)
         (WGPURender.copy-buffer-to-3d-texture-offset 
           ctx 
-          f-half-b 
-          @(WGPURenderer.fields-texture ren) 
+          l-half-b 
+          @(WGPURenderer.light-texture ren) 
           ox oy oz 32 32 32))))
 
-  (defn bake-fields-gpu! [ctx ren chunk num-instances field-script field-cache]
+  (defn bake-light-gpu! [ctx ren chunk num-instances field-script field-cache]
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
@@ -507,14 +507,14 @@
                        (Double.to-float cell-size)
                        (Double.to-float num-instances)
                        0.0f 0.0f 0.0f]
-          f-scratch-b @(WGPURenderer.fields-scratch-buffer ren)
-          f-params-b @(WGPURenderer.fields-params-buffer ren)
-          pipe @(WGPURenderer.fields-splat-pipeline ren)
+          l-scratch-b @(WGPURenderer.light-scratch-buffer ren)
+          l-params-b @(WGPURenderer.light-params-buffer ren)
+          pipe @(WGPURenderer.light-splat-pipeline ren)
           u-b @(WGPURenderer.u-buffer ren)
           raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
-          bufs [f-scratch-b raw-u-b f-params-b]]
+          bufs [l-scratch-b raw-u-b l-params-b]]
       (do
-        (WGPU.write-floats ctx f-params-b &params-data)
+        (WGPU.write-floats ctx l-params-b &params-data)
         (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
           (WGPU.dispatch ctx pipe bg 512)
           (when (not (String.empty? field-script))
@@ -532,9 +532,135 @@
                         origin-data [qx-f qy-f qz-f slot-f]]
                     (do
                       (WGPU.write-floats ctx jit-info-b &origin-data)
-                      (with-bind-group (WGPURender.create-jit-bind-group ctx field-pipe f-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) field-bg
+                      (with-bind-group (WGPURender.create-jit-bind-group ctx field-pipe l-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) field-bg
                         (WGPU.dispatch ctx field-pipe field-bg 512)
-                        (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b f-scratch-b (* res (* res (* res 16)))))))
+                        (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b l-scratch-b (* res (* res (* res 16)))))))
                 _ ())))
-          (pack-and-copy-fields-chunk! ctx ren @(Chunk.atlas-slot chunk))))))
+          (pack-and-copy-light-chunk! ctx ren @(Chunk.atlas-slot chunk))))))
+
+  (defn pack-and-copy-interaction-chunk! [ctx ren slot]
+    (let [i-scratch-b @(WGPURenderer.interaction-scratch-buffer ren)
+          i-half-b @(WGPURenderer.interaction-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          slot-x (Int.mod slot 12)
+          slot-y (Int.mod (/ slot 12) 12)
+          slot-z (/ slot 144)
+          ox (* slot-x 32)
+          oy (* slot-y 32)
+          oz (* slot-z 32)
+          pack-bufs [i-scratch-b i-half-b]]
+      (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+        (WGPU.dispatch ctx pipe bg 512)
+        (WGPURender.copy-buffer-to-3d-texture-offset 
+          ctx 
+          i-half-b 
+          @(WGPURenderer.interaction-texture ren) 
+          ox oy oz 32 32 32))))
+
+  (defn bake-interaction-gpu! [ctx ren chunk num-instances interaction-script interaction-cache]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          res 32
+          params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
+                       (Double.to-float cell-size)
+                       (Double.to-float num-instances)
+                       0.0f 0.0f 0.0f]
+          i-scratch-b @(WGPURenderer.interaction-scratch-buffer ren)
+          i-params-b @(WGPURenderer.interaction-params-buffer ren)
+          pipe @(WGPURenderer.interaction-splat-pipeline ren)
+          u-b @(WGPURenderer.u-buffer ren)
+          raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
+          bufs [i-scratch-b raw-u-b i-params-b]]
+      (do
+        (WGPU.write-floats ctx i-params-b &params-data)
+        (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
+          (WGPU.dispatch ctx pipe bg 512)
+          (when (not (String.empty? interaction-script))
+            (let [pipe-maybe (Map.get-maybe interaction-cache interaction-script)]
+              (match pipe-maybe
+                (Maybe.Just interaction-pipe)
+                  (let [jit-info-b @(WGPURenderer.jit-info-buffer ren)
+                        chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
+                        voxel-tex @(WGPURenderer.voxel-texture ren)
+                        voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+                        qx-f (Double.to-float (* (Double.from-int qx) 32.0))
+                        qy-f (Double.to-float (* (Double.from-int qy) 32.0))
+                        qz-f (Double.to-float (* (Double.from-int qz) 32.0))
+                        slot-f (Float.from-int @(Chunk.atlas-slot chunk))
+                        origin-data [qx-f qy-f qz-f slot-f]]
+                    (do
+                      (WGPU.write-floats ctx jit-info-b &origin-data)
+                      (with-bind-group (WGPURender.create-jit-bind-group ctx interaction-pipe i-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) interaction-bg
+                        (WGPU.dispatch ctx interaction-pipe interaction-bg 512)
+                        (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b i-scratch-b (* res (* res (* res 16)))))))
+                _ ())))
+          (pack-and-copy-interaction-chunk! ctx ren @(Chunk.atlas-slot chunk))))))
+
+  (defn pack-and-copy-water-chunk! [ctx ren slot]
+    (let [w-scratch-b @(WGPURenderer.water-scratch-buffer ren)
+          w-half-b @(WGPURenderer.water-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          slot-x (Int.mod slot 12)
+          slot-y (Int.mod (/ slot 12) 12)
+          slot-z (/ slot 144)
+          ox (* slot-x 32)
+          oy (* slot-y 32)
+          oz (* slot-z 32)
+          pack-bufs [w-scratch-b w-half-b]]
+      (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+        (WGPU.dispatch ctx pipe bg 512)
+        (WGPURender.copy-buffer-to-3d-texture-offset 
+          ctx 
+          w-half-b 
+          @(WGPURenderer.water-texture ren) 
+          ox oy oz 32 32 32))))
+
+  (defn bake-water-gpu! [ctx ren chunk num-instances water-script water-cache]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          ox (* (Double.from-int qx) 32.0)
+          oy (* (Double.from-int qy) 32.0)
+          oz (* (Double.from-int qz) 32.0)
+          cell-size 1.0
+          res 32
+          params-data [(Double.to-float ox) (Double.to-float oy) (Double.to-float oz)
+                       (Double.to-float cell-size)
+                       (Double.to-float num-instances)
+                       0.0f 0.0f 0.0f]
+          w-scratch-b @(WGPURenderer.water-scratch-buffer ren)
+          w-params-b @(WGPURenderer.water-params-buffer ren)
+          pipe @(WGPURenderer.water-splat-pipeline ren)
+          u-b @(WGPURenderer.u-buffer ren)
+          raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
+          bufs [w-scratch-b raw-u-b w-params-b]]
+      (do
+        (WGPU.write-floats ctx w-params-b &params-data)
+        (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
+          (WGPU.dispatch ctx pipe bg 512)
+          (when (not (String.empty? water-script))
+            (let [pipe-maybe (Map.get-maybe water-cache water-script)]
+              (match pipe-maybe
+                (Maybe.Just water-pipe)
+                  (let [jit-info-b @(WGPURenderer.jit-info-buffer ren)
+                        chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
+                        voxel-tex @(WGPURenderer.voxel-texture ren)
+                        voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+                        qx-f (Double.to-float (* (Double.from-int qx) 32.0))
+                        qy-f (Double.to-float (* (Double.from-int qy) 32.0))
+                        qz-f (Double.to-float (* (Double.from-int qz) 32.0))
+                        slot-f (Float.from-int @(Chunk.atlas-slot chunk))
+                        origin-data [qx-f qy-f qz-f slot-f]]
+                    (do
+                      (WGPU.write-floats ctx jit-info-b &origin-data)
+                      (with-bind-group (WGPURender.create-jit-bind-group ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) water-bg
+                        (WGPU.dispatch ctx water-pipe water-bg 512)
+                        (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16)))))))
+                _ ())))
+          (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk))))))
 )

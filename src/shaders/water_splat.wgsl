@@ -2,7 +2,8 @@ struct PointInstance {
     pos_scale: vec4<f32>,
     rot: vec4<f32>,
     color_csg: vec4<f32>,
-    sph_fields: vec4<f32>,
+    light_fields: vec4<f32>,
+    interaction_fields: vec4<f32>,
     shape_info: vec4<f32>,
 }
 
@@ -35,7 +36,7 @@ struct Uniforms {
     instances: array<PointInstance, 512>,
 }
 
-@group(0) @binding(0) var<storage, read_write> fields_gpu_buffer: array<vec4<f32>>;
+@group(0) @binding(0) var<storage, read_write> water_gpu_buffer: array<vec4<f32>>;
 @group(0) @binding(1) var<uniform>             u: Uniforms;
 @group(0) @binding(2) var<storage, read>       params: array<f32>;
 
@@ -60,26 +61,29 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         oz + (sz + 0.5) * cell_size
     );
 
-    var accumulated_fields = vec4<f32>(0.0);
-    var total_weight = 0.0;
+    var water_vol = 0.0;
+    var water_vel = vec3<f32>(0.0);
 
     for (var i = 0u; i < num_instances; i = i + 1u) {
         let inst = u.instances[i];
         let radius = inst.pos_scale.w;
         if (radius <= 0.0) { continue; }
 
-        let dist = length(p - inst.pos_scale.xyz);
-        if (dist < radius) {
-            let weight = 1.0 - (dist / radius);
-            
-            accumulated_fields += inst.sph_fields * weight;
-            total_weight += weight;
+        let inst_type = inst.shape_info.y;
+        if (inst_type == 2.0) { // Water Source/Emitter
+            let dist = length(p - inst.pos_scale.xyz);
+            if (dist < radius) {
+                let weight = 1.0 - (dist / radius);
+                water_vol = max(water_vol, weight);
+                // Assign a small downward velocity by default
+                water_vel = vec3<f32>(0.0, -1.0, 0.0);
+            }
         }
     }
 
-    if (total_weight > 0.0) {
-        fields_gpu_buffer[idx] = accumulated_fields / total_weight;
+    if (water_vol > 0.0) {
+        water_gpu_buffer[idx] = vec4<f32>(water_vol, water_vel);
     } else {
-        fields_gpu_buffer[idx] = vec4<f32>(0.0);
+        water_gpu_buffer[idx] = vec4<f32>(0.0);
     }
 }

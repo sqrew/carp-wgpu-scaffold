@@ -21,8 +21,8 @@
 //     let inst = u.instances[i];
 //     if (inst.pos_scale.w <= 0.0) { break; } // End of active list
     
-//     // sph_fields.w is used to store pressure/force values
-//     let pressure = inst.sph_fields.w;
+//     // light_fields.w is used to store pressure/force values
+//     let pressure = inst.light_fields.w;
 //     if (pressure > 0.0) {
 //         let to_voxel = voxel_pos - inst.pos_scale.xyz;
 //         let dist = length(to_voxel);

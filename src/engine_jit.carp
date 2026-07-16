@@ -98,7 +98,8 @@
                 pos_scale: vec4<f32>,
                 rot: vec4<f32>,
                 color_csg: vec4<f32>,
-                sph_fields: vec4<f32>,
+                light_fields: vec4<f32>,
+                interaction_fields: vec4<f32>,
                 shape_info: vec4<f32>,
             }
 
@@ -229,8 +230,8 @@
             @""
             (str* header-block injection-accum footer-block)))))
 
-  (sig assemble-field-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
-  (defn assemble-field-rule-shader [e world]
+  (sig assemble-generic-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld) (Ref String) (Ref String) (Ref String)] String))
+  (defn assemble-generic-rule-shader [e world rule-file-path var-name injection-label]
     (let [world-data (Engine.world-data e)
           res @(World.voxel-resolution world-data)
           res-str (Int.str res)
@@ -249,7 +250,8 @@
                 pos_scale: vec4<f32>,
                 rot: vec4<f32>,
                 color_csg: vec4<f32>,
-                sph_fields: vec4<f32>,
+                light_fields: vec4<f32>,
+                interaction_fields: vec4<f32>,
                 shape_info: vec4<f32>,
             }
 
@@ -260,11 +262,11 @@
             }
 
             struct Uniforms {
-                time: f32, 
-                width: f32, 
-                height: f32, 
+                time: f32,
+                width: f32,
+                height: f32,
                 cell_size: f32,
-                cam_pos: vec4<f32>, 
+                cam_pos: vec4<f32>,
                 cam_dir: vec4<f32>,
                 cam_right: vec4<f32>,
                 cam_up: vec4<f32>,
@@ -346,45 +348,95 @@
                 let local_y = i32((idx / " @&res-str "u) % " @&res-str "u);
                 let local_z = i32(idx / " @&res-sq-str "u);
                 
-                var fields = input_fields[idx];
+                var " @var-name " = input_fields[idx];
                 let voxel_pos = chunk_info.origin_slot.xyz + vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * " @&cell-size-str ";
                 let dt = 0.00833;
                 let dummy_use = u.time * 0.0;
-                fields.x += dummy_use;
+                " @var-name ".x += dummy_use;
                 // --- DYNAMIC INJECTIONS LOOP ---")
-            footer-block "
-                output_fields[idx] = fields;
-            }"
-            injection-accum @""]
+          footer-block (str* "\n                output_fields[idx] = " @var-name ";\n            }")
+          injection-accum @""]
       (do
-        (let [file-res (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/field_rule.wgsl")]
+        (let [file-res (IO.read-file rule-file-path)]
           (match file-res
             (Result.Success content)
               (when (Engine.has-active-code? &content)
-                (set! injection-accum (str* injection-accum "\n{\n// === Injected from field_rule.wgsl ===\n" content "\n}\n")))
+                (set! injection-accum (str* injection-accum "\n{\n// === Injected from " @injection-label " ===\n" content "\n}\n")))
             (Result.Error _) ()))
         (if (String.empty? &injection-accum)
             @""
             (str* header-block injection-accum footer-block)))))
 
-  (sig evaluate-field-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
-  (defn evaluate-field-rule-hot-reload! [e ctx ren]
+  (sig assemble-light-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-light-rule-shader [e world]
+    (assemble-generic-rule-shader e world &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/jit_rules/light_rule.wgsl" &@"light" &@"light_rule.wgsl"))
+
+  (sig evaluate-light-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-light-rule-hot-reload! [e ctx ren]
     (let [world (Engine.world e)
-          new-source (Engine.assemble-field-rule-shader e world)]
+          new-source (Engine.assemble-light-rule-shader e world)]
       (if (String.empty? &new-source)
-          (when (not (= (Engine.last-known-field-rule e) &new-source))
+          (when (not (= (Engine.last-known-light-rule e) &new-source))
             (do
-              (Engine.set-last-known-field-rule! e @&new-source)
-              (IO.println "Environmental field JIT system cleared.")
+              (Engine.set-last-known-light-rule! e @&new-source)
+              (IO.println "Light rule JIT system cleared.")
               (World.dirty-all-chunks! (Engine.world-data e))))
-          (when (not (= (Engine.last-known-field-rule e) &new-source))
+          (when (not (= (Engine.last-known-light-rule e) &new-source))
             (do
-              (Engine.set-last-known-field-rule! e @&new-source)
+              (Engine.set-last-known-light-rule! e @&new-source)
               (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
                 (if (WGPU.pipeline-null?- pipe)
                     ()
                     (do
-                       (IO.println "Environmental field JIT system reloaded and active.")
+                       (IO.println "Light rule JIT system reloaded and active.")
+                       (World.dirty-all-chunks! (Engine.world-data e))))))))))
+
+  (sig assemble-interaction-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-interaction-rule-shader [e world]
+    (assemble-generic-rule-shader e world &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/jit_rules/interaction_rule.wgsl" &@"fields" &@"interaction_rule.wgsl"))
+
+  (sig evaluate-interaction-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-interaction-rule-hot-reload! [e ctx ren]
+    (let [world (Engine.world e)
+          new-source (Engine.assemble-interaction-rule-shader e world)]
+      (if (String.empty? &new-source)
+          (when (not (= (Engine.last-known-interaction-rule e) &new-source))
+            (do
+              (Engine.set-last-known-interaction-rule! e @&new-source)
+              (IO.println "Interaction rule JIT system cleared.")
+              (World.dirty-all-chunks! (Engine.world-data e))))
+          (when (not (= (Engine.last-known-interaction-rule e) &new-source))
+            (do
+              (Engine.set-last-known-interaction-rule! e @&new-source)
+              (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
+                (if (WGPU.pipeline-null?- pipe)
+                    ()
+                    (do
+                       (IO.println "Interaction rule JIT system reloaded and active.")
+                       (World.dirty-all-chunks! (Engine.world-data e))))))))))
+
+  (sig assemble-water-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-water-rule-shader [e world]
+    (assemble-generic-rule-shader e world &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/jit_rules/water_rule.wgsl" &@"water" &@"water_rule.wgsl"))
+
+  (sig evaluate-water-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-water-rule-hot-reload! [e ctx ren]
+    (let [world (Engine.world e)
+          new-source (Engine.assemble-water-rule-shader e world)]
+      (if (String.empty? &new-source)
+          (when (not (= (Engine.last-known-water-rule e) &new-source))
+            (do
+              (Engine.set-last-known-water-rule! e @&new-source)
+              (IO.println "Water rule JIT system cleared.")
+              (World.dirty-all-chunks! (Engine.world-data e))))
+          (when (not (= (Engine.last-known-water-rule e) &new-source))
+            (do
+              (Engine.set-last-known-water-rule! e @&new-source)
+              (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
+                (if (WGPU.pipeline-null?- pipe)
+                    ()
+                    (do
+                       (IO.println "Water rule JIT system reloaded and active.")
                        (World.dirty-all-chunks! (Engine.world-data e))))))))))
 
   (sig evaluate-jit-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
@@ -441,7 +493,9 @@
                                              @(WGPURenderer.csg-buffer ren)
                                              @(WGPURenderer.u-buffer ren)
                                              @(WGPURenderer.voxel-texture ren)
-                                             @(WGPURenderer.fields-texture ren)
+                                             @(WGPURenderer.light-texture ren)
+                                             @(WGPURenderer.interaction-texture ren)
+                                             @(WGPURenderer.water-texture ren)
                                              @(WGPURenderer.voxel-sampler ren)
                                              @(WGPURenderer.chunk-lookup-buffer ren)
                                              @(WGPURenderer.noise-texture ren)

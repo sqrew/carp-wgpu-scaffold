@@ -65787,4 +65787,53 @@ static WGPUGeomPipelineWrapper* wgpu_create_gui_pipeline(
     return wrap;
 }
 
+static WGPUBindGroup wgpu_create_voxel_render_bind_group_chunked_extended(
+    WGPUContext* ctx,
+    WGPURenderPipelineWrapper* pipe,
+    WGPUBuffer storage_buf1,
+    WGPUBuffer storage_buf2,
+    WGPUUniformBufferWrapper* ub,
+    WGPURenderTexture* voxel_tex,
+    WGPURenderTexture* fields_tex,
+    WGPURenderTexture* interaction_tex,
+    WGPURenderTexture* water_tex,
+    WGPUSampler voxel_sampler,
+    WGPUBuffer chunk_lookup_buf,
+    WGPURenderTexture* noise_tex,
+    WGPUSampler noise_sampler)
+{
+    if (!ctx || !pipe || !ub || !voxel_tex || !fields_tex || !interaction_tex || !water_tex || !voxel_sampler || !chunk_lookup_buf || !noise_tex || !noise_sampler) {
+        return NULL;
+    }
+
+    WGPUBindGroupLayout layout = wgpuRenderPipelineGetBindGroupLayout(pipe->pipeline, 0);
+    if (!layout) {
+        return NULL;
+    }
+
+    WGPUBindGroupEntry entries[11] = {
+        { .binding = 0, .buffer = storage_buf1, .offset = 0, .size = WGPU_WHOLE_SIZE },
+        { .binding = 1, .buffer = ub->buffer, .offset = 0, .size = ub->size },
+        { .binding = 2, .buffer = storage_buf2, .offset = 0, .size = WGPU_WHOLE_SIZE },
+        { .binding = 3, .textureView = voxel_tex->view },
+        { .binding = 4, .sampler = voxel_sampler },
+        { .binding = 5, .buffer = chunk_lookup_buf, .offset = 0, .size = WGPU_WHOLE_SIZE },
+        { .binding = 6, .textureView = noise_tex->view },
+        { .binding = 7, .sampler = noise_sampler },
+        { .binding = 8, .textureView = fields_tex->view },
+        { .binding = 9, .textureView = interaction_tex->view },
+        { .binding = 10, .textureView = water_tex->view },
+    };
+
+    WGPUBindGroupDescriptor desc = {
+        .layout     = layout,
+        .entryCount = 11,
+        .entries    = entries,
+    };
+
+    WGPUBindGroup bg = wgpuDeviceCreateBindGroup(ctx->device, &desc);
+    wgpuBindGroupLayoutRelease(layout);
+    return bg;
+}
+
 #endif /* FONT_DATA_H */

@@ -38,7 +38,7 @@
     temperature-field (Field FieldKernelStorage Double)
     light-field (Field FieldKernelStorage Double)
     humidity-field (Field FieldKernelStorage Double)
-    charge-field (Field FieldKernelStorage Double)
+    stress-field (Field FieldKernelStorage Double)
     gravity-field (Field FieldKernelStorage Double)
     render-db RenderDatabase
     volumetric-sdf Bool
@@ -49,7 +49,9 @@
     last-known-script String
     last-known-raymarch String
     last-known-carve String
-    last-known-field-rule String
+    last-known-light-rule String
+    last-known-interaction-rule String
+    last-known-water-rule String
     settings Settings
     selected-material Double
   ])

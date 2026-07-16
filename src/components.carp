@@ -79,7 +79,7 @@
   light Double
   humidity Double
   pressure Double
-  charge Double
+  stress Double
   gravity Double
   influence Double
   velocity (Vector3 Double)
@@ -133,7 +133,7 @@
       let to_node = instance.pos_scale.xyz - voxel_pos;
       let dist = length(to_node);
       if (dist < instance.pos_scale.w) {
-          let force = (1.0 - (dist / instance.pos_scale.w)) * instance.sph_fields.x;
+          let force = (1.0 - (dist / instance.pos_scale.w)) * instance.light_fields.x;
           cell_velocity += normalize(to_node) * force * dt;
       }
     ")
