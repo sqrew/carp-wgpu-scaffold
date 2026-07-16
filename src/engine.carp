@@ -1079,7 +1079,7 @@
         ;; 6. Flatten Spatial Grid (if dirty)
         (Diagnostics.with-zone diag "Sync: Flatten Spatial Grid"
           (when grid-dirty
-            (GPUSpatial.flatten-in-place! (Engine.entity-db e) world grid 64 flat-grid geom-map))))))
+            (GPUSpatial.flatten-in-place! (Engine.entity-db e) grid 64 flat-grid geom-map))))))
 
   (defn tick! [e ctx ren width height]
     (let [dt (Clock.unscaled-dt (Engine.clock e))

@@ -41,7 +41,7 @@
     (World.sample-voxel-grid-trilinear world-data p))
 
   (defn estimate-sdf-normal [world-data p]
-    (let [eps 0.001
+    (let [eps 0.1
           p-x+ (Vector3.add p &(Vector3.init eps 0.0 0.0))
           p-x- (Vector3.sub p &(Vector3.init eps 0.0 0.0))
           p-y+ (Vector3.add p &(Vector3.init 0.0 eps 0.0))
@@ -60,7 +60,7 @@
     (let [v (Vector3.init cx cy cz)
           d (sample-static-world world-data &v)]
       (if (< d 0.0)
-          (let [depth (min 0.15 (neg d))
+          (let [depth (min 0.4 (neg d))
                 normal (estimate-sdf-normal world-data &v)]
             (Array.push-back! contacts (Contact.init depth v normal)))
           (Vector3.delete v))))
@@ -74,7 +74,7 @@
         (Vector3.delete local-offset)
         (Vector3.delete world-offset)
         (if (< d rad-val)
-            (let [depth (min 0.15 (- rad-val d))
+            (let [depth (min 0.4 (- rad-val d))
                   normal (estimate-sdf-normal world-data &v)]
               (if (= rad-val 0.0)
                   (Array.push-back! contacts (Contact.init depth v normal))
@@ -197,7 +197,7 @@
                         (let [rad @(Sphere.radius s)
                               d (sample-static-world world-data pos)]
                           (when (< d rad)
-                            (let [depth (min 0.15 (- rad d))
+                            (let [depth (min 0.4 (- rad d))
                                   normal (estimate-sdf-normal world-data pos)
                                   contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
                               (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))
@@ -294,7 +294,7 @@
                                   rad (if is-bouncy 0.2 0.4)
                                   d (sample-static-world world-data pos)]
                               (when (< d rad)
-                                 (let [depth (min 0.15 (- rad d))
+                                 (let [depth (min 0.4 (- rad d))
                                        normal (estimate-sdf-normal world-data pos)
                                        contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
                                    (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))
