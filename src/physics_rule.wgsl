@@ -80,8 +80,22 @@ if (cell.x < 0.0) {
 
     let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
 
-    // Critical stress threshold (RED stuff is total_stress >= 14.0)
-    if (total_stress >= 14.0) {
+    var limit = 14.0;
+    let mat = round(cell.y);
+    if (mat == 3.0) { // Stone grey
+        limit = 24.0;
+    } else if (mat == 5.0) { // Sand Beige
+        limit = 4.0; // Very weak!
+    } else if (mat == 6.0) { // Snow / Ice
+        limit = 8.0; 
+    } else if (mat == 7.0 || mat == 14.0) { // Obsidian
+        limit = 36.0;
+    } else if (mat == 12.0) { // Gold / Brass
+        limit = 30.0;
+    }
+
+    // Critical stress threshold per material ID
+    if (total_stress >= limit) {
         // Slowly dissolve and crumble! (takes ~0.6 seconds of sustained stress to vanish)
         cell.x = cell.x + dt * 2.5; 
         

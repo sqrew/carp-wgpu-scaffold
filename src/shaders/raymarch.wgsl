@@ -906,6 +906,26 @@ struct PointInstance {
             return d;
         }
 
+        fn getMaterialStressLimit(mat_id: f32) -> f32 {
+            let mat = round(mat_id);
+            if (mat == 3.0) { // Stone grey
+                return 24.0;
+            }
+            if (mat == 5.0) { // Sand Beige
+                return 4.0; // Very weak!
+            }
+            if (mat == 6.0) { // Snow / Ice
+                return 8.0; 
+            }
+            if (mat == 7.0 || mat == 14.0) { // Obsidian
+                return 36.0; // Super strong!
+            }
+            if (mat == 12.0) { // Gold / Brass
+                return 30.0;
+            }
+            return 14.0; // Default grass/soil strength (e.g. material 2)
+        }
+
         fn getFieldColor(p: vec3<f32>, default_color: vec3<f32>) -> vec3<f32> {
             // 1. Compressive stress (gravity load): scan upwards
             var gravity_load = 1.0;
@@ -988,8 +1008,10 @@ struct PointInstance {
                 }
             }
 
+            let self_voxel = sampleVoxelGrid(p, true);
+            let limit = getMaterialStressLimit(self_voxel.y);
             let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
-            let norm_stress = clamp(total_stress / 16.0, 0.0, 1.0);
+            let norm_stress = clamp(total_stress / limit, 0.0, 1.0);
 
             // Heatmap color stops:
             let c0 = vec3<f32>(0.02, 0.10, 0.40); // Deep Blue (0.0)
