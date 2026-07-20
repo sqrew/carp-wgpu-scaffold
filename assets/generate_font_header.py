@@ -87,7 +87,7 @@ def generate_sdf_font_header():
             rgba_bytes.extend([val, val, val, val])
             
     # Write C header file
-    header_path = "/home/sqrew/Desktop/carp-wgpu-scaffold/src/font_data.h"
+    header_path = "/home/sqrew/Desktop/carp-wgpu-scaffold/assets/font_data.h"
     with open(header_path, 'w') as f:
         f.write("/* Generated font atlas header containing JetBrains Mono SDF */\n")
         f.write("#ifndef FONT_DATA_H\n")
