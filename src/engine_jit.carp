@@ -306,7 +306,7 @@
               (str*
                 "            @group(0) @binding(6) var water_texture: texture_3d<f32>;\n\n"
                 "            fn get_water(x: i32, y: i32, z: i32) -> vec4<f32> {\n"
-                "                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz)) + vec3<f32>(f32(x), f32(y), f32(z));\n"
+                "                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(" @&res-str "i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));\n"
                 "                let res_f = f32(" @&res-str "i);\n"
                 "                let q = vec3<i32>(floor(world_v / res_f));\n"
                 "                let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);\n"
