@@ -45,3 +45,12 @@
   (Game [GameEvent])
   (Input [InputEvent])
   (UI [UIEvent]))
+
+(deftype RubbleMergeData [
+  handle (Handle ())
+  pos (Vector3 Double)
+  rot Quaternion
+  vol Volume
+  material-id Int
+])
+

@@ -126,11 +126,11 @@
     (and (ECS.has-component? world ent Lifetime)
          (and (not (ECS.has-component? world ent BouncyTag))
               (if (ECS.has-component? world ent FieldInstance)
-                  (let [w-val false]
+                  (let [csg-idx -1]
                     (do
                       (ECS.with-components world @ent [e (fi FieldInstance)]
-                        (set! w-val (not (= @(FieldInstance.csg-index fi) -5))))
-                      w-val))
+                        (set! csg-idx @(FieldInstance.csg-index fi)))
+                      (and (< csg-idx 0) (not (= csg-idx -5)))))
                   true))))
 
   (defn step-ecs! [e world grid]
@@ -355,10 +355,8 @@
                           (match res
                             (Maybe.Just (CollisionResult.Physical actual-col))
                               (do
-                                 (let [is-dig-bullet-1 (and (ECS.has-component? world &ent1 Lifetime)
-                                                            (not (ECS.has-component? world &ent1 BouncyTag)))
-                                       is-dig-bullet-2 (and (ECS.has-component? world &ent2 Lifetime)
-                                                            (not (ECS.has-component? world &ent2 BouncyTag)))]
+                                  (let [is-dig-bullet-1 (PhysicsSystem.is-digging-bullet? world &ent1)
+                                        is-dig-bullet-2 (PhysicsSystem.is-digging-bullet? world &ent2)]
                                   (if (or is-dig-bullet-1 is-dig-bullet-2)
                                       (let [bullet-ent (if is-dig-bullet-1 &ent1 &ent2)
                                             other-ent (if is-dig-bullet-1 &ent2 &ent1)

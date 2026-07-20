@@ -485,7 +485,29 @@ struct PointInstance {
           } else {
               return vec4<f32>(0.0);
           }
-      }
+       }
+
+        fn getInteractionAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> {{LOG_RES}}u;
+          let qy = gy >> {{LOG_RES}}u;
+          let qz = gz >> {{LOG_RES}}u;
+          
+          let lx = gx & {{VOXEL_RES_SUB_1}}i;
+          let ly = gy & {{VOXEL_RES_SUB_1}}i;
+          let lz = gz & {{VOXEL_RES_SUB_1}}i;
+          
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
+          
+          if (slot >= 0) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
+              return textureLoad(interaction_texture, atlas_coord, 0);
+          } else {
+              return vec4<f32>(0.0);
+          }
+       }
 
         fn sampleFieldsGrid(p: vec3<f32>) -> vec4<f32> {
           let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
@@ -567,6 +589,86 @@ struct PointInstance {
           return tex_val;
       }
 
+        fn sampleInteractionGrid(p: vec3<f32>) -> vec4<f32> {
+          let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(tx));
+          let f = fract(tx);
+          
+          let lx = c0.x & {{VOXEL_RES_SUB_1}}i;
+          let ly = c0.y & {{VOXEL_RES_SUB_1}}i;
+          let lz = c0.z & {{VOXEL_RES_SUB_1}}i;
+          
+          let qx = c0.x >> {{LOG_RES}}u;
+          let qy = c0.y >> {{LOG_RES}}u;
+          let qz = c0.z >> {{LOG_RES}}u;
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
+          
+          if (slot < 0) {
+              return vec4<f32>(0.0);
+          }
+          
+          var v0 = vec4<f32>(0.0);
+          var v1 = vec4<f32>(0.0);
+          var v2 = vec4<f32>(0.0);
+          var v3 = vec4<f32>(0.0);
+          var v4 = vec4<f32>(0.0);
+          var v5 = vec4<f32>(0.0);
+          var v6 = vec4<f32>(0.0);
+          var v7 = vec4<f32>(0.0);
+          
+          var tex_val = vec4<f32>(0.0);
+          let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              let base_uv3d = vec3<i32>(slot_x * {{VOXEL_RES}}i, slot_y * {{VOXEL_RES}}i, slot_z * {{VOXEL_RES}}i);
+              
+              let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
+              let fp = fract(local_pos - vec3<f32>(0.5));
+              
+              let v0 = textureLoad(interaction_texture, base_uv3d + ip, 0);
+              let v1 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 0, 0), 0);
+              let v2 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(0, 1, 0), 0);
+              let v3 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 1, 0), 0);
+              let v4 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(0, 0, 1), 0);
+              let v5 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 0, 1), 0);
+              let v6 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(0, 1, 1), 0);
+              let v7 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 1, 1), 0);
+              
+              let v_01 = mix(v0, v1, fp.x);
+              let v_23 = mix(v2, v3, fp.x);
+              let v_45 = mix(v4, v5, fp.x);
+              let v_67 = mix(v6, v7, fp.x);
+              
+              let v_0123 = mix(v_01, v_23, fp.y);
+              let v_4567 = mix(v_45, v_67, fp.y);
+              
+              tex_val = mix(v_0123, v_4567, fp.z);
+          } else {
+              v0 = getInteractionAt(c0.x,     c0.y,     c0.z);
+              v1 = getInteractionAt(c0.x + 1, c0.y,     c0.z);
+              v2 = getInteractionAt(c0.x,     c0.y + 1, c0.z);
+              v3 = getInteractionAt(c0.x + 1, c0.y + 1, c0.z);
+              v4 = getInteractionAt(c0.x,     c0.y,     c0.z + 1);
+              v5 = getInteractionAt(c0.x + 1, c0.y,     c0.z + 1);
+              v6 = getInteractionAt(c0.x,     c0.y + 1, c0.z + 1);
+              v7 = getInteractionAt(c0.x + 1, c0.y + 1, c0.z + 1);
+              
+              let sf = f;
+              let v_01 = mix(v0, v1, sf.x);
+              let v_23 = mix(v2, v3, sf.x);
+              let v_45 = mix(v4, v5, sf.x);
+              let v_67 = mix(v6, v7, sf.x);
+              
+              let v_y0 = mix(v_01, v_23, sf.y);
+              let v_y1 = mix(v_45, v_67, sf.y);
+              
+              tex_val = mix(v_y0, v_y1, sf.z);
+          }
+          return tex_val;
+       }
+
         fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
             let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
             
@@ -615,6 +717,7 @@ struct PointInstance {
 
        struct InterpolatedData {
             fields: vec4<f32>,
+            interaction: vec4<f32>,
             color: vec3<f32>,
             emissive: vec3<f32>,
         }
@@ -684,6 +787,7 @@ struct PointInstance {
             }
             var out: InterpolatedData;
             out.fields = sampleFieldsGrid(p);
+            out.interaction = sampleInteractionGrid(p);
             if (sum_color_w > 0.0) {
                 out.color = sum_color / sum_color_w;
             } else {
@@ -740,56 +844,56 @@ struct PointInstance {
             return ripple_offset;
         }
 
-        fn getFieldDensity(fields: vec4<f32>, view_mode: f32) -> f32 {
+        fn getFieldDensity(fields: vec4<f32>, interaction: vec4<f32>, view_mode: f32) -> f32 {
             var d = 0.0;
             if (view_mode == 1.0) {
                 // Temperature View
-                d = clamp(abs(fields.x) / 120.0, 0.0, 1.0) * 0.6;
+                d = clamp(abs(interaction.x) / 120.0, 0.0, 1.0) * 0.6;
             } else if (view_mode == 2.0) {
                 // Light Field View
                 d = fields.w * 0.8;
             } else if (view_mode == 3.0) {
-                // Humidity View
-                d = clamp(fields.z / 100.0, 0.0, 1.0) * 0.6;
+                // Stress View
+                d = clamp(interaction.z / 100.0, 0.0, 1.0) * 0.6;
             } else if (view_mode == 4.0) {
-                // Pressure View
-                d = clamp(abs(fields.w) / 30.0, 0.0, 1.0) * 0.6;
+                // Density View
+                d = clamp(interaction.y, 0.0, 1.0) * 0.6;
             } else {
                 // Default Normal View (Water Volume / SPH fluid)
                 // Include temperature influence so hot/cold explosions/implosions generate fog density
-                d = (fields.z / 100.0) * 0.3 + (fields.w / 30.0) * 0.15 + clamp(abs(fields.x) / 120.0, 0.0, 1.0) * 0.55;
+                d = (interaction.z / 100.0) * 0.3 + interaction.y * 0.15 + clamp(abs(interaction.x) / 120.0, 0.0, 1.0) * 0.55;
             }
             return d;
         }
 
-        fn getFieldColor(fields: vec4<f32>, view_mode: f32, default_color: vec3<f32>) -> vec3<f32> {
+        fn getFieldColor(fields: vec4<f32>, interaction: vec4<f32>, view_mode: f32, default_color: vec3<f32>) -> vec3<f32> {
             if (view_mode == 1.0) {
-                let norm_t = clamp(abs(fields.x) / 120.0, 0.0, 1.0);
+                let norm_t = clamp(abs(interaction.x) / 120.0, 0.0, 1.0);
                 return mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
             } else if (view_mode == 2.0) {
                 // RGB light field color visualization
                 return mix(vec3<f32>(0.05, 0.04, 0.02), fields.xyz, clamp(fields.w, 0.0, 1.0));
             } else if (view_mode == 3.0) {
-                let norm_hum = clamp(fields.z / 100.0, 0.0, 1.0);
-                return mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_hum);
+                let norm_stress = clamp(interaction.z / 100.0, 0.0, 1.0);
+                return mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_stress);
             } else if (view_mode == 4.0) {
-                let norm_pres = clamp((abs(fields.w) - 1.0) / 30.0, 0.0, 1.0);
-                return mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.2, 0.8, 1.0), norm_pres);
+                let norm_dens = clamp(interaction.y, 0.0, 1.0);
+                return mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.2, 0.8, 1.0), norm_dens);
             }
             return default_color;
         }
 
-        fn getFieldColorWeight(fields: vec4<f32>, view_mode: f32) -> f32 {
+        fn getFieldColorWeight(fields: vec4<f32>, interaction: vec4<f32>, view_mode: f32) -> f32 {
             if (view_mode == 1.0) {
-                return clamp(abs(fields.x) / 5.0, 0.0, 1.0);
+                return clamp(abs(interaction.x) / 5.0, 0.0, 1.0);
             } else if (view_mode == 2.0) {
                 return clamp(fields.w / 0.5, 0.0, 1.0);
             } else if (view_mode == 3.0) {
-                return clamp(fields.z / 5.0, 0.0, 1.0);
+                return clamp(interaction.z / 5.0, 0.0, 1.0);
             } else if (view_mode == 4.0) {
-                return clamp(abs(fields.w) / 5.0, 0.0, 1.0);
+                return clamp(interaction.y / 0.5, 0.0, 1.0);
             }
-            return clamp(abs(fields.x) / 5.0, 0.0, 1.0);
+            return clamp(abs(interaction.x) / 5.0, 0.0, 1.0);
         }
 
        fn getInterpolatedColor(p: vec3<f32>) -> vec3<f32> {
@@ -1401,9 +1505,10 @@ struct PointInstance {
                     
                     let interp_data = getInterpolatedFieldsAndColor(p);
                     let fields = interp_data.fields;
+                    let interaction = interp_data.interaction;
                     let water_d = sampleWaterGrid(p).x;
                     max_water_sampled = max(max_water_sampled, water_d);
-                    let density = 0.0035 + getFieldDensity(fields, view_mode) + sdf_density + water_d * 2.0;
+                    let density = 0.0035 + getFieldDensity(fields, interaction, view_mode) + sdf_density + water_d * 2.0;
                     
                     let base_sky = getSkyColor(rd);
                     var local_fog_col = base_sky;
@@ -1418,9 +1523,9 @@ struct PointInstance {
                          local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
                     }
                     
-                    let color_weight = getFieldColorWeight(fields, view_mode);
+                    let color_weight = getFieldColorWeight(fields, interaction, view_mode);
                     if (color_weight > 0.0) {
-                         let inst_col = getFieldColor(fields, view_mode, interp_data.color);
+                         let inst_col = getFieldColor(fields, interaction, view_mode, interp_data.color);
                          local_fog_col = mix(local_fog_col, inst_col, color_weight);
                     }
                     local_fog_col += interp_data.emissive * 0.12;

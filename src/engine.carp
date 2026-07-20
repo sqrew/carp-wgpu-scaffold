@@ -186,6 +186,61 @@
         (FieldKernelStorage.set-entity-db-ptr! (Field.storage grav-field) entity-db-ptr)
         (FieldKernelStorage.set-grid-ptr! (Field.storage grav-field) grid-ptr))))
 
+  (defn spawn-crater-rubble! [e pos rad]
+    (let [world (Engine.world e)
+          db (Engine.db e)
+          mat-res (PhysicsSystem.sample-static-world-material world &pos)
+          mat-id (Double.to-int @(Vector2.y &mat-res))
+          final-mat (if (or (= mat-id 2) (or (= mat-id 3) (= mat-id 5))) mat-id 3)
+          num-rubble (Int.random-between 3 5)]
+      (do
+        (for [i 0 num-rubble]
+          (let [theta (* (Double.random) (* 2.0 3.14159265))
+                phi (* (Double.random) 1.57079)
+                speed (Double.random-between 5.0 12.0)
+                vx (* speed (* (Double.cos phi) (Double.cos theta)))
+                vy (* speed (Double.sin phi))
+                vz (* speed (* (Double.cos phi) (Double.sin theta)))
+                vel (Vector3.init vx vy vz)
+                offset (Vector3.init (* (Double.random-between -0.5 0.5) rad) 
+                                      (* (Double.random-between 0.0 0.5) rad) 
+                                      (* (Double.random-between -0.5 0.5) rad))
+                rubble-pos (Vector3.add &pos &offset)
+                scale (Double.random-between 0.4 0.8)]
+            (Prefab.spawn-rubble! world db &rubble-pos &vel scale final-mat)))
+        (Engine.set-grid-dirty! e true))))
+
+  (defn merge-rubble-to-static! [e pos rot vol material-id]
+    (let [world (Engine.world e)]
+      (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
+        (match-ref (Collidable.volume col)
+          (Volume.Sdf parent-sdf)
+            (let [parent-pos (SDF.position parent-sdf)
+                  parent-rot (SDF.rotation parent-sdf)
+                  local-pos (Quaternion.rotate &(Quaternion.inverse parent-rot) &(Vector3.sub &pos parent-pos))
+                  local-rot (Quaternion.mul &(Quaternion.inverse parent-rot) &rot)
+                  parent-handle (ECS.Entity.handle &parent-ent)
+                  child-sdf (match-ref vol
+                              (Volume.Sdf shape) @shape
+                              _ (SDF.init-sphere 0.45 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
+                  _ (do
+                      (SDF.set-position! &child-sdf local-pos)
+                      (SDF.set-rotation! &child-sdf local-rot))
+                  child-ent (GameWorld.create-entity! world)
+                  parent-comp (Parent.init @parent-handle)
+                  csg-comp (CsgNode.init (Box.init child-sdf) material-id)
+                  crater-data (CraterSpawnData.init @&pos 0.6 (Double.from-int material-id))]
+              (do
+                (ECS.add-component! world &child-ent parent-comp)
+                (ECS.add-component! world &child-ent csg-comp)
+                (SDF.set-csg-nodes! parent-sdf [])
+                (PhysicsSystem.build-csg-tree-rec! world parent-handle parent-sdf)
+                (Array.push-back! (Engine.craters e) crater-data)
+                (Engine.set-csg-dirty! e true)
+                (Engine.set-grid-dirty! e true)
+                (Engine.set-voxel-dirty! e true)))
+          _ ()))))
+
   (defn register-internal-handlers! [e]
     (Coordinator.subscribe! (Engine.coordinator e)
       &(fn [ev]
@@ -214,6 +269,7 @@
                               crater-data (CraterSpawnData.init @pos rad 0.0)]
                           (do
                             (Array.push-back! (Engine.craters e) crater-data)
+                            (Engine.spawn-crater-rubble! e @pos rad)
                             (Engine.set-voxel-dirty! e true)))
                         (let [build (GrowingBuild.init @pos 0.05 rad (/ rad 0.4) op (Maybe.Nothing))]
                            (Array.push-back! (Engine.growing-builds e) build)))
@@ -221,6 +277,7 @@
                             crater-data (CraterSpawnData.init @pos rad 0.0)]
                         (do
                           (Array.push-back! (Engine.craters e) crater-data)
+                          (Engine.spawn-crater-rubble! e @pos rad)
                           (Engine.set-voxel-dirty! e true))))
                     (Result.Success ())))
               _ (Result.Success ()))
@@ -297,6 +354,35 @@
                 (destroy-sdf-entity! world (Engine.db e) (Engine.entity-db e) (Array.unsafe-nth &expired-ents i))
                 (Engine.set-grid-dirty! e true)
                 (Engine.set-csg-dirty! e true)))))
+
+        ;; Merge sleeping rubble into static terrain
+        (let [sleeping-rubbles (the (Array RubbleMergeData) [])]
+          (do
+            (ECS.query world [ent (rb RigidBody) (fi FieldInstance) (col Collidable)]
+              (when (and (not (ECS.has-component? world &ent PlayerTag))
+                         (not (match-ref (Body.body-type (RigidBody.body rb)) (BodyType.Static) true _ false)))
+                (let [vel (Body.velocity (RigidBody.body rb))
+                      speed (Vector3.mag vel)
+                      pos @(RigidBody.position rb)
+                      rot @(RigidBody.rotation rb)
+                      vol (Collidable.volume col)
+                      mat-id @(FieldInstance.csg-index fi)
+                      handle @(ECS.Entity.handle &ent)]
+                  (when (and (or (= mat-id 2) (or (= mat-id 3) (= mat-id 5)))
+                             (< speed 0.25))
+                    (Array.push-back! &sleeping-rubbles (RubbleMergeData.init handle pos rot @vol mat-id))))))
+            (for [i 0 (Array.length &sleeping-rubbles)]
+              (let [data (Array.unsafe-nth &sleeping-rubbles i)
+                    handle @(RubbleMergeData.handle data)
+                    ent (ECS.Entity.init handle)
+                    pos (RubbleMergeData.pos data)
+                    rot (RubbleMergeData.rot data)
+                    vol (RubbleMergeData.vol data)
+                    mat-id @(RubbleMergeData.material-id data)]
+                (do
+                  (println* "Merging rubble of material " mat-id " back into static terrain at " (Vector3.str pos))
+                  (Engine.merge-rubble-to-static! e @pos @rot vol mat-id)
+                  (destroy-sdf-entity! world (Engine.db e) (Engine.entity-db e) &ent))))))
 
         ;; Cleanup old bullets and craters to keep entity IDs recycled and low (<128)
         (let [p-pos (Vector3.init 0.0 0.0 0.0)

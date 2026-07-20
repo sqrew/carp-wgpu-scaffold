@@ -159,9 +159,16 @@
                       node-op @(CsgNode.op node)
                       child-sdf (Box.peek (CsgNode.shape node))
                       child-pos (SDF.position child-sdf)
-                      r (match @(SDF.base child-sdf)
-                          (BaseShape.Ball ball-r) ball-r
-                          _ 1.0)
+                      scale @(SDF.scale child-sdf)
+                      r-base (match @(SDF.base child-sdf)
+                               (BaseShape.Ball ball-r) ball-r
+                               (BaseShape.Box extents) (Vector3.mag &extents)
+                               (BaseShape.Cylinder rad height) (Double.sqrt (+ (* rad rad) (* height height)))
+                               (BaseShape.Capsule rad height) (+ rad height)
+                               (BaseShape.Torus r1 r2) (+ r1 r2)
+                               (BaseShape.Octahedron size) size
+                               _ 1.0)
+                      r (max 0.6 (* r-base scale))
                       diff (Vector3.sub &chunk-center child-pos)
                       dist (Vector3.mag &diff)]
                   (when (<= dist (+ chunk-radius (+ r 2.5)))
