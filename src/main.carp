@@ -159,25 +159,6 @@
           (cond
             (= curr-tab 0)
               (do
-                (let [vsdf (Pointer.to-value vsdf-ptr)
-                      btn-label (if vsdf "Volumetric SDF: ON" "Volumetric SDF: OFF")]
-                  (do
-                    (when (Context.button gui-ctx-ref "vol_sdf_btn" (copy btn-label))
-                      (do
-                        (Pointer.set vsdf-ptr (not vsdf))
-                        (Engine.set-volumetric-sdf! eng-ref (not vsdf))
-                        (Engine.set-grid-dirty! eng-ref true)))
-                    (Context.tooltip gui-ctx-ref "Render volumetric shadows and smoke SDF effects.")))
-                    
-                (let [sdl (Pointer.to-value sdl-ptr)
-                      btn-label (if sdl "Debug Lines: ON" "Debug Lines: OFF")]
-                  (do
-                    (when (Context.button gui-ctx-ref "dbg_lines_btn" (copy btn-label))
-                      (do
-                        (Pointer.set sdl-ptr (not sdl))
-                        (Engine.set-show-debug-lines! eng-ref (not sdl))))
-                    (Context.tooltip gui-ctx-ref "Draw physical bounding boxes and ray vectors.")))
-
                 (let [fixed-dt (Pointer.to-value fdt-ptr)]
                   (do
                     (match (Context.slider gui-ctx-ref "fixed_dt_slider" fixed-dt 0.005f 0.05f (copy "Fixed DT"))

@@ -1161,13 +1161,14 @@
                 dy (Int.abs (- cy cam-qy))
                 dz (Int.abs (- cz cam-qz))
                 near-player (and (<= dx 1) (and (<= dy 1) (<= dz 1)))
-                is-time-sliced-frame (= (Int.mod i 128) field-bake-frame-counter)]
+                is-light-frame (= (Int.mod i 128) field-bake-frame-counter)
+                is-interaction-frame (= (Int.mod i 4) (Int.mod field-bake-frame-counter 4))]
             (when near-player
               (do
-                (when is-time-sliced-frame
-                  (do
-                    (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res)
-                    (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res)))
+                (when is-light-frame
+                  (VoxelBaker.bake-light-gpu! ctx ren chunk num-instances (Engine.last-known-light-rule e) (Engine.jit-cache e) voxel-res))
+                (when is-interaction-frame
+                  (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res))
                 (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
                 (if (> current-ticks 0)
                   (let [new-ticks (dec current-ticks)]

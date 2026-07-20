@@ -80,7 +80,5 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
 
     if (total_weight > 0.0) {
         interaction_gpu_buffer[idx] = accumulated_fields / total_weight;
-    } else {
-        interaction_gpu_buffer[idx] = vec4<f32>(0.0);
     }
 }

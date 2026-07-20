@@ -40,10 +40,8 @@
       (InputManager.add-binding! mgr "Laser" (InputSource.MouseButton GLFW.Mouse.BUTTON_LEFT) 1.0)
       (InputManager.add-binding! mgr "Build" (InputSource.MouseButton GLFW.Mouse.BUTTON_RIGHT) 1.0)
       (InputManager.add-binding! mgr "Implode" (InputSource.Key GLFW.Keycode.I) 1.0)
-      (InputManager.add-binding! mgr "ToggleDebug" (InputSource.Key GLFW.Keycode.P) 1.0)
-      (InputManager.add-binding! mgr "CycleViewMode" (InputSource.Key GLFW.Keycode.M) 1.0)
       (InputManager.add-binding! mgr "CycleShadowQuality" (InputSource.Key GLFW.Keycode.O) 1.0)
-      (InputManager.add-binding! mgr "ToggleVolumetricSdf" (InputSource.Key GLFW.Keycode.V) 1.0)
+      (InputManager.add-binding! mgr "ToggleViewMode" (InputSource.Key GLFW.Keycode.V) 1.0)
       (InputManager.add-binding! mgr "ToggleChunkLoading" (InputSource.Key GLFW.Keycode.L) 1.0)
       (InputManager.add-binding! mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)
       (InputManager.add-binding! mgr "CycleMaterial" (InputSource.Key GLFW.Keycode.K) 1.0)))
@@ -55,62 +53,19 @@
         (PlayerSystem.scale-player! e 1.1))
       (when (InputManager.action-pressed? mgr "ScaleDown")
         (PlayerSystem.scale-player! e 0.9))
-      (when (InputManager.action-pressed? mgr "ToggleDebug")
-        (let [show @(Engine.show-debug-lines e)
-              new-show (not show)]
-          (do
-            (Engine.set-show-debug-lines! e new-show)
-            (IO.println &(str* "Debug Lines: " (if new-show "ON" "OFF")))
-            (Diagnostics.print-stats! (Engine.diagnostics e)))))
-      (when (InputManager.action-pressed? mgr "CycleViewMode")
+      (when (InputManager.action-pressed? mgr "ToggleViewMode")
         (let [mode @(Engine.view-mode e)
-              new-mode (Int.mod (+ mode 1) 5)]
+              new-mode (if (= mode 0) 1 0)]
           (do
             (Engine.set-view-mode! e new-mode)
             (Engine.set-grid-dirty! e true)
-            (IO.println &(str* "Active Scalar Field View: "
-              (if (= new-mode 0) "Normal (Water Volume)"
-              (if (= new-mode 1) "Temperature"
-              (if (= new-mode 2) "Age / Spawn Time"
-              (if (= new-mode 3) "Humidity"
-              "Pressure")))))))))
+            (IO.println &(str* "Active View: " (if (= new-mode 0) "Normal Biome View" "Organic Terrain Stress Map"))))))
       (when (InputManager.action-pressed? mgr "CycleShadowQuality")
         (let [curr @(Engine.shadow-quality e)
               next (Int.mod (+ curr 1) 3)]
           (do
             (Engine.set-shadow-quality! e next)
             (IO.println &(str* "Shadow/AO Quality (0=Off, 1=Normal, 2=High): " (Int.str next))))))
-      (when (InputManager.action-pressed? mgr "ToggleVolumetricSdf")
-        (let [is-on @(Engine.volumetric-sdf e)
-              mode @(Engine.view-mode e)]
-          (do
-            (if (not is-on)
-                (do
-                  (Engine.set-volumetric-sdf! e true)
-                  (Engine.set-view-mode! e 0)
-                  (IO.println "Volumetric Sdf Fog Mode: ON (SDF Vol Fog)"))
-                (if (= mode 0)
-                    (do
-                      (Engine.set-volumetric-sdf! e true)
-                      (Engine.set-view-mode! e 4)
-                      (IO.println "Volumetric Sdf Fog Mode: ON (Pressure Field)"))
-                    (if (= mode 4)
-                        (do
-                          (Engine.set-view-mode! e 1)
-                          (IO.println "Volumetric Sdf Fog Mode: ON (Temperature)"))
-                        (if (= mode 1)
-                            (do
-                              (Engine.set-view-mode! e 2)
-                              (IO.println "Volumetric Sdf Fog Mode: ON (Age / Spawn Time)"))
-                            (if (= mode 2)
-                                (do
-                                  (Engine.set-view-mode! e 3)
-                                  (IO.println "Volumetric Sdf Fog Mode: ON (Humidity)"))
-                                (do
-                                  (Engine.set-volumetric-sdf! e false)
-                                  (Engine.set-view-mode! e 0)
-                                  (IO.println "Volumetric Sdf Fog Mode: OFF")))))))
-            (Engine.set-grid-dirty! e true))))
       (when (InputManager.action-pressed? mgr "ToggleChunkLoading")
         (let [curr @(Engine.chunk-loading-enabled e)]
           (do

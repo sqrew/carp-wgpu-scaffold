@@ -669,6 +669,46 @@ struct PointInstance {
           return tex_val;
        }
 
+        fn getUniformFloat(idx: i32) -> f32 {
+            if (idx == 0) { return u.time; }
+            if (idx == 1) { return u.width; }
+            if (idx == 2) { return u.height; }
+            if (idx == 3) { return u.cell_size; }
+            if (idx == 4) { return u.cam_pos.x; }
+            if (idx == 5) { return u.cam_pos.y; }
+            if (idx == 6) { return u.cam_pos.z; }
+            if (idx == 7) { return u.cam_pos.w; }
+            if (idx == 8) { return u.cam_dir.x; }
+            if (idx == 9) { return u.cam_dir.y; }
+            if (idx == 10) { return u.cam_dir.z; }
+            if (idx == 11) { return u.cam_dir.w; }
+            if (idx == 12) { return u.cam_right.x; }
+            if (idx == 13) { return u.cam_right.y; }
+            if (idx == 14) { return u.cam_right.z; }
+            if (idx == 15) { return u.cam_right.w; }
+            if (idx == 16) { return u.cam_up.x; }
+            if (idx == 17) { return u.cam_up.y; }
+            if (idx == 18) { return u.cam_up.z; }
+            if (idx == 19) { return u.cam_up.w; }
+            if (idx == 20) { return u.bg_color.x; }
+            if (idx == 21) { return u.bg_color.y; }
+            if (idx == 22) { return u.bg_color.z; }
+            if (idx == 23) { return u.bg_color.w; }
+            if (idx == 24) { return u.grid_dims.x; }
+            if (idx == 25) { return u.grid_dims.y; }
+            if (idx == 26) { return u.grid_dims.z; }
+            if (idx == 27) { return u.grid_dims.w; }
+            if (idx == 28) { return u.grid_origin.x; }
+            if (idx == 29) { return u.grid_origin.y; }
+            if (idx == 30) { return u.grid_origin.z; }
+            if (idx == 31) { return u.grid_origin.w; }
+            if (idx == 32) { return u.shadow_ao_quality.x; }
+            if (idx == 33) { return u.shadow_ao_quality.y; }
+            if (idx == 34) { return u.shadow_ao_quality.z; }
+            if (idx == 35) { return u.shadow_ao_quality.w; }
+            return 0.0;
+        }
+
         fn sampleVoxelGridPoint(p: vec3<f32>, only_dist: bool) -> vec2<f32> {
             let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
             
@@ -853,34 +893,131 @@ struct PointInstance {
                 // Light Field View
                 d = fields.w * 0.8;
             } else if (view_mode == 3.0) {
-                // Stress View
-                d = clamp(interaction.z / 100.0, 0.0, 1.0) * 0.6;
+                // Stress View - disable volumetric fog to keep solid surface crisp
+                d = 0.0;
             } else if (view_mode == 4.0) {
                 // Density View
                 d = clamp(interaction.y, 0.0, 1.0) * 0.6;
             } else {
                 // Default Normal View (Water Volume / SPH fluid)
                 // Include temperature influence so hot/cold explosions/implosions generate fog density
-                d = (interaction.z / 100.0) * 0.3 + interaction.y * 0.15 + clamp(abs(interaction.x) / 120.0, 0.0, 1.0) * 0.55;
+                d = (interaction.z / 15.0) * 0.3 + interaction.y * 0.15 + clamp(abs(interaction.x) / 120.0, 0.0, 1.0) * 0.55;
             }
             return d;
         }
 
-        fn getFieldColor(fields: vec4<f32>, interaction: vec4<f32>, view_mode: f32, default_color: vec3<f32>) -> vec3<f32> {
-            if (view_mode == 1.0) {
-                let norm_t = clamp(abs(interaction.x) / 120.0, 0.0, 1.0);
-                return mix(vec3<f32>(0.0, 0.1, 0.5), vec3<f32>(1.0, 0.1, 0.0), norm_t);
-            } else if (view_mode == 2.0) {
-                // RGB light field color visualization
-                return mix(vec3<f32>(0.05, 0.04, 0.02), fields.xyz, clamp(fields.w, 0.0, 1.0));
-            } else if (view_mode == 3.0) {
-                let norm_stress = clamp(interaction.z / 100.0, 0.0, 1.0);
-                return mix(vec3<f32>(0.4, 0.3, 0.1), vec3<f32>(0.0, 0.9, 0.9), norm_stress);
-            } else if (view_mode == 4.0) {
-                let norm_dens = clamp(interaction.y, 0.0, 1.0);
-                return mix(vec3<f32>(0.1, 0.05, 0.3), vec3<f32>(0.2, 0.8, 1.0), norm_dens);
+        fn getFieldColor(p: vec3<f32>, default_color: vec3<f32>) -> vec3<f32> {
+            // 1. Compressive stress (gravity load): scan upwards
+            var gravity_load = 1.0;
+            for (var dy = 1.0; dy <= 12.0; dy += 1.0) {
+                let check_p = p + vec3<f32>(0.0, dy, 0.0);
+                let voxel = sampleVoxelGrid(check_p, true);
+                if (voxel.x < 0.0) { // Solid
+                    gravity_load += 1.0;
+                } else {
+                    break; // Stop scanning if we hit air
+                }
             }
-            return default_color;
+
+            // 2. Shear stress: scan below to see if unsupported
+            let below_p = p - vec3<f32>(0.0, 1.0, 0.0);
+            let below_voxel = sampleVoxelGrid(below_p, true);
+            var shear_load = 0.0;
+            if (below_voxel.x >= 0.0) { // Air below us (overhang!)
+                var min_dist = 999.0;
+                // Scan Left (-X)
+                for (var dx = 1.0; dx <= 6.0; dx += 1.0) {
+                    let check_p = p - vec3<f32>(dx, 0.0, 0.0);
+                    let voxel_here = sampleVoxelGrid(check_p, true);
+                    if (voxel_here.x < 0.0) {
+                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
+                        if (voxel_below.x < 0.0) {
+                            min_dist = min(min_dist, dx);
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                // Scan Right (+X)
+                for (var dx = 1.0; dx <= 6.0; dx += 1.0) {
+                    let check_p = p + vec3<f32>(dx, 0.0, 0.0);
+                    let voxel_here = sampleVoxelGrid(check_p, true);
+                    if (voxel_here.x < 0.0) {
+                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
+                        if (voxel_below.x < 0.0) {
+                            min_dist = min(min_dist, dx);
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                // Scan Forward (+Z)
+                for (var dz = 1.0; dz <= 6.0; dz += 1.0) {
+                    let check_p = p + vec3<f32>(0.0, 0.0, dz);
+                    let voxel_here = sampleVoxelGrid(check_p, true);
+                    if (voxel_here.x < 0.0) {
+                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
+                        if (voxel_below.x < 0.0) {
+                            min_dist = min(min_dist, dz);
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                // Scan Backward (-Z)
+                for (var dz = 1.0; dz <= 6.0; dz += 1.0) {
+                    let check_p = p - vec3<f32>(0.0, 0.0, dz);
+                    let voxel_here = sampleVoxelGrid(check_p, true);
+                    if (voxel_here.x < 0.0) {
+                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
+                        if (voxel_below.x < 0.0) {
+                            min_dist = min(min_dist, dz);
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                if (min_dist < 999.0) {
+                    shear_load = min_dist;
+                } else {
+                    shear_load = 6.0;
+                }
+            }
+
+            let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
+            let norm_stress = clamp(total_stress / 16.0, 0.0, 1.0);
+
+            // Heatmap color stops:
+            let c0 = vec3<f32>(0.02, 0.10, 0.40); // Deep Blue (0.0)
+            let c1 = vec3<f32>(0.00, 0.70, 0.90); // Cyan (0.25)
+            let c2 = vec3<f32>(0.05, 0.80, 0.20); // Green (0.5)
+            let c3 = vec3<f32>(0.95, 0.70, 0.00); // Yellow/Orange (0.75)
+            let c4 = vec3<f32>(1.00, 0.05, 0.10); // Glowing Red (1.0)
+
+            var col = c0;
+            if (norm_stress < 0.25) {
+                let t_val = norm_stress / 0.25;
+                col = mix(c0, c1, t_val);
+            } else if (norm_stress < 0.5) {
+                let t_val = (norm_stress - 0.25) / 0.25;
+                col = mix(c1, c2, t_val);
+            } else if (norm_stress < 0.75) {
+                let t_val = (norm_stress - 0.5) / 0.25;
+                col = mix(c2, c3, t_val);
+            } else {
+                let t_val = (norm_stress - 0.75) / 0.25;
+                col = mix(c3, c4, t_val);
+            }
+
+            // Add a subtle grid/contour effect to make stress levels feel structural
+            let contour = abs(sin(norm_stress * 3.14159 * 10.0));
+            col = mix(col, col * 1.35, (1.0 - contour) * 0.18);
+
+            return col;
         }
 
         fn getFieldColorWeight(fields: vec4<f32>, interaction: vec4<f32>, view_mode: f32) -> f32 {
@@ -889,7 +1026,8 @@ struct PointInstance {
             } else if (view_mode == 2.0) {
                 return clamp(fields.w / 0.5, 0.0, 1.0);
             } else if (view_mode == 3.0) {
-                return clamp(interaction.z / 5.0, 0.0, 1.0);
+                // Disable volumetric stress aura so solid coloring remains sharp and clear
+                return 0.0;
             } else if (view_mode == 4.0) {
                 return clamp(interaction.y / 0.5, 0.0, 1.0);
             }
@@ -1451,106 +1589,37 @@ struct PointInstance {
             var fog_optical_depth = 0.0;
             var fog_color_accum = vec3<f32>(0.0);
             var max_water_sampled = 0.0;
-            let is_volumetric = u.shadow_ao_quality.z > 0.5;
+            // Raymarching path
+            for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
+                let p = ro + rd * t;
+                let res = worldSDF(p, rd, dither_threshold, true);
+                hitId = res.z;
+                final_metaball_d = res.w;
+                
+                let water_d = sampleWaterGrid(p).x;
+                max_water_sampled = max(max_water_sampled, water_d);
 
-            if (!is_volumetric) {
-                // Fast non-volumetric raymarching path
-                for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
+                if (res.y < 0.001) { break; }
+                t += res.y * 0.95;
+                if (t > 800.0) { break; }
+            }
+            if (t <= 800.0) {
+                for (var j = 0; j < 2; j = j + 1) {
                     let p = ro + rd * t;
                     let res = worldSDF(p, rd, dither_threshold, true);
                     hitId = res.z;
                     final_metaball_d = res.w;
-                    
+
                     let water_d = sampleWaterGrid(p).x;
                     max_water_sampled = max(max_water_sampled, water_d);
 
-                    if (res.y < 0.001) { break; }
-                    t += res.y * 0.95;
-                    if (t > 800.0) { break; }
-                }
-                if (t <= 800.0) {
-                    for (var j = 0; j < 2; j = j + 1) {
-                        let p = ro + rd * t;
-                        let res = worldSDF(p, rd, dither_threshold, true);
-                        hitId = res.z;
-                        final_metaball_d = res.w;
-
-                        let water_d = sampleWaterGrid(p).x;
-                        max_water_sampled = max(max_water_sampled, water_d);
-
-                        t += res.y * 0.5;
-                    }
-                }
-                fog_optical_depth = 0.0035 * t;
-            } else {
-                 // Volumetric raymarching path
-                 // Jitter starting distance to break up wood-grain banding artifacts
-                 t = dither_threshold * 0.35;
-                 for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
-                     let p = ro + rd * t;
-                     let res = worldSDF(p, rd, dither_threshold, true);
-                     hitId = res.z;
-                     final_metaball_d = res.w;
-                     if (res.y < 0.001) { break; }
-                     
-                     let view_mode = u.grid_origin.w;
-                    var sdf_density = 0.0;
-                    if (view_mode == 0.0) {
-                         if (res.y < 0.0) {
-                             sdf_density = clamp(-res.y * 0.5, 0.0, 1.0) * 0.4;
-                         } else {
-                             sdf_density = clamp(1.0 - res.y / 8.0, 0.0, 1.0) * 0.08;
-                         }
-                    }
-                    
-                    let interp_data = getInterpolatedFieldsAndColor(p);
-                    let fields = interp_data.fields;
-                    let interaction = interp_data.interaction;
-                    let water_d = sampleWaterGrid(p).x;
-                    max_water_sampled = max(max_water_sampled, water_d);
-                    let density = 0.0035 + getFieldDensity(fields, interaction, view_mode) + sdf_density + water_d * 2.0;
-                    
-                    let base_sky = getSkyColor(rd);
-                    var local_fog_col = base_sky;
-                    if (water_d > 0.08) {
-                        local_fog_col = mix(local_fog_col, vec3<f32>(0.05, 0.25, 0.6), water_d);
-                    }
-                    if (sdf_density > 0.0) {
-                         let height_factor = clamp((p.y - 5.0) / 15.0, 0.0, 1.0);
-                         let terr_col = mix(vec3<f32>(0.18, 0.38, 0.12), vec3<f32>(0.42, 0.42, 0.45), height_factor);
-                         let glow_factor = clamp(-res.y / 4.0, 0.0, 1.0);
-                         let sdf_col = mix(terr_col * 0.6, vec3<f32>(0.1, 0.3, 0.6), glow_factor);
-                         local_fog_col = mix(local_fog_col, sdf_col, sdf_density / (density + 0.0001));
-                    }
-                    
-                    let color_weight = getFieldColorWeight(fields, interaction, view_mode);
-                    if (color_weight > 0.0) {
-                         let inst_col = getFieldColor(fields, interaction, view_mode, interp_data.color);
-                         local_fog_col = mix(local_fog_col, inst_col, color_weight);
-                    }
-                    local_fog_col += interp_data.emissive * 0.12;
-                    
-                    var dt = res.x;
-                    if (res.y < 1.0) {
-                        dt = 0.4;
-                    } else {
-                        dt = min(min(res.x, res.y * 0.5), 1.2);
-                        let density_factor = clamp(1.0 - density * 20.0, 0.0, 1.0);
-                        let step_scale = 1.0 + clamp((t - 15.0) * 0.08, 0.0, 6.0) * density_factor;
-                        dt *= step_scale;
-                    }
-                    
-                    fog_color_accum += local_fog_col * density * dt;
-                    fog_color_accum += interp_data.emissive * dt * 0.45;
-                    fog_optical_depth += density * dt;
-                    
-                    t += dt;
-                    if (t > 800.0) { break; }
-                    if (fog_optical_depth > 5.3) { break; }
+                    t += res.y * 0.5;
                 }
             }
-              var color = getSkyColor(rd);
-              if (t <= 800.0 && !is_volumetric) {
+            fog_optical_depth = 0.0035 * t;
+
+            var color = getSkyColor(rd);
+            if (t <= 800.0) {
                 let p = ro + rd * t;
                 var normal = vec3<f32>(0.0, 1.0, 0.0);
                 var is_sphere = false;
@@ -1856,6 +1925,12 @@ struct PointInstance {
                     let col_mountains = mix(mountain_rock, mountain_snow, snow_accum);
                     
                     terr_col = W.x * col_plains + W.y * col_canyons + W.z * col_mountains;
+                }
+
+                // Solid surface field color visualization override
+                let view_mode = round(u.grid_origin.w);
+                if (view_mode != 0.0) {
+                    terr_col = getFieldColor(p, terr_col);
                 }
 
                  var base_col = terr_col;
