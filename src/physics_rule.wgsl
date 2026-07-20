@@ -121,4 +121,26 @@ if (cell.x < 0.0) {
         // Visual indicator: turn stressed parts to dark charred debris during crumble
         cell.y = 3.0; 
     }
+
+    // --- Water Erosion ---
+    let water_state = get_water(local_x, local_y, local_z);
+    let water_vol = water_state.x;
+    if (water_vol > 0.05) {
+        var erosion_rate = 0.05; // default grass/soil erosion
+        if (mat == 3.0) { // Stone
+            erosion_rate = 0.01; // stone is hard to erode
+        } else if (mat == 5.0) { // Sand
+            erosion_rate = 0.35; // sand washes away immediately!
+        } else if (mat == 7.0 || mat == 14.0) { // Obsidian
+            erosion_rate = 0.001; // obsidian is highly resistant
+        }
+        
+        // Erode density (increment SDF towards empty space)
+        cell.x = cell.x + dt * water_vol * erosion_rate * 15.0;
+        
+        // Turn partially eroded blocks to wet clay/mud (Material 10)
+        if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
+            cell.y = 10.0; 
+        }
+    }
 }
