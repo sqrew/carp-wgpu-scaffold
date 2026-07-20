@@ -123,20 +123,27 @@ if (cell.x < 0.0) {
     }
 
     // --- Water Erosion ---
-    let water_state = get_water(local_x, local_y, local_z);
-    let water_vol = water_state.x;
+    // Since water simulation only runs in air/empty voxels, a solid voxel's own water volume is always 0.
+    // We check the water volume of the voxels adjacent to it (above and horizontal neighbors).
+    let w_above = get_water(local_x, local_y + 1, local_z).x;
+    let w_left  = get_water(local_x - 1, local_y, local_z).x;
+    let w_right = get_water(local_x + 1, local_y, local_z).x;
+    let w_front = get_water(local_x, local_y, local_z - 1).x;
+    let w_back  = get_water(local_x, local_y, local_z + 1).x;
+    
+    let water_vol = max(w_above, max(w_left, max(w_right, max(w_front, w_back))));
     if (water_vol > 0.05) {
-        var erosion_rate = 0.05; // default grass/soil erosion
+        var erosion_rate = 0.25; // default grass/soil erosion (was 0.05)
         if (mat == 3.0) { // Stone
-            erosion_rate = 0.01; // stone is hard to erode
+            erosion_rate = 0.06; // stone is hard to erode (was 0.01)
         } else if (mat == 5.0) { // Sand
-            erosion_rate = 0.35; // sand washes away immediately!
+            erosion_rate = 0.95; // sand washes away immediately! (was 0.35)
         } else if (mat == 7.0 || mat == 14.0) { // Obsidian
-            erosion_rate = 0.001; // obsidian is highly resistant
+            erosion_rate = 0.005; // obsidian is highly resistant (was 0.001)
         }
         
         // Erode density (increment SDF towards empty space)
-        cell.x = cell.x + dt * water_vol * erosion_rate * 15.0;
+        cell.x = cell.x + dt * water_vol * erosion_rate * 25.0;
         
         // Turn partially eroded blocks to wet clay/mud (Material 10)
         if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
