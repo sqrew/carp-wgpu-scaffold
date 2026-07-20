@@ -17,14 +17,20 @@ if (cell.x < 0.0) {
     // 2. Shear stress: scan below to see if unsupported
     let below_voxel = get_voxel(local_x, local_y - 1, local_z);
     var shear_load = 0.0;
-    if (below_voxel.x >= 0.0) { // Air below us (overhang!)
+    
+    // Treat unloaded chunk bounds (returning 1.5, 1.0) as solid support to prevent boundary false-collapses
+    let is_below_unloaded = (below_voxel.x == 1.5 && below_voxel.y == 1.0);
+    
+    if (below_voxel.x >= 0.0 && !is_below_unloaded) { // Air below us (overhang!)
         var min_dist = 999.0;
         // Scan Left (-X)
         for (var dx = 1; dx <= 6; dx = dx + 1) {
             let voxel_here = get_voxel(local_x - dx, local_y, local_z);
-            if (voxel_here.x < 0.0) {
+            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
+            if (voxel_here.x < 0.0 || here_unloaded) {
                 let voxel_below = get_voxel(local_x - dx, local_y - 1, local_z);
-                if (voxel_below.x < 0.0) {
+                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
+                if (voxel_below.x < 0.0 || below_unloaded) {
                     min_dist = min(min_dist, f32(dx));
                     break;
                 }
@@ -35,9 +41,11 @@ if (cell.x < 0.0) {
         // Scan Right (+X)
         for (var dx = 1; dx <= 6; dx = dx + 1) {
             let voxel_here = get_voxel(local_x + dx, local_y, local_z);
-            if (voxel_here.x < 0.0) {
+            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
+            if (voxel_here.x < 0.0 || here_unloaded) {
                 let voxel_below = get_voxel(local_x + dx, local_y - 1, local_z);
-                if (voxel_below.x < 0.0) {
+                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
+                if (voxel_below.x < 0.0 || below_unloaded) {
                     min_dist = min(min_dist, f32(dx));
                     break;
                 }
@@ -48,9 +56,11 @@ if (cell.x < 0.0) {
         // Scan Forward (+Z)
         for (var dz = 1; dz <= 6; dz = dz + 1) {
             let voxel_here = get_voxel(local_x, local_y, local_z + dz);
-            if (voxel_here.x < 0.0) {
+            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
+            if (voxel_here.x < 0.0 || here_unloaded) {
                 let voxel_below = get_voxel(local_x, local_y - 1, local_z + dz);
-                if (voxel_below.x < 0.0) {
+                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
+                if (voxel_below.x < 0.0 || below_unloaded) {
                     min_dist = min(min_dist, f32(dz));
                     break;
                 }
@@ -61,9 +71,11 @@ if (cell.x < 0.0) {
         // Scan Backward (-Z)
         for (var dz = 1; dz <= 6; dz = dz + 1) {
             let voxel_here = get_voxel(local_x, local_y, local_z - dz);
-            if (voxel_here.x < 0.0) {
+            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
+            if (voxel_here.x < 0.0 || here_unloaded) {
                 let voxel_below = get_voxel(local_x, local_y - 1, local_z - dz);
-                if (voxel_below.x < 0.0) {
+                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
+                if (voxel_below.x < 0.0 || below_unloaded) {
                     min_dist = min(min_dist, f32(dz));
                     break;
                 }

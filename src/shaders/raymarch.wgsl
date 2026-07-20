@@ -927,10 +927,19 @@ struct PointInstance {
         }
 
         fn getFieldColor(p: vec3<f32>, default_color: vec3<f32>) -> vec3<f32> {
+            let self_slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
+            if (self_slot < 0) {
+                return default_color;
+            }
+
             // 1. Compressive stress (gravity load): scan upwards
             var gravity_load = 1.0;
             for (var dy = 1.0; dy <= 12.0; dy += 1.0) {
                 let check_p = p + vec3<f32>(0.0, dy, 0.0);
+                let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
+                if (check_slot < 0) {
+                    break; // Unloaded above doesn't press down
+                }
                 let voxel = sampleVoxelGrid(check_p, true);
                 if (voxel.x < 0.0) { // Solid
                     gravity_load += 1.0;
@@ -941,17 +950,23 @@ struct PointInstance {
 
             // 2. Shear stress: scan below to see if unsupported
             let below_p = p - vec3<f32>(0.0, 1.0, 0.0);
+            let below_slot = getChunkSlot(vec3<i32>(floor(below_p / 32.0)) - chunk_lookup.origin.xyz);
             let below_voxel = sampleVoxelGrid(below_p, true);
             var shear_load = 0.0;
-            if (below_voxel.x >= 0.0) { // Air below us (overhang!)
+            if (below_voxel.x >= 0.0 && below_slot >= 0) { // Air below us (overhang!)
                 var min_dist = 999.0;
                 // Scan Left (-X)
                 for (var dx = 1.0; dx <= 6.0; dx += 1.0) {
                     let check_p = p - vec3<f32>(dx, 0.0, 0.0);
+                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
+                    let is_unloaded = check_slot < 0;
                     let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0) {
-                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
-                        if (voxel_below.x < 0.0) {
+                    if (voxel_here.x < 0.0 || is_unloaded) {
+                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
+                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
+                        let below_unloaded = below_check_slot < 0;
+                        let voxel_below = sampleVoxelGrid(below_check_p, true);
+                        if (voxel_below.x < 0.0 || below_unloaded) {
                             min_dist = min(min_dist, dx);
                             break;
                         }
@@ -962,10 +977,15 @@ struct PointInstance {
                 // Scan Right (+X)
                 for (var dx = 1.0; dx <= 6.0; dx += 1.0) {
                     let check_p = p + vec3<f32>(dx, 0.0, 0.0);
+                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
+                    let is_unloaded = check_slot < 0;
                     let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0) {
-                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
-                        if (voxel_below.x < 0.0) {
+                    if (voxel_here.x < 0.0 || is_unloaded) {
+                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
+                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
+                        let below_unloaded = below_check_slot < 0;
+                        let voxel_below = sampleVoxelGrid(below_check_p, true);
+                        if (voxel_below.x < 0.0 || below_unloaded) {
                             min_dist = min(min_dist, dx);
                             break;
                         }
@@ -976,10 +996,15 @@ struct PointInstance {
                 // Scan Forward (+Z)
                 for (var dz = 1.0; dz <= 6.0; dz += 1.0) {
                     let check_p = p + vec3<f32>(0.0, 0.0, dz);
+                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
+                    let is_unloaded = check_slot < 0;
                     let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0) {
-                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
-                        if (voxel_below.x < 0.0) {
+                    if (voxel_here.x < 0.0 || is_unloaded) {
+                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
+                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
+                        let below_unloaded = below_check_slot < 0;
+                        let voxel_below = sampleVoxelGrid(below_check_p, true);
+                        if (voxel_below.x < 0.0 || below_unloaded) {
                             min_dist = min(min_dist, dz);
                             break;
                         }
@@ -990,10 +1015,15 @@ struct PointInstance {
                 // Scan Backward (-Z)
                 for (var dz = 1.0; dz <= 6.0; dz += 1.0) {
                     let check_p = p - vec3<f32>(0.0, 0.0, dz);
+                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
+                    let is_unloaded = check_slot < 0;
                     let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0) {
-                        let voxel_below = sampleVoxelGrid(check_p - vec3<f32>(0.0, 1.0, 0.0), true);
-                        if (voxel_below.x < 0.0) {
+                    if (voxel_here.x < 0.0 || is_unloaded) {
+                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
+                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
+                        let below_unloaded = below_check_slot < 0;
+                        let voxel_below = sampleVoxelGrid(below_check_p, true);
+                        if (voxel_below.x < 0.0 || below_unloaded) {
                             min_dist = min(min_dist, dz);
                             break;
                         }
