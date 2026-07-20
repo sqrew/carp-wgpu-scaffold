@@ -168,7 +168,37 @@
                           (Settings.set-fixed-dt! cfg-ref (Double.from-float nv))
                           (Engine.set-settings! eng-ref @cfg-ref))
                       (Maybe.Nothing) ())
-                    (Context.tooltip gui-ctx-ref "Time increment step for physics simulation update."))))
+                    (Context.tooltip gui-ctx-ref "Time increment step for physics simulation update.")))
+                 
+                 (Gui.separator gui-ctx-ref)
+                 (Context.label gui-ctx-ref (copy "--- Liquid CA Settings ---"))
+                 (let [wfs (Double.to-float WGPURenderer.water-flow-speed)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "water_flow_speed_slider" wfs 0.0f 5.0f (copy "Water Flow Speed"))
+                       (Maybe.Just nv) (set! WGPURenderer.water-flow-speed (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "Speed multiplier for gravity flow and horizontal spreading of fluids.")))
+                 
+                 (let [wer (Double.to-float WGPURenderer.water-erosion-rate)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "water_erosion_rate_slider" wer 0.0f 5.0f (copy "Water Erosion Scale"))
+                       (Maybe.Just nv) (set! WGPURenderer.water-erosion-rate (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "Global multiplier for water physical hydraulic erosion rates.")))
+                  
+                 (let [wev (Double.to-float WGPURenderer.water-evaporation-rate)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "water_evaporation_rate_slider" wev 0.0f 0.1f (copy "Water Evaporation"))
+                       (Maybe.Just nv) (set! WGPURenderer.water-evaporation-rate (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "Minimum liquid volume threshold below which water evaporates.")))
+                  
+                 (let [wab (Double.to-float WGPURenderer.water-absorption-threshold)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "water_absorption_threshold_slider" wab 0.0f 0.25f (copy "Mud Absorption Thresh"))
+                       (Maybe.Just nv) (set! WGPURenderer.water-absorption-threshold (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "SDF threshold below which terrain blocks fluid absorption and flow."))))
 
             (= curr-tab 1)
               (do

@@ -642,7 +642,7 @@
       (Array.aset! u-data 43 (Double.to-float WGPURenderer.global-frequency))
       (Array.aset! u-data 44 (Double.to-float lacunarity))
       (Array.aset! u-data 45 (Double.to-float gain))
-      (Array.aset! u-data 46 0.0f)
+      (Array.aset! u-data 46 (Double.to-float WGPURenderer.water-absorption-threshold))
       (Array.aset! u-data 47 0.0f)
       ;; cloud_params1 at 48-51
       (Array.aset! u-data 48 (Double.to-float WGPURenderer.cloud-density))
@@ -654,13 +654,13 @@
       (Array.aset! u-data 53 (Double.to-float WGPURenderer.cloud-color-g))
       (Array.aset! u-data 54 (Double.to-float WGPURenderer.cloud-color-b))
       (Array.aset! u-data 55 (Double.to-float WGPURenderer.cloud-noise-scale))
-      ;; light_params at 56-59
+      ;; misc_params at 56-59
       (let [num-suns (Array.length suns)]
-        (do
-          (Array.aset! u-data 56 (Double.to-float (Double.from-int num-suns)))
-          (Array.aset! u-data 57 0.0f)
-          (Array.aset! u-data 58 0.0f)
-          (Array.aset! u-data 59 0.0f)))
+         (do
+           (Array.aset! u-data 56 (Double.to-float (Double.from-int num-suns)))
+           (Array.aset! u-data 57 (Double.to-float WGPURenderer.water-flow-speed))
+           (Array.aset! u-data 58 (Double.to-float WGPURenderer.water-erosion-rate))
+           (Array.aset! u-data 59 (Double.to-float WGPURenderer.water-evaporation-rate))))
       ;; suns array starting at float index 60 (stride = 12 floats)
       (let [num-to-pack (let [n (Array.length suns)] (if (> n 8) 8 n))]
         (do

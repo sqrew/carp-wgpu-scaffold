@@ -35,7 +35,7 @@ struct PointInstance {
           terrain_params3: vec4<f32>,
           cloud_params1: vec4<f32>,
           cloud_params2: vec4<f32>,
-          light_params: vec4<f32>,
+          misc_params: vec4<f32>,
           suns: array<SunData, 8>,
           instances: array<PointInstance, {{LIMIT}}>
       }
@@ -262,7 +262,7 @@ struct PointInstance {
               let h_dz = get_terrain_height(px, pz + 1.0) - final_h;
               let terrain_normal = normalize(vec3<f32>(-h_dx, 1.0, -h_dz));
               
-              let num_suns = u32(round(u.light_params.x));
+              let num_suns = u32(round(u.misc_params.x));
               var shadow_factor = -1.0;
               for (var i = 0u; i < num_suns; i = i + 1u) {
                   let light_dir = normalize(u.suns[i].dir.xyz);
@@ -1511,7 +1511,7 @@ struct PointInstance {
         }
 
         fn getSkyColor(rd: vec3<f32>) -> vec3<f32> {
-            let num_suns = u32(round(u.light_params.x));
+            let num_suns = u32(round(u.misc_params.x));
             
             // Find max altitude to drive zenith/horizon background colors
             var alt = -1.0;
@@ -1735,7 +1735,7 @@ struct PointInstance {
                 let fields = getInterpolatedFields(p);
                 let is_wet = false;
 
-                let num_suns = u32(round(u.light_params.x));
+                let num_suns = u32(round(u.misc_params.x));
                 var direct_lighting = vec3<f32>(0.0);
                 var specular = 0.0;
                 var dominant_alt = -1.0;
@@ -2159,7 +2159,7 @@ struct PointInstance {
                 
                 var curr_t = t_entry + step_size * dither_threshold;
                 
-                let num_suns = u32(round(u.light_params.x));
+                let num_suns = u32(round(u.misc_params.x));
                 
                 // Track maximum sun altitude for clouds ambient lighting
                 var alt = -1.0;

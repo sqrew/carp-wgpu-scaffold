@@ -143,7 +143,7 @@ if (cell.x < 0.0) {
         }
         
         // Erode density (increment SDF towards empty space)
-        cell.x = cell.x + dt * water_vol * erosion_rate * 25.0;
+        cell.x = cell.x + dt * water_vol * erosion_rate * 25.0 * u.misc_params.z;
         
         // Turn partially eroded blocks to wet clay/mud (Material 10)
         if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
