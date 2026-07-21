@@ -118,8 +118,10 @@ if (cell.x < 0.0) {
             cos(voxel_pos.z * 20.0) * 1.5
         ) * dt * 20.0;
         
-        // Visual indicator: turn stressed parts to dark charred debris during crumble
-        cell.y = 3.0; 
+        // Visual indicator: turn stressed parts to dark charred debris during crumble (only if overhang)
+        if (shear_load > 0.5) {
+            cell.y = 3.0; 
+        }
     }
 
     // --- Water Erosion ---
@@ -150,4 +152,33 @@ if (cell.x < 0.0) {
             cell.y = 10.0; 
         }
     }
+} else {
+    // --- AIR / EMPTY SPACE: Rock Slump & Scree Deposition ---
+    // Check if this air cell is sitting on a solid bedrock floor (not loose debris or crumbling walls)
+    let below = get_voxel(local_x, local_y - 1, local_z);
+    let below_mat = round(below.y);
+    
+    // Only deposit on stable bedrock/ground (Mat 1, 2, 3, 7, 10, 14) and NOT on loose sand (5) or crumbling blocks (3)
+    let is_stable_floor = (below.x < 0.0) && (below_mat != 3.0) && (below_mat != 5.0);
+    
+    if (is_stable_floor) {
+        // Scan upward to see if any rock blocks above are actively crumbling and severing
+        var falling_mass = 0.0;
+        for (var dy = 1; dy <= 12; dy = dy + 1) {
+            let top_v = get_voxel(local_x, local_y + dy, local_z);
+            // Check for severed collapsing mass (density dissolving past -0.1 with overhang debris tag)
+            if (top_v.x > -0.1 && top_v.x < 0.3 && round(top_v.y) == 3.0) {
+                falling_mass = falling_mass + 1.0;
+                break;
+            }
+        }
+        
+        if (falling_mass > 0.0) {
+            // Accumulate rock debris onto the floor! (SDF transitions from empty >0 to solid <0)
+            cell.x = max(-0.4, cell.x - dt * 2.0);
+            cell.y = 5.0; // Material ID 5: Sand/Gravel talus deposit
+        }
+    }
 }
+
+
