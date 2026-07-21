@@ -132,10 +132,12 @@ if (self_voxel.x <= solid_thresh) {
     my_humidity = my_humidity - (hum_flow_left + hum_flow_right + hum_flow_front + hum_flow_back);
 
     // --- Cavern ceiling or high saturation condensation (Vapor -> Liquid) ---
-    if (sol_above || my_humidity >= 0.85) {
-        let condensation_rate = select(0.04 * dt, 0.22 * dt, sol_above);
+    // Under ceilings, we condense extremely fast so that we accumulate discrete, large droplets
+    // that are heavy enough to trigger gravity flow downward instead of instantly dissipating.
+    if (sol_above || my_humidity >= 0.82) {
+        let condensation_rate = select(0.06 * dt, 0.75 * dt * 18.0, sol_above);
         let condensed = min(my_humidity, condensation_rate);
-        new_volume = new_volume + condensed * 0.70; // convert back to liquid
+        new_volume = new_volume + condensed * 0.88; // convert back to liquid
         my_humidity = my_humidity - condensed;
     }
 
