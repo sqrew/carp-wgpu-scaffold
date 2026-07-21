@@ -3,12 +3,25 @@
 
 // --- Structural Collapse / Exploding Red Stress Blocks ---
 if (cell.x < 0.0) {
-    // 1. Compressive stress (gravity load): scan upwards
+    // 1. Compressive stress (gravity load): scan upwards with material density weighting
     var gravity_load = 1.0;
     for (var dy = 1; dy <= 12; dy = dy + 1) {
         let voxel = get_voxel(local_x, local_y + dy, local_z);
         if (voxel.x < 0.0) { // Solid
-            gravity_load = gravity_load + 1.0;
+            let top_mat = round(voxel.y);
+            var density = 1.0; // Soil/Grass default
+            if (top_mat == 6.0) {          // Snow/Ice (lightweight)
+                density = 0.4;
+            } else if (top_mat == 5.0) {   // Sand/Gravel
+                density = 1.3;
+            } else if (top_mat == 3.0) {   // Stone (heavy rock)
+                density = 1.8;
+            } else if (top_mat == 7.0 || top_mat == 14.0) { // Obsidian
+                density = 3.5;
+            } else if (top_mat == 12.0) {  // Gold/Brass (extremely dense payload!)
+                density = 5.0;
+            }
+            gravity_load = gravity_load + density;
         } else {
             break;
         }
@@ -106,8 +119,8 @@ if (cell.x < 0.0) {
         limit = 30.0;
     }
 
-    // Critical stress threshold per material ID
-    if (total_stress >= limit) {
+    // Critical stress threshold per material ID (Only collapse unsupported overhangs with shear_load > 0.5!)
+    if (total_stress >= limit && shear_load > 0.5) {
         // Slowly dissolve and crumble! (takes ~0.6 seconds of sustained stress to vanish)
         cell.x = cell.x + dt * 2.5; 
         
@@ -118,11 +131,10 @@ if (cell.x < 0.0) {
             cos(voxel_pos.z * 20.0) * 1.5
         ) * dt * 20.0;
         
-        // Visual indicator: turn stressed parts to dark charred debris during crumble (only if overhang)
-        if (shear_load > 0.5) {
-            cell.y = 3.0; 
-        }
+        // Visual indicator: turn stressed parts to dark charred debris during crumble
+        cell.y = 3.0; 
     }
+
 
     // --- Water Erosion ---
     // Since water simulation only runs in air/empty voxels, a solid voxel's own water volume is always 0.
@@ -154,20 +166,20 @@ if (cell.x < 0.0) {
     }
 } else {
     // --- AIR / EMPTY SPACE: Rock Slump & Scree Deposition ---
-    // Check if this air cell is sitting on a solid bedrock floor (not loose debris or crumbling walls)
+    // Check if this air cell is sitting directly on top of a solid, non-crumbling floor
     let below = get_voxel(local_x, local_y - 1, local_z);
     let below_mat = round(below.y);
     
-    // Only deposit on stable bedrock/ground (Mat 1, 2, 3, 7, 10, 14) and NOT on loose sand (5) or crumbling blocks (3)
-    let is_stable_floor = (below.x < 0.0) && (below_mat != 3.0) && (below_mat != 5.0);
+    // Deposit on ground (Mat 1, 2, 3, 5, 7, 10, 14) as long as the floor itself is not currently crumbling (mat 3 debris)
+    let is_valid_floor = (below.x < 0.0) && (below_mat != 3.0);
     
-    if (is_stable_floor) {
+    if (is_valid_floor) {
         // Scan upward to see if any rock blocks above are actively crumbling and severing
         var falling_mass = 0.0;
-        for (var dy = 1; dy <= 12; dy = dy + 1) {
+        for (var dy = 1; dy <= 16; dy = dy + 1) {
             let top_v = get_voxel(local_x, local_y + dy, local_z);
-            // Check for severed collapsing mass (density dissolving past -0.1 with overhang debris tag)
-            if (top_v.x > -0.1 && top_v.x < 0.3 && round(top_v.y) == 3.0) {
+            // Check for collapsing mass above tagged as crumbling debris (mat 3.0)
+            if (top_v.x < 0.3 && round(top_v.y) == 3.0) {
                 falling_mass = falling_mass + 1.0;
                 break;
             }
@@ -175,10 +187,16 @@ if (cell.x < 0.0) {
         
         if (falling_mass > 0.0) {
             // Accumulate rock debris onto the floor! (SDF transitions from empty >0 to solid <0)
-            cell.x = max(-0.4, cell.x - dt * 2.0);
+            cell.x = max(-0.4, cell.x - dt * 3.0);
             cell.y = 5.0; // Material ID 5: Sand/Gravel talus deposit
         }
     }
 }
+
+
+
+
+
+
 
 
