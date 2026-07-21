@@ -1648,8 +1648,17 @@ struct PointInstance {
                 hitId = res.z;
                 final_metaball_d = res.w;
                 
-                let water_d = sampleWaterGrid(p).x;
-                max_water_sampled = max(max_water_sampled, water_d);
+                let water_val = sampleWaterGrid(p);
+                max_water_sampled = max(max_water_sampled, water_val.x);
+
+                // Accumulate volumetric humidity mist from water grid (water.y)
+                let humidity = water_val.y; // Humidity fraction [0.0..1.0]
+                if (humidity > 0.01) {
+                    let step_density = humidity * 0.38 * min(res.y, 4.0);
+                    fog_optical_depth += step_density;
+                    let mist_color = vec3<f32>(0.88, 0.92, 0.96);
+                    fog_color_accum += mist_color * step_density;
+                }
 
                 if (res.y < 0.001) { break; }
                 t += res.y * 0.95;
@@ -1662,13 +1671,24 @@ struct PointInstance {
                     hitId = res.z;
                     final_metaball_d = res.w;
 
-                    let water_d = sampleWaterGrid(p).x;
-                    max_water_sampled = max(max_water_sampled, water_d);
+                    let water_val = sampleWaterGrid(p);
+                    max_water_sampled = max(max_water_sampled, water_val.x);
+
+                    // Accumulate volumetric humidity mist from water grid (water.y)
+                    let humidity = water_val.y;
+                    if (humidity > 0.01) {
+                        let step_density = humidity * 0.38 * min(res.y, 4.0);
+                        fog_optical_depth += step_density;
+                        let mist_color = vec3<f32>(0.88, 0.92, 0.96);
+                        fog_color_accum += mist_color * step_density;
+                    }
 
                     t += res.y * 0.5;
                 }
             }
-            fog_optical_depth = 0.0035 * t;
+            let dist_fog_density = 0.0022 * t;
+            fog_optical_depth += dist_fog_density;
+            fog_color_accum += getSkyColor(rd) * dist_fog_density;
 
             var color = getSkyColor(rd);
             if (t <= 800.0) {
@@ -2240,7 +2260,11 @@ struct PointInstance {
             }
 
             let transmittance = exp(-fog_optical_depth);
-            color = color * transmittance + fog_color_accum * (1.0 - transmittance) / max(fog_optical_depth, 0.0001);
+            if (fog_optical_depth > 0.0001) {
+                color = color * transmittance + (fog_color_accum / fog_optical_depth) * (1.0 - transmittance);
+            } else {
+                color = color * transmittance;
+            }
             if (max_water_sampled > 0.001) {
                 let water_col = mix(vec3<f32>(0.01, 0.20, 0.50), vec3<f32>(0.05, 0.60, 0.85), clamp(max_water_sampled, 0.0, 1.0));
                 color = mix(color, water_col, clamp(max_water_sampled * 2.5, 0.0, 0.85));

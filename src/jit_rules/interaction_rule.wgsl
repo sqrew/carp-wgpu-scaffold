@@ -103,4 +103,12 @@ if (voxel_self.x >= 0.0) {
     // Clamp stress to avoid infinite build-up and match our scale range [0, 15.0]
     fields.z = min(stress, 15.0);
     fields.y = 1.0; // Density
+
+    // Material thermal conductivity influence (Snow/Ice cools, Lava heats)
+    let mat_id = round(voxel_self.y);
+    if (mat_id == 6.0) { // Snow / Ice
+        fields.x = max(-50.0, fields.x - 35.0 * dt);
+    } else if (mat_id == 13.0) { // Lava / Burning embers
+        fields.x = min(150.0, fields.x + 90.0 * dt);
+    }
 }

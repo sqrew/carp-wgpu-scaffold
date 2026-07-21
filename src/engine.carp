@@ -434,8 +434,8 @@
               q (Quaternion.new @(Vector3.x &axis) @(Vector3.y &axis) @(Vector3.z &axis) w)]
           (Quaternion.normalize &q)))))
 
-  (sig tick-field-db-sync! (Fn [(Ref Engine.Engine)] ()))
-  (defn tick-field-db-sync! [e]
+  (sig tick-field-db-sync! (Fn [(Ref Engine.Engine) Double] ()))
+  (defn tick-field-db-sync! [e dt]
     (let [world (Engine.world e)
           db (the (Ref FieldDatabase) (Engine.db e))
           edb (the (Ref EntityDatabase) (Engine.entity-db e))]
@@ -457,6 +457,11 @@
                        (if (< t 0.0) 0.0 (if (> t 150.0) 150.0 t)))
                 pos (RigidBody.position rb)
                 y-val @(Vector3.y pos)
+                
+                ;; Sample the local temperature of the environment
+                local-temp (FieldDatabase.sample-analytical-field db edb FieldDatabase.temp-slot pos 0.0)
+                
+                ;; Revert to standard height-based humidity for entities
                 humidity (let [h (* 100.0 (/ y-val -300.0))]
                            (if (< h 0.0) 0.0 (if (> h 100.0) 100.0 h)))
                 pressure (let [p (+ 1.0 (/ y-val -10.0))]
@@ -1312,7 +1317,7 @@
           (Engine.tick-lifecycle! e dt))
         (Diagnostics.with-zone diag "Field DB Sync"
           (do
-            (Engine.tick-field-db-sync! e)
+            (Engine.tick-field-db-sync! e dt)
             (FieldDatabase.tick! (Engine.db e) (Engine.entity-db e) dt)
             (when (> (Array.length (EntityDatabase.events (Engine.entity-db e))) 0)
               (Engine.set-grid-dirty! e true))))

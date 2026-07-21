@@ -71,9 +71,81 @@ if (self_voxel.x <= solid_thresh) {
     
     new_volume -= (flow_left + flow_right + flow_back + flow_front);
 
+
+    // --- Evaporation modulated by local heat (Inlined loop for WGSL function scope rules) ---
+    var local_temp = 0.0;
+    var total_weight = 0.0;
+    for (var i = 0u; i < 512u; i = i + 1u) {
+        let inst = u.instances[i];
+        let radius = inst.pos_scale.w;
+        if (radius <= 0.0) { continue; }
+        
+        let dist = length(voxel_pos - inst.pos_scale.xyz);
+        if (dist < radius) {
+            let weight = 1.0 - (dist / radius);
+            local_temp = local_temp + inst.interaction_fields.x * weight;
+            total_weight = total_weight + weight;
+        }
+    }
+    if (total_weight > 0.0) {
+        local_temp = local_temp / total_weight;
+    }
+
+    // Default evaporation rate is scaled up for high vapor visual feedback
+    let evap_mult = 1.0 + max(0.0, local_temp - 20.0) * 0.18;
+    let final_evap = u.misc_params.w * evap_mult * 3.5;
+    
+    // Evaporate liquid water volume into humidity gas (water.y)
+    let evaporated_volume = min(new_volume, final_evap * dt * 50.0);
+    new_volume = new_volume - evaporated_volume;
+    
+    // Convert evaporated water to humidity in water.y (volume expands as vapor)
+    var my_humidity = water.y + evaporated_volume * 2.2;
+
+    // --- Humidity Rising cellular automata flow ---
+    let flow_up_speed = 0.22 * flow_speed;
+    var flow_up = 0.0;
+    if (!sol_above) {
+        flow_up = my_humidity * flow_up_speed;
+        my_humidity = my_humidity - flow_up;
+    }
+    
+    var flow_from_below = 0.0;
+    if (!sol_below) {
+        let below_vec = get_water(local_x, local_y - 1, local_z);
+        flow_from_below = below_vec.y * flow_up_speed;
+        my_humidity = my_humidity + flow_from_below;
+    }
+
+    // --- Humidity horizontal diffusion (cloud spreading) ---
+    let diffuse_rate = 0.06 * flow_speed;
+    let h_left = get_water(local_x - 1, local_y, local_z).y;
+    let h_right = get_water(local_x + 1, local_y, local_z).y;
+    let h_front = get_water(local_x, local_y, local_z + 1).y;
+    let h_back = get_water(local_x, local_y, local_z - 1).y;
+    
+    let hum_flow_left = (water.y - h_left) * diffuse_rate;
+    let hum_flow_right = (water.y - h_right) * diffuse_rate;
+    let hum_flow_front = (water.y - h_front) * diffuse_rate;
+    let hum_flow_back = (water.y - h_back) * diffuse_rate;
+    
+    my_humidity = my_humidity - (hum_flow_left + hum_flow_right + hum_flow_front + hum_flow_back);
+
+    // --- Cavern ceiling or high saturation condensation (Vapor -> Liquid) ---
+    if (sol_above || my_humidity >= 0.85) {
+        let condensation_rate = select(0.04 * dt, 0.22 * dt, sol_above);
+        let condensed = min(my_humidity, condensation_rate);
+        new_volume = new_volume + condensed * 0.70; // convert back to liquid
+        my_humidity = my_humidity - condensed;
+    }
+
+    // Dispersal/decay over time
+    my_humidity = max(0.0, my_humidity - 0.012 * dt);
+
     // Keep volume bounded and clear tiny values to allow evaporation/drying
-    if (new_volume < u.misc_params.w) {
+    if (new_volume < 0.001) {
         new_volume = 0.0;
     }
     water.x = clamp(new_volume, 0.0, 1.0);
+    water.y = clamp(my_humidity, 0.0, 1.0);
 }
