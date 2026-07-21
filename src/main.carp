@@ -198,7 +198,28 @@
                      (match (Context.slider gui-ctx-ref "water_absorption_threshold_slider" wab 0.0f 0.25f (copy "Mud Absorption Thresh"))
                        (Maybe.Just nv) (set! WGPURenderer.water-absorption-threshold (Double.from-float nv))
                        (Maybe.Nothing) ())
-                     (Context.tooltip gui-ctx-ref "SDF threshold below which terrain blocks fluid absorption and flow."))))
+                     (Context.tooltip gui-ctx-ref "SDF threshold below which terrain blocks fluid absorption and flow.")))
+                  
+                 (let [wve (Double.to-float WGPURenderer.water-vapor-expansion)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "water_vapor_expansion_slider" wve 0.5f 5.0f (copy "Vapor Expansion"))
+                       (Maybe.Just nv) (set! WGPURenderer.water-vapor-expansion (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "Multiplies visual humidity expansion rate when water evaporates.")))
+                  
+                 (let [wcs (Double.to-float WGPURenderer.water-condensation-speed)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "water_condensation_speed_slider" wcs 0.0f 30.0f (copy "Ceiling Condensation"))
+                       (Maybe.Just nv) (set! WGPURenderer.water-condensation-speed (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "Rate of water droplet formation on cavern ceilings.")))
+                  
+                 (let [rth (Double.to-float WGPURenderer.rain-threshold)]
+                   (do
+                     (match (Context.slider gui-ctx-ref "rain_threshold_slider" rth 0.1f 1.0f (copy "Rain Threshold"))
+                       (Maybe.Just nv) (set! WGPURenderer.rain-threshold (Double.from-float nv))
+                       (Maybe.Nothing) ())
+                     (Context.tooltip gui-ctx-ref "Vapor humidity saturation threshold that triggers mid-air rain downpours."))))
 
             (= curr-tab 1)
               (do

@@ -100,7 +100,7 @@ if (self_voxel.x <= solid_thresh) {
     new_volume = new_volume - evaporated_volume;
     
     // Convert evaporated water to humidity in water.y (volume expands as vapor)
-    var my_humidity = water.y + evaporated_volume * 2.2;
+    var my_humidity = water.y + evaporated_volume * u.terrain_params3.w;
 
     // --- Humidity Rising cellular automata flow ---
     let flow_up_speed = 0.22 * flow_speed;
@@ -131,13 +131,10 @@ if (self_voxel.x <= solid_thresh) {
     
     my_humidity = my_humidity - (hum_flow_left + hum_flow_right + hum_flow_front + hum_flow_back);
 
-    // --- Cavern ceiling or high saturation condensation (Vapor -> Liquid) ---
-    // Under ceilings, we condense extremely fast so that we accumulate discrete, large droplets
-    // that are heavy enough to trigger gravity flow downward instead of instantly dissipating.
-    if (sol_above || my_humidity >= 0.82) {
-        let condensation_rate = select(0.06 * dt, 0.75 * dt * 18.0, sol_above);
+    if (sol_above || my_humidity >= u.grid_dims.w) {
+        let condensation_rate = select(0.06 * dt, 0.75 * dt * u.shadow_ao_quality.w, sol_above);
         let condensed = min(my_humidity, condensation_rate);
-        new_volume = new_volume + condensed * 0.88; // convert back to liquid
+        new_volume = new_volume + condensed * 0.45; // convert back to liquid (conserve mass, accounting for expansion)
         my_humidity = my_humidity - condensed;
     }
 
