@@ -182,8 +182,8 @@ if (self_voxel.x <= solid_thresh) {
     let evap_mult = 1.0 + max(0.0, local_temp - 20.0) * 0.18;
     let final_evap = u.misc_params.w * evap_mult * 3.5;
 
-    // Water Evaporation
-    let evaporated_water = min(new_water, final_evap * dt * 50.0);
+    // Water Evaporation (scaled 3.0x to match loop optimization)
+    let evaporated_water = min(new_water, 3.0 * final_evap * dt * 50.0);
     new_water = new_water - evaporated_water;
 
     // Oil Evaporation (evaporates into Methane Gas)
@@ -223,9 +223,63 @@ if (self_voxel.x <= solid_thresh) {
         new_acid = new_acid - consumed_acid;
     }
 
-    // Prevent compiler optimization of gas_texture binding
-    let dummy_gas = get_gas(0, 0, 0);
-    water.x = clamp(new_water, 0.0, 1.0) + dummy_gas.x * 1e-10;
+    // --- Ceiling & Pressure Condensation (Vapor -> Liquid) ---
+    var local_pressure = 0.0;
+    {
+        let max_inst = u32(round(u.suns[0].params.y));
+        for (var i = 0u; i < max_inst; i = i + 1u) {
+            let inst = u.instances[i];
+            let radius = inst.pos_scale.w;
+            if (radius <= 0.0) { continue; }
+            let dist = length(voxel_pos - inst.pos_scale.xyz);
+            if (dist < radius) {
+                let weight = 1.0 - (dist / radius);
+                local_pressure = local_pressure + inst.interaction_fields.z * weight;
+            }
+        }
+    }
+
+    let gas_here = get_gas(local_x, local_y, local_z);
+    let steam_here = gas_here.x;
+
+    // We must match gas_rule.wgsl's near_ceiling check exactly so that mass is conserved
+    var near_ceiling = false;
+    var cold_ceiling = false;
+    for (var dy = 1; dy <= 7; dy = dy + 1) {
+        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
+        if (ceiling_v.x <= solid_thresh) {
+            near_ceiling = true;
+            let ceil_mat = round(abs(ceiling_v.y));
+            if (ceil_mat == 6.0) {
+                cold_ceiling = true;
+            }
+            break;
+        }
+    }
+    let is_cold = cold_ceiling || (local_temp < 10.0);
+    let threshold_mult = select(0.45, 0.15, is_cold);
+    let condensation_threshold = u.grid_dims.w * threshold_mult;
+
+    var total_condensed = 0.0;
+
+    // 1. Regular Ceiling Condensation
+    if (near_ceiling && steam_here >= condensation_threshold) {
+        let rate_mult = select(1.0, 2.5, is_cold);
+        let ceiling_condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        total_condensed = total_condensed + min(steam_here, ceiling_condensation_rate);
+    }
+
+    // 2. Shockwave / Pressure Condensation
+    if (local_pressure > 5.0 && steam_here > 0.01) {
+        let pressure_condensation_rate = 1.5 * dt * local_pressure;
+        total_condensed = total_condensed + min(steam_here - total_condensed, pressure_condensation_rate);
+    }
+
+    if (total_condensed > 0.0) {
+        new_water = new_water + total_condensed * 0.45; // convert back to liquid
+    }
+
+    water.x = clamp(new_water, 0.0, 1.0);
     water.y = clamp(new_lava, 0.0, 1.0);
     water.z = clamp(new_acid, 0.0, 1.0);
     water.w = clamp(new_oil, 0.0, 1.0);

@@ -173,8 +173,8 @@ if (self_voxel.x <= solid_thresh) {
     let evap_mult = 1.0 + max(0.0, local_temp - 20.0) * 0.18;
     let final_evap = u.misc_params.w * evap_mult * 3.5;
 
-    // Steam generation from water evaporation
-    let evaporated_water = min(water_here.x, final_evap * dt * 50.0);
+    // Steam generation from water evaporation (scaled 3.0x to match loop optimization)
+    let evaporated_water = min(water_here.x, 3.0 * final_evap * dt * 50.0);
     new_steam = new_steam + evaporated_water * u.terrain_params3.w;
 
     // Methane generation from Crude Oil evaporation
@@ -194,7 +194,22 @@ if (self_voxel.x <= solid_thresh) {
         new_fog = new_fog + consumed_acid * 2.5;
     }
 
-    // --- Condensation onto Ceilings ---
+    // --- Condensation onto Ceilings & Pressure Waves ---
+    var local_pressure = 0.0;
+    {
+        let max_inst = u32(round(u.suns[0].params.y));
+        for (var i = 0u; i < max_inst; i = i + 1u) {
+            let inst = u.instances[i];
+            let radius = inst.pos_scale.w;
+            if (radius <= 0.0) { continue; }
+            let dist = length(voxel_pos - inst.pos_scale.xyz);
+            if (dist < radius) {
+                let weight = 1.0 - (dist / radius);
+                local_pressure = local_pressure + inst.interaction_fields.z * weight;
+            }
+        }
+    }
+
     var near_ceiling = false;
     var cold_ceiling = false;
     for (var dy = 1; dy <= 7; dy = dy + 1) {
@@ -212,17 +227,25 @@ if (self_voxel.x <= solid_thresh) {
     let threshold_mult = select(0.45, 0.15, is_cold);
     let condensation_threshold = u.grid_dims.w * threshold_mult;
 
-    // Steam condensation
+    // 1. Steam ceiling condensation
+    var total_condensed = 0.0;
     if (near_ceiling && new_steam >= condensation_threshold) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
-        new_steam = max(0.0, new_steam - condensation_rate);
+        let condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        total_condensed = total_condensed + min(new_steam, condensation_rate);
     }
 
-    // Acid Fog condensation
+    // 2. Shockwave / Pressure Condensation
+    if (local_pressure > 5.0 && new_steam > 0.01) {
+        let pressure_condensation_rate = 1.5 * dt * local_pressure;
+        total_condensed = total_condensed + min(new_steam - total_condensed, pressure_condensation_rate);
+    }
+    new_steam = max(0.0, new_steam - total_condensed);
+
+    // 3. Acid Fog ceiling condensation
     if (near_ceiling && new_fog >= condensation_threshold) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        let condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
         new_fog = max(0.0, new_fog - condensation_rate);
     }
 
