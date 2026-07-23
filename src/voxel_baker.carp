@@ -710,6 +710,7 @@
                           (let [water-bg @(WGPURenderer.jit-water-bind-group ren)]
                             (do
                               (WGPU.dispatch ctx water-pipe water-bg dispatch-cnt)
+                              (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16))))
                               (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))))
                 _ ())))
           (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))
@@ -798,6 +799,7 @@
                         (let [gas-bg @(WGPURenderer.jit-gas-bind-group ren)]
                           (do
                             (WGPU.dispatch ctx gas-pipe gas-bg dispatch-cnt)
+                            (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b gas-scratch-b (* res (* res (* res 16))))
                             (pack-and-copy-gas-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))))
               _ ())))
         (pack-and-copy-gas-chunk! ctx ren @(Chunk.atlas-slot chunk) res))))
