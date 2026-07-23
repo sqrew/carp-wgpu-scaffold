@@ -115,4 +115,12 @@
           (do
             (IO.println &(str* "Error reading unpack.wgsl: " &err))
             @""))))
+
+  (defn composite-shader []
+    (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/composite.wgsl")
+      (Result.Success src) src
+      (Result.Error err)
+        (do
+          (IO.println &(str* "Error reading composite.wgsl: " &err))
+          @"")))
 )
