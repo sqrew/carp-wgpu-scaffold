@@ -707,7 +707,8 @@
                 (Array.aset! u-data (+ base-idx 11) 0.0f))))))))
 
   (defn pack-instances! [world db edb u-data csg-data csg-dirty]
-    (let [next-csg-node-idx 0]
+    (let [next-csg-node-idx 0
+          max-active-id 0]
       (do
         (when csg-dirty
           (ECS.query world [ent (rb RigidBody) (col Collidable)]
@@ -725,54 +726,56 @@
                     _ ()))))))
         (let [active-arr (EntityDatabase.active edb)
               len (Array.length active-arr)]
-          (for [id 0 len]
-            (if @(Array.unsafe-nth active-arr id)
-              (let [pos (Array.unsafe-nth (EntityDatabase.positions edb) id)
-                    rot (Array.unsafe-nth (EntityDatabase.rotations edb) id)
-                    rad-scale @(Array.unsafe-nth (EntityDatabase.scales edb) id)
-                    c-val (Array.unsafe-nth (EntityDatabase.colors edb) id)
-                    light-val (FieldDatabase.get-field-vector edb FieldDatabase.light-slot id)
-                    final-csg-idx @(Array.unsafe-nth (EntityDatabase.root-csg-indices edb) id)
-                    shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) id)
-                    instance-type (if (= final-csg-idx -10) 1.0
-                                    (if (= final-csg-idx -5) 2.0
-                                      (if (<= final-csg-idx -99) 3.0 0.0)))
-                    _ (when (= instance-type 2.0)
-                        (IO.println &(str* "Active Water Bullet Packed: id=" (Int.str id) " pos=" (Vector3.str pos) " csg=" (Int.str final-csg-idx) " scale=" (Double.str rad-scale))))
-                    base (+ (/ WGPURenderer.header-size 4) (* id 24))]
-                (do
-                  (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
-                  (Array.aset! u-data (+ base 1) (Double.to-float @(Vector3.y pos)))
-                  (Array.aset! u-data (+ base 2) (Double.to-float @(Vector3.z pos)))
-                  (Array.aset! u-data (+ base 3) (Double.to-float rad-scale))
-                  (Array.aset! u-data (+ base 4) (Double.to-float @(Quaternion.x rot)))
-                  (Array.aset! u-data (+ base 5) (Double.to-float @(Quaternion.y rot)))
-                  (Array.aset! u-data (+ base 6) (Double.to-float @(Quaternion.z rot)))
-                  (Array.aset! u-data (+ base 7) (Double.to-float @(Quaternion.w rot)))
-                  (Array.aset! u-data (+ base 8) (Double.to-float @(Vector3.x c-val)))
-                  (Array.aset! u-data (+ base 9) (Double.to-float @(Vector3.y c-val)))
-                  (Array.aset! u-data (+ base 10) (Double.to-float @(Vector3.z c-val)))
-                  (Array.aset! u-data (+ base 11) 0.0f)
-                  (Array.aset! u-data (+ base 12) (Double.to-float @(Vector4.x &light-val)))
-                  (Array.aset! u-data (+ base 13) (Double.to-float @(Vector4.y &light-val)))
-                  (Array.aset! u-data (+ base 14) (Double.to-float @(Vector4.z &light-val)))
-                  (Array.aset! u-data (+ base 15) (Double.to-float @(Vector4.w &light-val)))
-                  (let [temp (FieldDatabase.get-entity-scalar edb FieldDatabase.temp-slot id)
-                        density (FieldDatabase.get-entity-scalar edb FieldDatabase.density-slot id)
-                        stress (FieldDatabase.get-entity-scalar edb FieldDatabase.stress-slot id)
-                        mat-id (Double.from-int shape-type)]
-                    (do
-                      (Array.aset! u-data (+ base 16) (Double.to-float temp))
-                      (Array.aset! u-data (+ base 17) (Double.to-float density))
-                      (Array.aset! u-data (+ base 18) (Double.to-float stress))
-                      (Array.aset! u-data (+ base 19) (Double.to-float mat-id))))
-                  (Array.aset! u-data (+ base 20) (Double.to-float (Double.from-int shape-type)))
-                  (Array.aset! u-data (+ base 21) (Double.to-float instance-type))
-                  (Array.aset! u-data (+ base 22) (Double.to-float (Double.from-int final-csg-idx)))
-                  (let [vel-arr (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
-                        vel-ref (Array.unsafe-nth vel-arr id)
-                        speed (Vector3.mag vel-ref)]
-                    (Array.aset! u-data (+ base 23) (Double.to-float speed)))))
+          (do
+            (for [id 0 len]
+              (if @(Array.unsafe-nth active-arr id)
+                (let [pos (Array.unsafe-nth (EntityDatabase.positions edb) id)
+                      rot (Array.unsafe-nth (EntityDatabase.rotations edb) id)
+                      rad-scale @(Array.unsafe-nth (EntityDatabase.scales edb) id)
+                      c-val (Array.unsafe-nth (EntityDatabase.colors edb) id)
+                      light-val (FieldDatabase.get-field-vector edb FieldDatabase.light-slot id)
+                      final-csg-idx @(Array.unsafe-nth (EntityDatabase.root-csg-indices edb) id)
+                      shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) id)
+                      instance-type (if (= final-csg-idx -10) 1.0
+                                      (if (= final-csg-idx -5) 2.0
+                                        (if (<= final-csg-idx -99) 3.0 0.0)))
+                      _ (when (= instance-type 2.0)
+                          (IO.println &(str* "Active Water Bullet Packed: id=" (Int.str id) " pos=" (Vector3.str pos) " csg=" (Int.str final-csg-idx) " scale=" (Double.str rad-scale))))
+                      base (+ (/ WGPURenderer.header-size 4) (* id 24))]
+                  (do
+                    (set! max-active-id (+ id 1))
+                    (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
+                    (Array.aset! u-data (+ base 1) (Double.to-float @(Vector3.y pos)))
+                    (Array.aset! u-data (+ base 2) (Double.to-float @(Vector3.z pos)))
+                    (Array.aset! u-data (+ base 3) (Double.to-float rad-scale))
+                    (Array.aset! u-data (+ base 4) (Double.to-float @(Quaternion.x rot)))
+                    (Array.aset! u-data (+ base 5) (Double.to-float @(Quaternion.y rot)))
+                    (Array.aset! u-data (+ base 6) (Double.to-float @(Quaternion.z rot)))
+                    (Array.aset! u-data (+ base 7) (Double.to-float @(Quaternion.w rot)))
+                    (Array.aset! u-data (+ base 8) (Double.to-float @(Vector3.x c-val)))
+                    (Array.aset! u-data (+ base 9) (Double.to-float @(Vector3.y c-val)))
+                    (Array.aset! u-data (+ base 10) (Double.to-float @(Vector3.z c-val)))
+                    (Array.aset! u-data (+ base 11) 0.0f)
+                    (Array.aset! u-data (+ base 12) (Double.to-float @(Vector4.x &light-val)))
+                    (Array.aset! u-data (+ base 13) (Double.to-float @(Vector4.y &light-val)))
+                    (Array.aset! u-data (+ base 14) (Double.to-float @(Vector4.z &light-val)))
+                    (Array.aset! u-data (+ base 15) (Double.to-float @(Vector4.w &light-val)))
+                    (let [temp (FieldDatabase.get-entity-scalar edb FieldDatabase.temp-slot id)
+                          density (FieldDatabase.get-entity-scalar edb FieldDatabase.density-slot id)
+                          stress (FieldDatabase.get-entity-scalar edb FieldDatabase.stress-slot id)
+                          mat-id (Double.from-int shape-type)]
+                      (do
+                        (Array.aset! u-data (+ base 16) (Double.to-float temp))
+                        (Array.aset! u-data (+ base 17) (Double.to-float density))
+                        (Array.aset! u-data (+ base 18) (Double.to-float stress))
+                        (Array.aset! u-data (+ base 19) (Double.to-float mat-id))))
+                    (Array.aset! u-data (+ base 20) (Double.to-float (Double.from-int shape-type)))
+                    (Array.aset! u-data (+ base 21) (Double.to-float instance-type))
+                    (Array.aset! u-data (+ base 22) (Double.to-float (Double.from-int final-csg-idx)))
+                    (let [vel-arr (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
+                          vel-ref (Array.unsafe-nth vel-arr id)
+                          speed (Vector3.mag vel-ref)]
+                      (Array.aset! u-data (+ base 23) (Double.to-float speed)))))
               (let [base (+ (/ WGPURenderer.header-size 4) (* id 24))]
                 (do
                   (Array.aset! u-data base 0.0f)
@@ -780,7 +783,8 @@
                   (Array.aset! u-data (+ base 2) 0.0f)
                   (Array.aset! u-data (+ base 3) 0.0f)
                   (Array.aset! u-data (+ base 21) 0.0f)
-                  ()))))))))
+                  ()))))
+            (Array.aset! u-data 69 (Double.to-float (Double.from-int max-active-id))))))))
 
   (defn update-voxel-chunks! [e ctx ren world-data cam-pos]
     (when @(Engine.chunk-loading-enabled e)

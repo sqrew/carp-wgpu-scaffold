@@ -1559,7 +1559,8 @@ struct PointInstance {
             var rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);
             
             // Apply gravitational lensing from black hole
-            for(var i = 0u; i < 128u; i = i + 1u) {
+            let max_instances = u32(round(u.suns[0].params.y));
+            for(var i = 0u; i < max_instances; i = i + 1u) {
                 let s_data = u.instances[i];
                 if (s_data.pos_scale.w != 0.0 && i32(round(s_data.shape_info.y)) == 1) {
                     let to_singularity = s_data.pos_scale.xyz - ro;

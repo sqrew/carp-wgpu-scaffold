@@ -75,7 +75,8 @@ if (self_voxel.x <= solid_thresh) {
     // --- Evaporation modulated by local heat (Inlined loop for WGSL function scope rules) ---
     var local_temp = 0.0;
     var total_weight = 0.0;
-    for (var i = 0u; i < 512u; i = i + 1u) {
+    let max_instances = u32(round(u.suns[0].params.y));
+    for (var i = 0u; i < max_instances; i = i + 1u) {
         let inst = u.instances[i];
         let radius = inst.pos_scale.w;
         if (radius <= 0.0) { continue; }
