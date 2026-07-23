@@ -1585,6 +1585,8 @@ struct PointInstance {
             var fog_optical_depth = 0.0;
             var fog_color_accum = vec3<f32>(0.0);
             var max_water_sampled = 0.0;
+            var max_lava_sampled = 0.0;
+            var max_acid_sampled = 0.0;
             // Raymarching path
             for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
                 let p = ro + rd * t;
@@ -1594,6 +1596,8 @@ struct PointInstance {
                 
                 let water_val = sampleWaterGrid(p);
                 max_water_sampled = max(max_water_sampled, water_val.x);
+                max_lava_sampled = max(max_lava_sampled, water_val.z);
+                max_acid_sampled = max(max_acid_sampled, water_val.w);
 
                 // Accumulate volumetric humidity mist from water grid (water.y)
                 let humidity = water_val.y; // Humidity fraction [0.0..1.0]
@@ -1617,6 +1621,8 @@ struct PointInstance {
 
                     let water_val = sampleWaterGrid(p);
                     max_water_sampled = max(max_water_sampled, water_val.x);
+                    max_lava_sampled = max(max_lava_sampled, water_val.z);
+                    max_acid_sampled = max(max_acid_sampled, water_val.w);
 
                     // Accumulate volumetric humidity mist from water grid (water.y)
                     let humidity = water_val.y;
@@ -2208,6 +2214,14 @@ struct PointInstance {
                 color = color * transmittance + (fog_color_accum / fog_optical_depth) * (1.0 - transmittance);
             } else {
                 color = color * transmittance;
+            }
+            if (max_lava_sampled > 0.001) {
+                let lava_col = mix(vec3<f32>(0.9, 0.12, 0.0), vec3<f32>(1.5, 0.55, 0.0), clamp(max_lava_sampled, 0.0, 1.0));
+                color = mix(color, lava_col, clamp(max_lava_sampled * 3.0, 0.0, 0.95));
+            }
+            if (max_acid_sampled > 0.001) {
+                let acid_col = mix(vec3<f32>(0.08, 0.55, 0.02), vec3<f32>(0.35, 0.95, 0.1), clamp(max_acid_sampled, 0.0, 1.0));
+                color = mix(color, acid_col, clamp(max_acid_sampled * 2.5, 0.0, 0.88));
             }
             if (max_water_sampled > 0.001) {
                 let water_col = mix(vec3<f32>(0.01, 0.20, 0.50), vec3<f32>(0.05, 0.60, 0.85), clamp(max_water_sampled, 0.0, 1.0));

@@ -90,7 +90,8 @@
             (the String @"")
             (the String @"")
             cfg
-            2.0)))))
+            2.0
+            1)))))
 
 
   (sig spawn-crater! (Fn [(Ref Engine.Engine) (Vector3 Double) Double Int (Maybe (Handle ()))] (Maybe (Handle ()))))
@@ -253,9 +254,9 @@
                       ang-vel (BulletSpawnData.ang-vel data)
                       scale @(BulletSpawnData.scale data)
                       bouncy @(BulletSpawnData.bouncy data)
-                      water @(BulletSpawnData.water data)]
+                      liquid-type @(BulletSpawnData.liquid-type data)]
                   (do
-                    (Prefab.spawn-bullet! (Engine.world e) (Engine.db e) pos vel ang-vel scale bouncy water)
+                    (Prefab.spawn-bullet! (Engine.world e) (Engine.db e) pos vel ang-vel scale bouncy liquid-type)
                     (Engine.set-grid-dirty! e true)
                     (Result.Success ())))
               (GameEvent.SpawnCrater data)
@@ -738,9 +739,11 @@
                       shape-type @(Array.unsafe-nth (EntityDatabase.shape-types edb) id)
                       instance-type (if (= final-csg-idx -10) 1.0
                                       (if (= final-csg-idx -5) 2.0
-                                        (if (<= final-csg-idx -99) 3.0 0.0)))
-                      _ (when (= instance-type 2.0)
-                          (IO.println &(str* "Active Water Bullet Packed: id=" (Int.str id) " pos=" (Vector3.str pos) " csg=" (Int.str final-csg-idx) " scale=" (Double.str rad-scale))))
+                                        (if (= final-csg-idx -6) 4.0
+                                          (if (= final-csg-idx -7) 5.0
+                                            (if (<= final-csg-idx -99) 3.0 0.0)))))
+                      _ (when (or (or (= instance-type 2.0) (= instance-type 4.0)) (= instance-type 5.0))
+                          (IO.println &(str* "Active Liquid Bullet Packed: id=" (Int.str id) " type=" (Double.str instance-type) " pos=" (Vector3.str pos) " scale=" (Double.str rad-scale))))
                       base (+ (/ WGPURenderer.header-size 4) (* id 24))]
                   (do
                     (set! max-active-id (+ id 1))

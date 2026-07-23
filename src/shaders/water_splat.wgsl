@@ -62,15 +62,16 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     );
 
     var water_vol = 0.0;
-    var water_vel = vec3<f32>(0.0);
+    var lava_vol = 0.0;
+    var acid_vol = 0.0;
 
     for (var i = 0u; i < num_instances; i = i + 1u) {
         let inst = u.instances[i];
         let radius = inst.pos_scale.w;
         if (radius <= 0.0) { continue; }
 
-        let inst_type = inst.shape_info.y;
-        if (i32(round(inst_type)) == 2) { // Water Source/Emitter
+        let inst_type = i32(round(inst.shape_info.y));
+        if (inst_type == 2 || inst_type == 4 || inst_type == 5) {
             let speed = inst.shape_info.w;
             let dist = length(p - inst.pos_scale.xyz);
             
@@ -86,14 +87,24 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             
             if (dist < splat_radius) {
                 let weight = (1.0 - (dist / splat_radius)) * density_mult;
-                water_vol = max(water_vol, weight);
-                water_vel = vec3<f32>(0.0, -0.5, 0.0);
+                if (inst_type == 2) {
+                    water_vol = max(water_vol, weight);
+                } else if (inst_type == 4) {
+                    lava_vol = max(lava_vol, weight);
+                } else if (inst_type == 5) {
+                    acid_vol = max(acid_vol, weight);
+                }
             }
         }
     }
 
-    if (water_vol > 0.0) {
+    if (water_vol > 0.0 || lava_vol > 0.0 || acid_vol > 0.0) {
         let existing = water_gpu_buffer[idx];
-        water_gpu_buffer[idx] = vec4<f32>(max(existing.x, water_vol), existing.yzw + water_vel);
+        water_gpu_buffer[idx] = vec4<f32>(
+            max(existing.x, water_vol),
+            existing.y,
+            max(existing.z, lava_vol),
+            max(existing.w, acid_vol)
+        );
     }
 }

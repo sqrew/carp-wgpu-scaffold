@@ -171,6 +171,29 @@ if (cell.x < 0.0) {
     }
 }
 
+// --- Lava Solidification (Runs in air cells) ---
+let solid_thresh = u.terrain_params3.z;
+if (cell.x > solid_thresh) {
+    let water_here = get_water(local_x, local_y, local_z);
+    if (water_here.x > 0.08 && water_here.z > 0.08) {
+        cell.x = -0.6; // turn to solid!
+        cell.y = 7.0;  // Volcanic Obsidian
+    }
+}
+
+// --- Acid Corrosion (Runs in solid cells) ---
+if (cell.x <= solid_thresh) {
+    let a_above = get_water(local_x, local_y + 1, local_z).w;
+    let a_left  = get_water(local_x - 1, local_y, local_z).w;
+    let a_right = get_water(local_x + 1, local_y, local_z).w;
+    let a_front = get_water(local_x, local_y, local_z - 1).w;
+    let a_back  = get_water(local_x, local_y, local_z + 1).w;
+    let acid_vol = max(a_above, max(a_left, max(a_right, max(a_front, a_back))));
+    if (acid_vol > 0.05) {
+        cell.x = cell.x + dt * acid_vol * 15.0;
+    }
+}
+
 
 
 
