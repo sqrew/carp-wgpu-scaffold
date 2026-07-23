@@ -372,7 +372,7 @@
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
             const GRID_RES: i32 = " @&res-str "i;
 "
-            (if (or (= var-name &@"water") (= var-name &@"gas"))
+            (if (or (= var-name &@"water") (or (= var-name &@"gas") (= var-name &@"light")))
               (str*
                 "            @group(0) @binding(6) var water_texture: texture_3d<f32>;\n"
                 "            @group(0) @binding(7) var gas_texture: texture_3d<f32>;\n\n"
@@ -447,7 +447,7 @@
                 "                    let idx = x + y * " @&res-str "i + z * " @&res-sq-str "i;\n"
                 "                    return input_fields[idx];\n"
                 "                } else {\n"
-                "                    return get_water(x, y, z);\n"
+                "                    return " (if (= var-name &@"light") "vec4<f32>(0.0)" "get_water(x, y, z)") ";\n"
                 "                }\n"
                 "            }\n\n")
               @"")
