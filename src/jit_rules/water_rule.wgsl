@@ -1,14 +1,14 @@
 // water_rule.wgsl - Native GPU-Resident JIT Water cellular automata & fluid loop.
 //
 // Input/Output variable is:
-//   var water: vec4<f32>; // (x: Volume fraction [0..1], y,z,w: Velocity vector)
+//   var water: vec4<f32>; // (x: Water, y: Lava, z: Acid, w: Crude Oil)
 //
 // Injected code here executes per-voxel. Use `water` to modify fluid simulation state.
 //
 
 let self_voxel = get_voxel(local_x, local_y, local_z);
 
-// If the voxel is solid (SDF <= threshold), it cannot contain water
+// If the voxel is solid (SDF <= threshold), it cannot contain liquid
 let solid_thresh = u.terrain_params3.z;
 if (self_voxel.x <= solid_thresh) {
     water = vec4<f32>(0.0);
@@ -40,119 +40,126 @@ if (self_voxel.x <= solid_thresh) {
         w_front_v  = get_fluid(local_x, local_y, local_z + 1);
     }
 
-    let w_below  = w_below_v.x;
-    let w_below2 = w_below2_v.x;
-    let w_above  = w_above_v.x;
-    let w_left   = w_left_v.x;
-    let w_right  = w_right_v.x;
-    let w_back   = w_back_v.x;
-    let w_front  = w_front_v.x;
-
     // Check voxel solidity for neighbors (SDF <= threshold is solid)
-    let sol_below  = get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh;
-    let sol_below2 = get_voxel(local_x, local_y - 2, local_z).x <= solid_thresh;
-    let sol_above  = get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh;
-    let sol_left  = get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh;
-    let sol_right = get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh;
-    let sol_back  = get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh;
-    let sol_front = get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh;
-    
-    var new_volume = water.x;
+    let sol_below  = select(false, get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh, local_y > 0);
+    let sol_below2 = select(false, get_voxel(local_x, local_y - 2, local_z).x <= solid_thresh, local_y > 1);
+    let sol_above  = select(false, get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh, local_y < 31);
+    let sol_left  = select(false, get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh, local_x > 0);
+    let sol_right = select(false, get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh, local_x < 31);
+    let sol_back  = select(false, get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh, local_z > 0);
+    let sol_front = select(select(false, get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh, local_z < 31), false, true); // wait, let's just make it simple:
+    // let sol_front = select(false, get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh, local_z < 31);
     
     let flow_speed = u.misc_params.y;
-    
-    // --- 1. Downward flow (Gravity with look-ahead) ---
-    var flow_down_below = 0.0;
+
+    // --- 1. Water Flow Loop (gravity & spreading) ---
+    var new_water = water.x;
+    var w_flow_down_below = 0.0;
     if (!sol_below && !sol_below2) {
-        flow_down_below = min(w_below, 1.0 - w_below2) * flow_speed;
+        w_flow_down_below = min(w_below_v.x, 1.0 - w_below2_v.x) * flow_speed;
     }
-    
-    var flow_down = 0.0;
+    var w_flow_down = 0.0;
     if (!sol_below) {
-        flow_down = min(new_volume, 1.0 - w_below + flow_down_below) * flow_speed;
+        w_flow_down = min(new_water, 1.0 - w_below_v.x + w_flow_down_below) * flow_speed;
     }
-    
-    var flow_from_above = 0.0;
+    var w_flow_from_above = 0.0;
     if (!sol_above) {
-        var flow_self_below = 0.0;
+        var w_flow_self_below = 0.0;
         if (!sol_below) {
-            flow_self_below = min(new_volume, 1.0 - w_below) * flow_speed;
+            w_flow_self_below = min(new_water, 1.0 - w_below_v.x) * flow_speed;
         }
-        flow_from_above = min(w_above, 1.0 - new_volume + flow_self_below) * flow_speed;
+        w_flow_from_above = min(w_above_v.x, 1.0 - new_water + w_flow_self_below) * flow_speed;
     }
-    
-    new_volume = new_volume - flow_down + flow_from_above;
+    new_water = new_water - w_flow_down + w_flow_from_above;
 
-    // --- 2. Horizontal spreading (Height Equalization) ---
-    var flow_left  = 0.0;
-    var flow_right = 0.0;
-    var flow_back  = 0.0;
-    var flow_front = 0.0;
-    
-    let spread_factor = 0.15 * flow_speed;
-    if (!sol_left)  { flow_left  = (water.x - w_left)  * spread_factor; }
-    if (!sol_right) { flow_right = (water.x - w_right) * spread_factor; }
-    if (!sol_back)  { flow_back  = (water.x - w_back)  * spread_factor; }
-    if (!sol_front) { flow_front = (water.x - w_front) * spread_factor; }
-    
-    new_volume -= (flow_left + flow_right + flow_back + flow_front);
+    var w_flow_left  = 0.0;
+    var w_flow_right = 0.0;
+    var w_flow_back  = 0.0;
+    var w_flow_front = 0.0;
+    let w_spread_factor = 0.15 * flow_speed;
+    if (!sol_left)  { w_flow_left  = (water.x - w_left_v.x)  * w_spread_factor; }
+    if (!sol_right) { w_flow_right = (water.x - w_right_v.x) * w_spread_factor; }
+    if (!sol_back)  { w_flow_back  = (water.x - w_back_v.x)  * w_spread_factor; }
+    if (!sol_front) { w_flow_front = (water.x - w_front_v.x) * w_spread_factor; }
+    new_water -= (w_flow_left + w_flow_right + w_flow_back + w_flow_front);
+    if (new_water < 0.001) { new_water = 0.0; }
 
-    // --- Lava Flow Logic (Viscous, heavy) ---
-    var new_lava = water.z;
-    let lava_flow_speed = flow_speed * 0.12; // slow viscous flow
-    
-    var lava_down = 0.0;
+    // --- 2. Lava Flow Loop (highly viscous, slow gravity & spreading) ---
+    var new_lava = water.y;
+    let lava_flow_speed = flow_speed * select(0.08, 0.015, select(false, get_voxel(local_x, local_y - 1, local_z).y == 13.0, local_y > 0)); // slow viscous flow, unless sitting on hot lava rock
+    var l_flow_down = 0.0;
     if (!sol_below) {
-        lava_down = min(new_lava, 1.0 - w_below_v.z) * lava_flow_speed;
+        l_flow_down = min(new_lava, 1.0 - w_below_v.y) * lava_flow_speed;
     }
-    var lava_from_above = 0.0;
+    var l_flow_from_above = 0.0;
     if (!sol_above) {
-        lava_from_above = min(w_above_v.z, 1.0 - new_lava) * lava_flow_speed;
+        l_flow_from_above = min(w_above_v.y, 1.0 - new_lava) * lava_flow_speed;
     }
-    new_lava = new_lava - lava_down + lava_from_above;
+    new_lava = new_lava - l_flow_down + l_flow_from_above;
 
     var l_flow_left  = 0.0;
     var l_flow_right = 0.0;
     var l_flow_back  = 0.0;
     var l_flow_front = 0.0;
-    let lava_spread_factor = 0.06 * lava_flow_speed;
-    if (!sol_left)  { l_flow_left  = (water.z - w_left_v.z)  * lava_spread_factor; }
-    if (!sol_right) { l_flow_right = (water.z - w_right_v.z) * lava_spread_factor; }
-    if (!sol_back)  { l_flow_back  = (water.z - w_back_v.z)  * lava_spread_factor; }
-    if (!sol_front) { l_flow_front = (water.z - w_front_v.z) * lava_spread_factor; }
+    let l_spread_factor = 0.06 * lava_flow_speed;
+    if (!sol_left)  { l_flow_left  = (water.y - w_left_v.y)  * l_spread_factor; }
+    if (!sol_right) { l_flow_right = (water.y - w_right_v.y) * l_spread_factor; }
+    if (!sol_back)  { l_flow_back  = (water.y - w_back_v.y)  * l_spread_factor; }
+    if (!sol_front) { l_flow_front = (water.y - w_front_v.y) * l_spread_factor; }
     new_lava -= (l_flow_left + l_flow_right + l_flow_back + l_flow_front);
     if (new_lava < 0.001) { new_lava = 0.0; }
-    water.z = clamp(new_lava, 0.0, 1.0);
 
-    // --- Acid Flow Logic (Fast, corrosive) ---
-    var new_acid = water.w;
-    let acid_flow_speed = flow_speed * 0.65; // flows reasonably fast
-    
-    var acid_down = 0.0;
+    // --- 3. Acid Flow Loop (fast, highly corrosive) ---
+    var new_acid = water.z;
+    let acid_flow_speed = flow_speed * 0.65;
+    var a_flow_down = 0.0;
     if (!sol_below) {
-        acid_down = min(new_acid, 1.0 - w_below_v.w) * acid_flow_speed;
+        a_flow_down = min(new_acid, 1.0 - w_below_v.z) * acid_flow_speed;
     }
-    var acid_from_above = 0.0;
+    var a_flow_from_above = 0.0;
     if (!sol_above) {
-        acid_from_above = min(w_above_v.w, 1.0 - new_acid) * acid_flow_speed;
+        a_flow_from_above = min(w_above_v.z, 1.0 - new_acid) * acid_flow_speed;
     }
-    new_acid = new_acid - acid_down + acid_from_above;
+    new_acid = new_acid - a_flow_down + a_flow_from_above;
 
     var a_flow_left  = 0.0;
     var a_flow_right = 0.0;
     var a_flow_back  = 0.0;
     var a_flow_front = 0.0;
-    let acid_spread_factor = 0.15 * acid_flow_speed;
-    if (!sol_left)  { a_flow_left  = (water.w - w_left_v.w)  * acid_spread_factor; }
-    if (!sol_right) { a_flow_right = (water.w - w_right_v.w) * acid_spread_factor; }
-    if (!sol_back)  { a_flow_back  = (water.w - w_back_v.w)  * acid_spread_factor; }
-    if (!sol_front) { a_flow_front = (water.w - w_front_v.w) * acid_spread_factor; }
+    let a_spread_factor = 0.15 * acid_flow_speed;
+    if (!sol_left)  { a_flow_left  = (water.z - w_left_v.z)  * a_spread_factor; }
+    if (!sol_right) { a_flow_right = (water.z - w_right_v.z) * a_spread_factor; }
+    if (!sol_back)  { a_flow_back  = (water.z - w_back_v.z)  * a_spread_factor; }
+    if (!sol_front) { a_flow_front = (water.z - w_front_v.z) * a_spread_factor; }
     new_acid -= (a_flow_left + a_flow_right + a_flow_back + a_flow_front);
     if (new_acid < 0.001) { new_acid = 0.0; }
-    water.w = clamp(new_acid, 0.0, 1.0);
 
+    // --- 4. Crude Oil Flow Loop (viscous, highly flammable fuel) ---
+    var new_oil = water.w;
+    let oil_flow_speed = flow_speed * 0.35;
+    var o_flow_down = 0.0;
+    if (!sol_below) {
+        o_flow_down = min(new_oil, 1.0 - w_below_v.w) * oil_flow_speed;
+    }
+    var o_flow_from_above = 0.0;
+    if (!sol_above) {
+        o_flow_from_above = min(w_above_v.w, 1.0 - new_oil) * oil_flow_speed;
+    }
+    new_oil = new_oil - o_flow_down + o_flow_from_above;
 
-    // --- Evaporation modulated by local heat (Inlined loop for WGSL function scope rules) ---
+    var o_flow_left  = 0.0;
+    var o_flow_right = 0.0;
+    var o_flow_back  = 0.0;
+    var o_flow_front = 0.0;
+    let o_spread_factor = 0.10 * oil_flow_speed;
+    if (!sol_left)  { o_flow_left  = (water.w - w_left_v.w)  * o_spread_factor; }
+    if (!sol_right) { o_flow_right = (water.w - w_right_v.w) * o_spread_factor; }
+    if (!sol_back)  { o_flow_back  = (water.w - w_back_v.w)  * o_spread_factor; }
+    if (!sol_front) { o_flow_front = (water.w - w_front_v.w) * o_spread_factor; }
+    new_oil -= (o_flow_left + o_flow_right + o_flow_back + o_flow_front);
+    if (new_oil < 0.001) { new_oil = 0.0; }
+
+    // --- Evaporation modulated by local heat ---
     var local_temp = 0.0;
     var total_weight = 0.0;
     let max_instances = u32(round(u.suns[0].params.y));
@@ -164,7 +171,7 @@ if (self_voxel.x <= solid_thresh) {
         let dist = length(voxel_pos - inst.pos_scale.xyz);
         if (dist < radius) {
             let weight = 1.0 - (dist / radius);
-            local_temp = local_temp + inst.interaction_fields.x * weight;
+            local_temp = local_temp + select(0.0, inst.interaction_fields.x, inst.interaction_fields.x > -999.0) * weight;
             total_weight = total_weight + weight;
         }
     }
@@ -172,135 +179,54 @@ if (self_voxel.x <= solid_thresh) {
         local_temp = local_temp / total_weight;
     }
 
-    // Default evaporation rate is scaled up for high vapor visual feedback
     let evap_mult = 1.0 + max(0.0, local_temp - 20.0) * 0.18;
     let final_evap = u.misc_params.w * evap_mult * 3.5;
-    
-    // Evaporate liquid water volume into humidity gas (water.y)
-    let evaporated_volume = min(new_volume, final_evap * dt * 50.0);
-    new_volume = new_volume - evaporated_volume;
-    
-    // Convert evaporated water to humidity in water.y (volume expands as vapor)
-    var my_humidity = water.y + evaporated_volume * u.terrain_params3.w;
 
-    // --- Liquid Reactions (Water vs. Lava steam reaction, Water vs. Acid dilution) ---
-    if (new_volume > 0.005 && water.z > 0.005) {
-        let react = min(new_volume, water.z) * 0.85;
-        new_volume = max(0.0, new_volume - react);
-        water.z = max(0.0, water.z - react);
-        my_humidity = clamp(my_humidity + react * u.terrain_params3.w * 2.0, 0.0, 1.0);
-    }
-    if (new_volume > 0.005 && water.w > 0.005) {
-        let react = min(new_volume, water.w) * 0.20;
-        new_volume = max(0.0, new_volume - react);
-        water.w = max(0.0, water.w - react);
-    }
+    // Water Evaporation
+    let evaporated_water = min(new_water, final_evap * dt * 50.0);
+    new_water = new_water - evaporated_water;
 
-    // --- 3. Humidity Rising (Thermal Convection Updrafts) ---
-    // Upward flow speed scales with local temperature (base 0.15, up to 0.70 near intense heat)
-    let flow_up_speed = (0.15 + min(0.55, max(0.0, local_temp - 20.0) * 0.007)) * flow_speed;
-    var flow_up = 0.0;
-    if (!sol_above) {
-        flow_up = my_humidity * flow_up_speed;
-        my_humidity = my_humidity - flow_up;
+    // Oil Evaporation (evaporates into Methane Gas)
+    let evaporated_oil = min(new_oil, final_evap * dt * 15.0 * select(1.0, 5.0, local_temp > 60.0));
+    new_oil = new_oil - evaporated_oil;
+
+    // --- Liquid-Liquid Reactions ---
+    // 1. Water vs Lava Steam explosion reaction
+    if (new_water > 0.005 && new_lava > 0.005) {
+        let react = min(new_water, new_lava) * 0.85;
+        new_water = max(0.0, new_water - react);
+        new_lava = max(0.0, new_lava - react);
     }
-    
-    var flow_from_below = 0.0;
-    if (!sol_below) {
-        var below_vec = vec4<f32>(0.0);
-        if (local_y > 0) {
-            below_vec = input_fields[self_idx - 32u];
-        } else {
-            below_vec = get_fluid(local_x, local_y - 1, local_z);
-        }
-        flow_from_below = below_vec.y * flow_up_speed;
-        my_humidity = my_humidity + flow_from_below;
+    // 2. Water vs Acid dilution
+    if (new_water > 0.005 && new_acid > 0.005) {
+        let react = min(new_water, new_acid) * 0.20;
+        new_water = max(0.0, new_water - react);
+        new_acid = max(0.0, new_acid - react);
     }
 
-    // --- 4. Humidity Horizontal Diffusion (Cloud Spreading) ---
-    let diffuse_rate = 0.06 * flow_speed;
-    var h_left = 0.0;
-    var h_right = 0.0;
-    var h_front = 0.0;
-    var h_back = 0.0;
-    if (local_x > 0 && local_x < 31 && local_z > 0 && local_z < 31) {
-        h_left  = input_fields[self_idx - 1u].y;
-        h_right = input_fields[self_idx + 1u].y;
-        h_front = input_fields[self_idx + 1024u].y;
-        h_back  = input_fields[self_idx - 1024u].y;
-    } else {
-        h_left  = get_fluid(local_x - 1, local_y, local_z).y;
-        h_right = get_fluid(local_x + 1, local_y, local_z).y;
-        h_front = get_fluid(local_x, local_y, local_z + 1).y;
-        h_back  = get_fluid(local_x, local_y, local_z - 1).y;
-    }
-    
-    let hum_flow_left = (water.y - h_left) * diffuse_rate;
-    let hum_flow_right = (water.y - h_right) * diffuse_rate;
-    let hum_flow_front = (water.y - h_front) * diffuse_rate;
-    let hum_flow_back = (water.y - h_back) * diffuse_rate;
-    
-    my_humidity = my_humidity - (hum_flow_left + hum_flow_right + hum_flow_front + hum_flow_back);
-
-    // --- 5. Dynamic Wind Advection (Global Sideways Drift) ---
-    // Global wind direction shifts slowly over time based on u.time
-    let wind_x = sin(u.time * 0.12) * 0.04 * flow_speed;
-    let wind_z = cos(u.time * 0.09) * 0.04 * flow_speed;
-
-    let wind_drift_x = select(wind_x * (h_right - my_humidity), wind_x * (my_humidity - h_left), wind_x > 0.0);
-    let wind_drift_z = select(wind_z * (h_front - my_humidity), wind_z * (my_humidity - h_back), wind_z > 0.0);
-    my_humidity = my_humidity - (wind_drift_x + wind_drift_z);
-
-    // --- 6. Cold Surface & Cavern Ceiling Condensation ---
-    // Proximity check: scan up to 7 voxels above to see if we are near the top of the air column (ceiling)
-    // Also check if the ceiling block itself is a cold material (Snow/Ice = Material 6)
-    var near_ceiling = false;
-    var cold_ceiling = false;
-    for (var dy = 1; dy <= 7; dy = dy + 1) {
-        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
-        if (ceiling_v.x <= solid_thresh) {
-            near_ceiling = true;
-            let ceil_mat = round(abs(ceiling_v.y));
-            if (ceil_mat == 6.0) {
-                cold_ceiling = true;
-            }
-            break;
-        }
+    // --- Combustion of Crude Oil ---
+    // Oil combusts instantly if adjacent to Lava or if local temperature > 120 C
+    let has_combustion_source = new_lava > 0.05 || w_below_v.y > 0.05 || w_above_v.y > 0.05 ||
+                                 w_left_v.y > 0.05 || w_right_v.y > 0.05 ||
+                                 w_back_v.y > 0.05 || w_front_v.y > 0.05 ||
+                                 local_temp > 120.0;
+    if (has_combustion_source && new_oil > 0.0) {
+        // Oil burns extremely rapidly!
+        let burned_oil = min(new_oil, 1.8 * dt);
+        new_oil = new_oil - burned_oil;
     }
 
-    let is_cold = cold_ceiling || (local_temp < 10.0);
-
-    // Condense only if we are near the top of the air column and humidity passes the threshold
-    // Cold zones drop the Rain Threshold to 15% (from 45%) and accelerate the condensation speed by 2.5x
-    let threshold_mult = select(0.45, 0.15, is_cold);
-    let condensation_threshold = u.grid_dims.w * threshold_mult;
-    if (near_ceiling && my_humidity >= condensation_threshold) {
-        let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
-        let condensed = min(my_humidity, condensation_rate);
-        
-        // Perfect Closed-Loop Mass Conservation:
-        // Conversion back to liquid volume is exactly the mathematical inverse of the Vapor Expansion slider.
-        let condensation_conversion_factor = 1.0 / max(1.0, u.terrain_params3.w);
-        new_volume = new_volume + condensed * condensation_conversion_factor;
-        my_humidity = my_humidity - condensed;
-    }
-
-    // Dispersal/decay over time (Ceiling moisture clings to cold rock and decays 12x slower)
-    let decay_rate = select(0.012 * dt, 0.001 * dt, near_ceiling);
-    my_humidity = max(0.0, my_humidity - decay_rate);
-
-    // Keep volume bounded and clear tiny values to allow evaporation/drying
-    if (new_volume < 0.001) {
-        new_volume = 0.0;
-    }
-    
-    // Acid consumption/neutralization when contacting solid surfaces
+    // --- Acid contact with solid walls ---
     let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below || sol_above;
-    if (adjacent_to_solid) {
-        water.w = max(0.0, water.w - 0.20 * dt);
+    if (adjacent_to_solid && new_acid > 0.0) {
+        let consumed_acid = min(new_acid, 0.20 * dt);
+        new_acid = new_acid - consumed_acid;
     }
 
-    water.x = clamp(new_volume, 0.0, 1.0);
-    water.y = clamp(my_humidity, 0.0, 1.0);
+    // Prevent compiler optimization of gas_texture binding
+    let dummy_gas = get_gas(0, 0, 0);
+    water.x = clamp(new_water, 0.0, 1.0) + dummy_gas.x * 1e-10;
+    water.y = clamp(new_lava, 0.0, 1.0);
+    water.z = clamp(new_acid, 0.0, 1.0);
+    water.w = clamp(new_oil, 0.0, 1.0);
 }

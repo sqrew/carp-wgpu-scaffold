@@ -103,13 +103,14 @@
               "Dark Obsidian"))))))))))))))))
       (when (InputManager.action-pressed? mgr "CycleLiquid")
         (let [curr @(Engine.active-liquid-type e)
-              next (if (= curr 1) 2 (if (= curr 2) 3 1))]
+              next (if (= curr 1) 2 (if (= curr 2) 3 (if (= curr 3) 4 1)))]
           (do
             (Engine.set-active-liquid-type! e next)
             (IO.println &(str* "Selected Liquid Type: "
                                (if (= next 1) "WATER"
                                (if (= next 2) "LAVA"
-                               "ACID")))))))))
+                               (if (= next 3) "ACID"
+                               "CRUDE OIL"))))))))))
 
   (sig tick-gameplay-input! (Fn [(Ref Engine.Engine) (Ref InputManager) Double (Ref RigidBody) (Ref RotationState) Double] ()))
   (defn tick-gameplay-input! [e mgr dt p-rb p-rot p-scale]

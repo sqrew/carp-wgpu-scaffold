@@ -149,6 +149,7 @@
             @group(0) @binding(4) var<storage, read> chunk_lookup: ChunkLookup;
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
             @group(0) @binding(6) var water_texture: texture_3d<f32>;
+            @group(0) @binding(7) var gas_texture: texture_3d<f32>;
 
             fn get_water(x: i32, y: i32, z: i32) -> vec4<f32> {
                 let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(" @&res-str "i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));
@@ -182,6 +183,40 @@
                 
                 let atlas_coord = vec3<i32>((slot_x * " @&res-str "i) + l.x, (slot_y * " @&res-str "i) + l.y, (slot_z * " @&res-str "i) + l.z);
                 return textureLoad(water_texture, atlas_coord, 0);
+            }
+
+            fn get_gas(x: i32, y: i32, z: i32) -> vec4<f32> {
+                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(" @&res-str "i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));
+                let res_f = f32(" @&res-str "i);
+                let q = vec3<i32>(floor(world_v / res_f));
+                let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);
+                
+                let local_q = q - chunk_lookup.origin.xyz;
+                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let mx = u32(local_q.x) >> 2u;
+                let my = u32(local_q.y) >> 2u;
+                let mz = u32(local_q.z) >> 2u;
+                let skip_idx = mx + (my << 3u) + (mz << 6u);
+                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                if (skip_val == 0) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                if (slot < 0) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let slot_x = slot % " @&slots-per-dim-str "i;
+                let slot_y = (slot / " @&slots-per-dim-str "i) % " @&slots-per-dim-str "i;
+                let slot_z = slot / " @&slots-per-dim-sq-str "i;
+                
+                let atlas_coord = vec3<i32>((slot_x * " @&res-str "i) + l.x, (slot_y * " @&res-str "i) + l.y, (slot_z * " @&res-str "i) + l.z);
+                return textureLoad(gas_texture, atlas_coord, 0);
             }
 
             fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
@@ -337,9 +372,10 @@
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
             const GRID_RES: i32 = " @&res-str "i;
 "
-            (if (= var-name &@"water")
+            (if (or (= var-name &@"water") (= var-name &@"gas"))
               (str*
-                "            @group(0) @binding(6) var water_texture: texture_3d<f32>;\n\n"
+                "            @group(0) @binding(6) var water_texture: texture_3d<f32>;\n"
+                "            @group(0) @binding(7) var gas_texture: texture_3d<f32>;\n\n"
                 "            fn get_water(x: i32, y: i32, z: i32) -> vec4<f32> {\n"
                 "                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(" @&res-str "i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));\n"
                 "                let res_f = f32(" @&res-str "i);\n"
@@ -373,14 +409,47 @@
                 "                let atlas_coord = vec3<i32>((slot_x * " @&res-str "i) + l.x, (slot_y * " @&res-str "i) + l.y, (slot_z * " @&res-str "i) + l.z);\n"
                 "                return textureLoad(water_texture, atlas_coord, 0);\n"
                 "            }\n\n"
-                 "            fn get_fluid(x: i32, y: i32, z: i32) -> vec4<f32> {\n"
-                 "                if (x >= 0 && x < " @&res-str "i && y >= 0 && y < " @&res-str "i && z >= 0 && z < " @&res-str "i) {\n"
-                 "                    let idx = x + y * " @&res-str "i + z * " @&res-sq-str "i;\n"
-                 "                    return input_fields[idx];\n"
-                 "                } else {\n"
-                 "                    return get_water(x, y, z);\n"
-                 "                }\n"
-                 "            }\n\n")
+                "            fn get_gas(x: i32, y: i32, z: i32) -> vec4<f32> {\n"
+                "                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(" @&res-str "i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));\n"
+                "                let res_f = f32(" @&res-str "i);\n"
+                "                let q = vec3<i32>(floor(world_v / res_f));\n"
+                "                let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);\n"
+                "                \n"
+                "                let local_q = q - chunk_lookup.origin.xyz;\n"
+                "                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {\n"
+                "                    return vec4<f32>(0.0);\n"
+                "                }\n"
+                "                \n"
+                "                let mx = u32(local_q.x) >> 2u;\n"
+                "                let my = u32(local_q.y) >> 2u;\n"
+                "                let mz = u32(local_q.z) >> 2u;\n"
+                "                let skip_idx = mx + (my << 3u) + (mz << 6u);\n"
+                "                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];\n"
+                "                if (skip_val == 0) {\n"
+                "                    return vec4<f32>(0.0);\n"
+                "                }\n"
+                "                \n"
+                "                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;\n"
+                "                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];\n"
+                "                if (slot < 0) {\n"
+                "                    return vec4<f32>(0.0);\n"
+                "                }\n"
+                "                \n"
+                "                let slot_x = slot % " @&slots-per-dim-str "i;\n"
+                "                let slot_y = (slot / " @&slots-per-dim-str "i) % " @&slots-per-dim-str "i;\n"
+                "                let slot_z = slot / " @&slots-per-dim-sq-str "i;\n"
+                "                \n"
+                "                let atlas_coord = vec3<i32>((slot_x * " @&res-str "i) + l.x, (slot_y * " @&res-str "i) + l.y, (slot_z * " @&res-str "i) + l.z);\n"
+                "                return textureLoad(gas_texture, atlas_coord, 0);\n"
+                "            }\n\n"
+                "            fn get_fluid(x: i32, y: i32, z: i32) -> vec4<f32> {\n"
+                "                if (x >= 0 && x < " @&res-str "i && y >= 0 && y < " @&res-str "i && z >= 0 && z < " @&res-str "i) {\n"
+                "                    let idx = x + y * " @&res-str "i + z * " @&res-sq-str "i;\n"
+                "                    return input_fields[idx];\n"
+                "                } else {\n"
+                "                    return get_water(x, y, z);\n"
+                "                }\n"
+                "            }\n\n")
               @"")
 "
             fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
@@ -517,6 +586,30 @@
                        (IO.println "Water rule JIT system reloaded and active.")
                        (World.dirty-all-chunks! (Engine.world-data e))))))))))
 
+  (sig assemble-gas-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-gas-rule-shader [e world]
+    (assemble-generic-rule-shader e world &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/jit_rules/gas_rule.wgsl" &@"gas" &@"gas_rule.wgsl"))
+
+  (sig evaluate-gas-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-gas-rule-hot-reload! [e ctx ren]
+    (let [world (Engine.world e)
+          new-source (Engine.assemble-gas-rule-shader e world)]
+      (if (String.empty? &new-source)
+          (when (not (= (Engine.last-known-gas-rule e) &new-source))
+            (do
+              (Engine.set-last-known-gas-rule! e @&new-source)
+              (IO.println "Gas rule JIT system cleared.")
+              (World.dirty-all-chunks! (Engine.world-data e))))
+          (when (not (= (Engine.last-known-gas-rule e) &new-source))
+            (do
+              (Engine.set-last-known-gas-rule! e @&new-source)
+              (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
+                (if (WGPU.pipeline-null?- pipe)
+                    ()
+                    (do
+                       (IO.println "Gas rule JIT system reloaded and active.")
+                       (World.dirty-all-chunks! (Engine.world-data e))))))))))
+
   (sig evaluate-jit-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn evaluate-jit-hot-reload! [e ctx ren]
     (let [world (Engine.world e)
@@ -574,6 +667,7 @@
                                              @(WGPURenderer.light-texture ren)
                                              @(WGPURenderer.interaction-texture ren)
                                              @(WGPURenderer.water-texture ren)
+                                             @(WGPURenderer.gas-texture ren)
                                              @(WGPURenderer.voxel-sampler ren)
                                              @(WGPURenderer.chunk-lookup-buffer ren)
                                              @(WGPURenderer.noise-texture ren)
@@ -700,7 +794,8 @@
                                                       @(WGPURenderer.jit-info-buffer ren)
                                                       @(WGPURenderer.chunk-lookup-buffer ren)
                                                       @(WGPURenderer.voxel-texture ren)
-                                                      @(WGPURenderer.water-texture ren))
+                                                      @(WGPURenderer.water-texture ren)
+                                                      @(WGPURenderer.gas-texture ren))
                                                 (Result.Error err)
                                                   (do
                                                     (IO.println &(str* "JIT Bind Group error: " &err))

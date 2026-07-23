@@ -89,6 +89,7 @@
             (the String @"")
             (the String @"")
             (the String @"")
+            (the String @"")
             cfg
             2.0
             1)))))
@@ -741,8 +742,9 @@
                                       (if (= final-csg-idx -5) 2.0
                                         (if (= final-csg-idx -6) 4.0
                                           (if (= final-csg-idx -7) 5.0
-                                            (if (<= final-csg-idx -99) 3.0 0.0)))))
-                      _ (when (or (or (= instance-type 2.0) (= instance-type 4.0)) (= instance-type 5.0))
+                                            (if (= final-csg-idx -8) 6.0
+                                              (if (<= final-csg-idx -99) 3.0 0.0))))))
+                      _ (when (or (or (or (= instance-type 2.0) (= instance-type 4.0)) (= instance-type 5.0)) (= instance-type 6.0))
                           (IO.println &(str* "Active Liquid Bullet Packed: id=" (Int.str id) " type=" (Double.str instance-type) " pos=" (Vector3.str pos) " scale=" (Double.str rad-scale))))
                       base (+ (/ WGPURenderer.header-size 4) (* id 24))]
                   (do
@@ -1182,6 +1184,7 @@
                 (when is-interaction-frame
                   (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res))
                 (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
+                (VoxelBaker.bake-gas-gpu! ctx ren chunk num-instances (Engine.last-known-gas-rule e) (Engine.jit-cache e) voxel-res)
                 (if (> current-ticks 0)
                   (let [new-ticks (dec current-ticks)]
                     (do
@@ -1337,7 +1340,8 @@
                 (Engine.evaluate-carve-hot-reload! e ctx ren)
                 (Engine.evaluate-light-rule-hot-reload! e ctx ren)
                 (Engine.evaluate-interaction-rule-hot-reload! e ctx ren)
-                (Engine.evaluate-water-rule-hot-reload! e ctx ren)))
+                (Engine.evaluate-water-rule-hot-reload! e ctx ren)
+                (Engine.evaluate-gas-rule-hot-reload! e ctx ren)))
             (Diagnostics.with-zone diag "Sync: JIT Physics Loop"
               (Engine.run-jit-physics-loop! e ctx ren))
             (Diagnostics.with-zone diag "Sync: Submit Render Cmds"
@@ -1378,7 +1382,7 @@
                         (WGPURender.free-pipeline old-pipe)
                         (WGPURenderer.set-pipeline! ren new-pipe)
                         (let [old-bg @(WGPURenderer.bind-group ren)
-                              new-bg-res (WGPURender.create-voxel-render-bind-group-chunked ctx new-pipe 
+                               new-bg-res (WGPURender.create-voxel-render-bind-group-chunked ctx new-pipe 
                                             @(WGPURenderer.s-buffer ren) 
                                             @(WGPURenderer.csg-buffer ren) 
                                             @(WGPURenderer.u-buffer ren) 
@@ -1386,6 +1390,7 @@
                                             @(WGPURenderer.light-texture ren) 
                                             @(WGPURenderer.interaction-texture ren) 
                                             @(WGPURenderer.water-texture ren) 
+                                            @(WGPURenderer.gas-texture ren) 
                                             @(WGPURenderer.voxel-sampler ren) 
                                             @(WGPURenderer.chunk-lookup-buffer ren) 
                                             @(WGPURenderer.noise-texture ren) 

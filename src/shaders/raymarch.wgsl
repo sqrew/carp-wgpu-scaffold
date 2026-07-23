@@ -61,6 +61,7 @@ struct PointInstance {
       @group(0) @binding(8) var light_texture: texture_3d<f32>;
       @group(0) @binding(9) var interaction_texture: texture_3d<f32>;
       @group(0) @binding(10) var water_texture: texture_3d<f32>;
+      @group(0) @binding(11) var gas_texture: texture_3d<f32>;
 
       fn positive_mod(n: i32, m: i32) -> i32 {
           let r = n % m;
@@ -395,6 +396,78 @@ struct PointInstance {
           } else {
               return vec4<f32>(0.0);
           }
+      }
+
+      fn getGasAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> {{LOG_RES}}u;
+          let qy = gy >> {{LOG_RES}}u;
+          let qz = gz >> {{LOG_RES}}u;
+          
+          let lx = gx & {{VOXEL_RES_SUB_1}}i;
+          let ly = gy & {{VOXEL_RES_SUB_1}}i;
+          let lz = gz & {{VOXEL_RES_SUB_1}}i;
+          
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
+          
+          if (slot >= 0) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              
+              let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
+              return textureLoad(gas_texture, atlas_coord, 0);
+          } else {
+              return vec4<f32>(0.0);
+          }
+      }
+
+      fn sampleGasGrid(p: vec3<f32>) -> vec4<f32> {
+          let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
+          
+          if (slot < 0) {
+              return vec4<f32>(0.0);
+          }
+          
+          let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(tx));
+          let f = fract(tx);
+          
+          let lx = c0.x & {{VOXEL_RES_SUB_1}}i;
+          let ly = c0.y & {{VOXEL_RES_SUB_1}}i;
+          let lz = c0.z & {{VOXEL_RES_SUB_1}}i;
+          
+          var tex_val = vec4<f32>(0.0);
+          let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
+              
+              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+              tex_val = textureSampleLevel(gas_texture, voxel_sampler, sample_coords, 0.0);
+          } else {
+             let v0 = getGasAt(c0.x,     c0.y,     c0.z);
+             let v1 = getGasAt(c0.x + 1, c0.y,     c0.z);
+             let v2 = getGasAt(c0.x,     c0.y + 1, c0.z);
+             let v3 = getGasAt(c0.x + 1, c0.y + 1, c0.z);
+             let v4 = getGasAt(c0.x,     c0.y,     c0.z + 1);
+             let v5 = getGasAt(c0.x + 1, c0.y,     c0.z + 1);
+             let v6 = getGasAt(c0.x,     c0.y + 1, c0.z + 1);
+             let v7 = getGasAt(c0.x + 1, c0.y + 1, c0.z + 1);
+             
+             let v_01 = mix(v0, v1, f.x);
+             let v_23 = mix(v2, v3, f.x);
+             let v_45 = mix(v4, v5, f.x);
+             let v_67 = mix(v6, v7, f.x);
+             
+             let v_y0 = mix(v_01, v_23, f.y);
+             let v_y1 = mix(v_45, v_67, f.y);
+             
+             tex_val = mix(v_y0, v_y1, f.z);
+          }
+          
+          return tex_val;
       }
 
       fn sampleWaterGrid(p: vec3<f32>) -> vec4<f32> {
@@ -1587,6 +1660,7 @@ struct PointInstance {
             var max_water_sampled = 0.0;
             var max_lava_sampled = 0.0;
             var max_acid_sampled = 0.0;
+            var max_oil_sampled = 0.0;
             // Raymarching path
             for(var i = 0; i < MAX_RAY_STEPS; i = i + 1) {
                 let p = ro + rd * t;
@@ -1596,15 +1670,38 @@ struct PointInstance {
                 
                 let water_val = sampleWaterGrid(p);
                 max_water_sampled = max(max_water_sampled, water_val.x);
-                max_lava_sampled = max(max_lava_sampled, water_val.z);
-                max_acid_sampled = max(max_acid_sampled, water_val.w);
+                max_lava_sampled = max(max_lava_sampled, water_val.y);
+                max_acid_sampled = max(max_acid_sampled, water_val.z);
+                max_oil_sampled = max(max_oil_sampled, water_val.w);
 
-                // Accumulate volumetric humidity mist from water grid (water.y)
-                let humidity = water_val.y; // Humidity fraction [0.0..1.0]
-                if (humidity > 0.01) {
-                    let step_density = humidity * 0.38 * min(res.y, 4.0);
+                // Accumulate volumetric gases
+                let gas_val = sampleGasGrid(p);
+                let steam = gas_val.x;
+                if (steam > 0.01) {
+                    let step_density = steam * 0.38 * min(res.y, 4.0);
                     fog_optical_depth += step_density;
-                    let mist_color = vec3<f32>(0.88, 0.92, 0.96);
+                    let mist_color = vec3<f32>(0.85, 0.90, 0.95);
+                    fog_color_accum += mist_color * step_density;
+                }
+                let smoke = gas_val.y;
+                if (smoke > 0.01) {
+                    let step_density = smoke * 0.85 * min(res.y, 4.0);
+                    fog_optical_depth += step_density;
+                    let mist_color = vec3<f32>(0.12, 0.11, 0.10);
+                    fog_color_accum += mist_color * step_density;
+                }
+                let acid_fog = gas_val.z;
+                if (acid_fog > 0.01) {
+                    let step_density = acid_fog * 0.45 * min(res.y, 4.0);
+                    fog_optical_depth += step_density;
+                    let mist_color = vec3<f32>(0.25, 0.95, 0.15);
+                    fog_color_accum += mist_color * step_density;
+                }
+                let methane = gas_val.w;
+                if (methane > 0.01) {
+                    let step_density = methane * 0.22 * min(res.y, 4.0);
+                    fog_optical_depth += step_density;
+                    let mist_color = vec3<f32>(0.92, 0.65, 0.12);
                     fog_color_accum += mist_color * step_density;
                 }
 
@@ -1621,15 +1718,38 @@ struct PointInstance {
 
                     let water_val = sampleWaterGrid(p);
                     max_water_sampled = max(max_water_sampled, water_val.x);
-                    max_lava_sampled = max(max_lava_sampled, water_val.z);
-                    max_acid_sampled = max(max_acid_sampled, water_val.w);
+                    max_lava_sampled = max(max_lava_sampled, water_val.y);
+                    max_acid_sampled = max(max_acid_sampled, water_val.z);
+                    max_oil_sampled = max(max_oil_sampled, water_val.w);
 
-                    // Accumulate volumetric humidity mist from water grid (water.y)
-                    let humidity = water_val.y;
-                    if (humidity > 0.01) {
-                        let step_density = humidity * 0.38 * min(res.y, 4.0);
+                    // Accumulate volumetric gases
+                    let gas_val = sampleGasGrid(p);
+                    let steam_ref = gas_val.x;
+                    if (steam_ref > 0.01) {
+                        let step_density = steam_ref * 0.38 * min(res.y, 4.0);
                         fog_optical_depth += step_density;
-                        let mist_color = vec3<f32>(0.88, 0.92, 0.96);
+                        let mist_color = vec3<f32>(0.85, 0.90, 0.95);
+                        fog_color_accum += mist_color * step_density;
+                    }
+                    let smoke_ref = gas_val.y;
+                    if (smoke_ref > 0.01) {
+                        let step_density = smoke_ref * 0.85 * min(res.y, 4.0);
+                        fog_optical_depth += step_density;
+                        let mist_color = vec3<f32>(0.12, 0.11, 0.10);
+                        fog_color_accum += mist_color * step_density;
+                    }
+                    let acid_fog_ref = gas_val.z;
+                    if (acid_fog_ref > 0.01) {
+                        let step_density = acid_fog_ref * 0.45 * min(res.y, 4.0);
+                        fog_optical_depth += step_density;
+                        let mist_color = vec3<f32>(0.25, 0.95, 0.15);
+                        fog_color_accum += mist_color * step_density;
+                    }
+                    let methane_ref = gas_val.w;
+                    if (methane_ref > 0.01) {
+                        let step_density = methane_ref * 0.22 * min(res.y, 4.0);
+                        fog_optical_depth += step_density;
+                        let mist_color = vec3<f32>(0.92, 0.65, 0.12);
                         fog_color_accum += mist_color * step_density;
                     }
 
@@ -2222,6 +2342,10 @@ struct PointInstance {
             if (max_acid_sampled > 0.001) {
                 let acid_col = mix(vec3<f32>(0.08, 0.55, 0.02), vec3<f32>(0.35, 0.95, 0.1), clamp(max_acid_sampled, 0.0, 1.0));
                 color = mix(color, acid_col, clamp(max_acid_sampled * 2.5, 0.0, 0.88));
+            }
+            if (max_oil_sampled > 0.001) {
+                let oil_col = mix(vec3<f32>(0.03, 0.025, 0.02), vec3<f32>(0.12, 0.10, 0.08), clamp(max_oil_sampled, 0.0, 1.0));
+                color = mix(color, oil_col, clamp(max_oil_sampled * 2.8, 0.0, 0.96));
             }
             if (max_water_sampled > 0.001) {
                 let water_col = mix(vec3<f32>(0.01, 0.20, 0.50), vec3<f32>(0.05, 0.60, 0.85), clamp(max_water_sampled, 0.0, 1.0));

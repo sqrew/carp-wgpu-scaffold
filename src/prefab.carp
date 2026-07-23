@@ -34,6 +34,7 @@
           color (Color.init (if (= liquid-type 1) (Vector3.init 0.05 0.25 0.9)
                             (if (= liquid-type 2) (Vector3.init 1.0 0.25 0.0)
                             (if (= liquid-type 3) (Vector3.init 0.2 0.9 0.05)
+                            (if (= liquid-type 4) (Vector3.init 0.12 0.08 0.05)
                             (if bouncy
                                 (Vector3.init 0.1 0.5 1.0)
                             (cond (= shape-type 0) (Vector3.init 1.0 1.0 0.0)
@@ -41,7 +42,7 @@
                                   (= shape-type 2) (Vector3.init 1.0 0.0 1.0)
                                   (= shape-type 3) (Vector3.init 1.0 0.5 0.0)
                                   (= shape-type 4) (Vector3.init 0.0 1.0 0.0)
-                                  (Vector3.init 0.5 0.5 1.0)))))))
+                                  (Vector3.init 0.5 0.5 1.0))))))))
           c-val (Color.v &color)
           p-x 0.4 p-y 0.4 p-z 0.4 p-w 0.0
           _ (cond (= shape-type 0) (do (set! p-x 0.4) (set! p-y 0.0) (set! p-z 0.0))
@@ -54,7 +55,8 @@
           root-csg-idx (if (= liquid-type 1) -5
                        (if (= liquid-type 2) -6
                        (if (= liquid-type 3) -7
-                       (if bouncy -99 -1))))
+                       (if (= liquid-type 4) -8
+                       (if bouncy -99 -1)))))
           fi (FieldInstance.init (+ shape-type 1) params scale root-csg-idx 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)

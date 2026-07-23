@@ -64,6 +64,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var water_vol = 0.0;
     var lava_vol = 0.0;
     var acid_vol = 0.0;
+    var oil_vol = 0.0;
 
     for (var i = 0u; i < num_instances; i = i + 1u) {
         let inst = u.instances[i];
@@ -71,7 +72,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         if (radius <= 0.0) { continue; }
 
         let inst_type = i32(round(inst.shape_info.y));
-        if (inst_type == 2 || inst_type == 4 || inst_type == 5) {
+        if (inst_type == 2 || inst_type == 4 || inst_type == 5 || inst_type == 6) {
             let speed = inst.shape_info.w;
             let dist = length(p - inst.pos_scale.xyz);
             
@@ -93,18 +94,20 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
                     lava_vol = max(lava_vol, weight);
                 } else if (inst_type == 5) {
                     acid_vol = max(acid_vol, weight);
+                } else if (inst_type == 6) {
+                    oil_vol = max(oil_vol, weight);
                 }
             }
         }
     }
 
-    if (water_vol > 0.0 || lava_vol > 0.0 || acid_vol > 0.0) {
+    if (water_vol > 0.0 || lava_vol > 0.0 || acid_vol > 0.0 || oil_vol > 0.0) {
         let existing = water_gpu_buffer[idx];
         water_gpu_buffer[idx] = vec4<f32>(
             max(existing.x, water_vol),
-            existing.y,
-            max(existing.z, lava_vol),
-            max(existing.w, acid_vol)
+            max(existing.y, lava_vol),
+            max(existing.z, acid_vol),
+            max(existing.w, oil_vol)
         );
     }
 }

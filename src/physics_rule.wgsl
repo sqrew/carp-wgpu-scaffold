@@ -175,24 +175,41 @@ if (cell.x < 0.0) {
 let solid_thresh = u.terrain_params3.z;
 if (cell.x > solid_thresh) {
     let water_here = get_water(local_x, local_y, local_z);
-    if (water_here.x > 0.08 && water_here.z > 0.08) {
+    if (water_here.x > 0.08 && water_here.y > 0.08) {
         cell.x = -0.6; // turn to solid!
         cell.y = 7.0;  // Volcanic Obsidian
     }
 }
 
-// --- Acid Corrosion (Runs in solid cells) ---
+// --- Acid Corrosion & Lava Melting (Runs in solid cells) ---
 if (cell.x <= solid_thresh) {
-    let a_above = get_water(local_x, local_y + 1, local_z).w;
-    let a_left  = get_water(local_x - 1, local_y, local_z).w;
-    let a_right = get_water(local_x + 1, local_y, local_z).w;
-    let a_front = get_water(local_x, local_y, local_z - 1).w;
-    let a_back  = get_water(local_x, local_y, local_z + 1).w;
+    let a_above = get_water(local_x, local_y + 1, local_z).z;
+    let a_left  = get_water(local_x - 1, local_y, local_z).z;
+    let a_right = get_water(local_x + 1, local_y, local_z).z;
+    let a_front = get_water(local_x, local_y, local_z - 1).z;
+    let a_back  = get_water(local_x, local_y, local_z + 1).z;
     let acid_vol = max(a_above, max(a_left, max(a_right, max(a_front, a_back))));
     if (acid_vol > 0.05) {
         cell.x = cell.x + dt * acid_vol * 15.0;
     }
+
+    let mat = round(abs(cell.y));
+    if (mat == 3.0) { // Stone grey
+        let l_above = get_water(local_x, local_y + 1, local_z).y;
+        let l_left  = get_water(local_x - 1, local_y, local_z).y;
+        let l_right = get_water(local_x + 1, local_y, local_z).y;
+        let l_front = get_water(local_x, local_y, local_z - 1).y;
+        let l_back  = get_water(local_x, local_y, local_z + 1).y;
+        let lava_vol = max(l_above, max(l_left, max(l_right, max(l_front, l_back))));
+        if (lava_vol > 0.05) {
+            cell.x = cell.x + dt * lava_vol * 2.0; // Melt stone grey
+        }
+    }
 }
+
+// Prevent compiler optimization of gas_texture binding
+let dummy_gas = get_gas(0, 0, 0);
+cell.x = cell.x + dummy_gas.x * 1e-10;
 
 
 
