@@ -8,7 +8,7 @@ if (cell.x < 0.0) {
     for (var dy = 1; dy <= 12; dy = dy + 1) {
         let voxel = get_voxel(local_x, local_y + dy, local_z);
         if (voxel.x < 0.0) { // Solid
-            let top_mat = round(voxel.y);
+            let top_mat = round(abs(voxel.y));
             var density = 1.0; // Soil/Grass default
             if (top_mat == 6.0) {          // Snow/Ice (lightweight)
                 density = 0.4;
@@ -106,7 +106,7 @@ if (cell.x < 0.0) {
     let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
 
     var limit = 14.0;
-    let mat = round(cell.y);
+    let mat = round(abs(cell.y));
     if (mat == 3.0) { // Stone grey
         limit = 24.0;
     } else if (mat == 5.0) { // Sand Beige
@@ -131,8 +131,13 @@ if (cell.x < 0.0) {
             cos(voxel_pos.z * 20.0) * 1.5
         ) * dt * 20.0;
         
-        // Visual indicator: turn stressed parts to dark charred debris during crumble
-        cell.y = 3.0; 
+        // Flag cell.y as negative to indicate actively crumbling parent material!
+        cell.y = -abs(cell.y);
+    }
+
+    // Once a crumbling cell is fully dissolved and cleared of debris, reset its material ID to empty air (0.0)
+    if (cell.x >= 0.3 && cell.y < 0.0) {
+        cell.y = 0.0;
     }
 
 
@@ -162,33 +167,6 @@ if (cell.x < 0.0) {
         // Turn partially eroded blocks to wet clay/mud (Material 10)
         if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
             cell.y = 10.0; 
-        }
-    }
-} else {
-    // --- AIR / EMPTY SPACE: Rock Slump & Scree Deposition ---
-    // Check if this air cell is sitting directly on top of a solid, non-crumbling floor
-    let below = get_voxel(local_x, local_y - 1, local_z);
-    let below_mat = round(below.y);
-    
-    // Deposit on ground (Mat 1, 2, 3, 5, 7, 10, 14) as long as the floor itself is not currently crumbling (mat 3 debris)
-    let is_valid_floor = (below.x < 0.0) && (below_mat != 3.0);
-    
-    if (is_valid_floor) {
-        // Scan upward to see if any rock blocks above are actively crumbling and severing
-        var falling_mass = 0.0;
-        for (var dy = 1; dy <= 16; dy = dy + 1) {
-            let top_v = get_voxel(local_x, local_y + dy, local_z);
-            // Check for collapsing mass above tagged as crumbling debris (mat 3.0)
-            if (top_v.x < 0.3 && round(top_v.y) == 3.0) {
-                falling_mass = falling_mass + 1.0;
-                break;
-            }
-        }
-        
-        if (falling_mass > 0.0) {
-            // Accumulate rock debris onto the floor! (SDF transitions from empty >0 to solid <0)
-            cell.x = max(-0.4, cell.x - dt * 3.0);
-            cell.y = 5.0; // Material ID 5: Sand/Gravel talus deposit
         }
     }
 }

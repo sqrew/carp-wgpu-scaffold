@@ -37,6 +37,10 @@
   "int* $NAME(Array__int* arr)"
   "$DECL { return (int*)arr->data; }")
 
+(deftemplate device-poll (Fn [(Ptr WGPUContext)] ())
+  "void $NAME(WGPUContext* ctx)"
+  "$DECL { wgpuDevicePoll(ctx->device, true, NULL); }")
+
 (deftemplate uniform-buffer-get-buffer (Fn [(Ptr WGPUUniformBufferWrapper)] WGPUBuffer)
   "WGPUBuffer $NAME(WGPUUniformBufferWrapper* ub)"
   "$DECL { return ub->buffer; }")

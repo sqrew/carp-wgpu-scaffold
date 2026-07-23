@@ -877,7 +877,7 @@
                                                       time v-w v-h cam (Engine.render-db &eng))
                                   t-after-proc (System.nanotime)
                                   _draw (WGPURenderer.draw surf ctx &ren line-count &gui-flat-verts &gui-num-verts editor-mode pvx pvy pvw pvh)
-                                 t-after-draw (System.nanotime)
+                                  t-after-draw (System.nanotime)
                                  _csg (Engine.set-csg-dirty! &eng false)
                                  _grid (Engine.set-grid-dirty! &eng false)
                                  _voxel (Engine.set-voxel-dirty! &eng false)

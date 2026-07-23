@@ -102,8 +102,9 @@ if (self_voxel.x <= solid_thresh) {
     // Convert evaporated water to humidity in water.y (volume expands as vapor)
     var my_humidity = water.y + evaporated_volume * u.terrain_params3.w;
 
-    // --- Humidity Rising cellular automata flow ---
-    let flow_up_speed = 0.22 * flow_speed;
+    // --- 3. Humidity Rising (Thermal Convection Updrafts) ---
+    // Upward flow speed scales with local temperature (base 0.15, up to 0.70 near intense heat)
+    let flow_up_speed = (0.15 + min(0.55, max(0.0, local_temp - 20.0) * 0.007)) * flow_speed;
     var flow_up = 0.0;
     if (!sol_above) {
         flow_up = my_humidity * flow_up_speed;
@@ -117,7 +118,7 @@ if (self_voxel.x <= solid_thresh) {
         my_humidity = my_humidity + flow_from_below;
     }
 
-    // --- Humidity horizontal diffusion (cloud spreading) ---
+    // --- 4. Humidity Horizontal Diffusion (Cloud Spreading) ---
     let diffuse_rate = 0.06 * flow_speed;
     let h_left = get_water(local_x - 1, local_y, local_z).y;
     let h_right = get_water(local_x + 1, local_y, local_z).y;
@@ -131,15 +132,53 @@ if (self_voxel.x <= solid_thresh) {
     
     my_humidity = my_humidity - (hum_flow_left + hum_flow_right + hum_flow_front + hum_flow_back);
 
-    if (sol_above || my_humidity >= u.grid_dims.w) {
-        let condensation_rate = select(0.06 * dt, 0.75 * dt * u.shadow_ao_quality.w, sol_above);
+    // --- 5. Dynamic Wind Advection (Global Sideways Drift) ---
+    // Global wind direction shifts slowly over time based on u.time
+    let wind_x = sin(u.time * 0.12) * 0.04 * flow_speed;
+    let wind_z = cos(u.time * 0.09) * 0.04 * flow_speed;
+
+    let wind_drift_x = select(wind_x * (h_right - my_humidity), wind_x * (my_humidity - h_left), wind_x > 0.0);
+    let wind_drift_z = select(wind_z * (h_front - my_humidity), wind_z * (my_humidity - h_back), wind_z > 0.0);
+    my_humidity = my_humidity - (wind_drift_x + wind_drift_z);
+
+    // --- 6. Cold Surface & Cavern Ceiling Condensation ---
+    // Proximity check: scan up to 7 voxels above to see if we are near the top of the air column (ceiling)
+    // Also check if the ceiling block itself is a cold material (Snow/Ice = Material 6)
+    var near_ceiling = false;
+    var cold_ceiling = false;
+    for (var dy = 1; dy <= 7; dy = dy + 1) {
+        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
+        if (ceiling_v.x <= solid_thresh) {
+            near_ceiling = true;
+            let ceil_mat = round(abs(ceiling_v.y));
+            if (ceil_mat == 6.0) {
+                cold_ceiling = true;
+            }
+            break;
+        }
+    }
+
+    let is_cold = cold_ceiling || (local_temp < 10.0);
+
+    // Condense only if we are near the top of the air column and humidity passes the threshold
+    // Cold zones drop the Rain Threshold to 15% (from 45%) and accelerate the condensation speed by 2.5x
+    let threshold_mult = select(0.45, 0.15, is_cold);
+    let condensation_threshold = u.grid_dims.w * threshold_mult;
+    if (near_ceiling && my_humidity >= condensation_threshold) {
+        let rate_mult = select(1.0, 2.5, is_cold);
+        let condensation_rate = 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
         let condensed = min(my_humidity, condensation_rate);
-        new_volume = new_volume + condensed * 0.45; // convert back to liquid (conserve mass, accounting for expansion)
+        
+        // Perfect Closed-Loop Mass Conservation:
+        // Conversion back to liquid volume is exactly the mathematical inverse of the Vapor Expansion slider.
+        let condensation_conversion_factor = 1.0 / max(1.0, u.terrain_params3.w);
+        new_volume = new_volume + condensed * condensation_conversion_factor;
         my_humidity = my_humidity - condensed;
     }
 
-    // Dispersal/decay over time
-    my_humidity = max(0.0, my_humidity - 0.012 * dt);
+    // Dispersal/decay over time (Ceiling moisture clings to cold rock and decays 12x slower)
+    let decay_rate = select(0.012 * dt, 0.001 * dt, near_ceiling);
+    my_humidity = max(0.0, my_humidity - decay_rate);
 
     // Keep volume bounded and clear tiny values to allow evaporation/drying
     if (new_volume < 0.001) {

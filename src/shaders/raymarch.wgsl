@@ -418,29 +418,10 @@ struct PointInstance {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let base_uv3d = vec3<i32>(slot_x * {{VOXEL_RES}}i, slot_y * {{VOXEL_RES}}i, slot_z * {{VOXEL_RES}}i);
+              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
               
-              let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
-              let sub_fp = fract(local_pos - vec3<f32>(0.5));
-              
-              let v0 = textureLoad(water_texture, base_uv3d + ip, 0);
-              let v1 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 0, 0), 0);
-              let v2 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(0, 1, 0), 0);
-              let v3 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 1, 0), 0);
-              let v4 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(0, 0, 1), 0);
-              let v5 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 0, 1), 0);
-              let v6 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(0, 1, 1), 0);
-              let v7 = textureLoad(water_texture, base_uv3d + ip + vec3<i32>(1, 1, 1), 0);
-              
-              let v_01 = mix(v0, v1, sub_fp.x);
-              let v_23 = mix(v2, v3, sub_fp.x);
-              let v_45 = mix(v4, v5, sub_fp.x);
-              let v_67 = mix(v6, v7, sub_fp.x);
-              
-              let v_0123 = mix(v_01, v_23, sub_fp.y);
-              let v_4567 = mix(v_45, v_67, sub_fp.y);
-              
-              tex_val = mix(v_0123, v_4567, sub_fp.z);
+              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+              tex_val = textureSampleLevel(water_texture, voxel_sampler, sample_coords, 0.0);
           } else {
              let v0 = getWaterAt(c0.x,     c0.y,     c0.z);
              let v1 = getWaterAt(c0.x + 1, c0.y,     c0.z);
@@ -542,29 +523,10 @@ struct PointInstance {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let base_uv3d = vec3<i32>(slot_x * {{VOXEL_RES}}i, slot_y * {{VOXEL_RES}}i, slot_z * {{VOXEL_RES}}i);
+              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
               
-              let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
-              let fp = fract(local_pos - vec3<f32>(0.5));
-              
-              let v0 = textureLoad(light_texture, base_uv3d + ip, 0);
-              let v1 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 0, 0), 0);
-              let v2 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(0, 1, 0), 0);
-              let v3 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 1, 0), 0);
-              let v4 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(0, 0, 1), 0);
-              let v5 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 0, 1), 0);
-              let v6 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(0, 1, 1), 0);
-              let v7 = textureLoad(light_texture, base_uv3d + ip + vec3<i32>(1, 1, 1), 0);
-              
-              let v_01 = mix(v0, v1, fp.x);
-              let v_23 = mix(v2, v3, fp.x);
-              let v_45 = mix(v4, v5, fp.x);
-              let v_67 = mix(v6, v7, fp.x);
-              
-              let v_0123 = mix(v_01, v_23, fp.y);
-              let v_4567 = mix(v_45, v_67, fp.y);
-              
-              tex_val = mix(v_0123, v_4567, fp.z);
+              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+              tex_val = textureSampleLevel(light_texture, voxel_sampler, sample_coords, 0.0);
           } else {
               v0 = getFieldsAt(c0.x,     c0.y,     c0.z);
               v1 = getFieldsAt(c0.x + 1, c0.y,     c0.z);
@@ -622,29 +584,10 @@ struct PointInstance {
               let slot_x = slot % {{SLOTS_PER_DIM}};
               let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
-              let base_uv3d = vec3<i32>(slot_x * {{VOXEL_RES}}i, slot_y * {{VOXEL_RES}}i, slot_z * {{VOXEL_RES}}i);
+              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
               
-              let ip = vec3<i32>(floor(local_pos - vec3<f32>(0.5)));
-              let fp = fract(local_pos - vec3<f32>(0.5));
-              
-              let v0 = textureLoad(interaction_texture, base_uv3d + ip, 0);
-              let v1 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 0, 0), 0);
-              let v2 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(0, 1, 0), 0);
-              let v3 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 1, 0), 0);
-              let v4 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(0, 0, 1), 0);
-              let v5 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 0, 1), 0);
-              let v6 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(0, 1, 1), 0);
-              let v7 = textureLoad(interaction_texture, base_uv3d + ip + vec3<i32>(1, 1, 1), 0);
-              
-              let v_01 = mix(v0, v1, fp.x);
-              let v_23 = mix(v2, v3, fp.x);
-              let v_45 = mix(v4, v5, fp.x);
-              let v_67 = mix(v6, v7, fp.x);
-              
-              let v_0123 = mix(v_01, v_23, fp.y);
-              let v_4567 = mix(v_45, v_67, fp.y);
-              
-              tex_val = mix(v_0123, v_4567, fp.z);
+              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+              tex_val = textureSampleLevel(interaction_texture, voxel_sampler, sample_coords, 0.0);
           } else {
               v0 = getInteractionAt(c0.x,     c0.y,     c0.z);
               v1 = getInteractionAt(c0.x + 1, c0.y,     c0.z);
@@ -1660,8 +1603,8 @@ struct PointInstance {
                     fog_color_accum += mist_color * step_density;
                 }
 
-                if (res.y < 0.001) { break; }
-                t += res.y * 0.95;
+                if (res.y < 0.008) { break; }
+                t += max(0.012, res.y * 0.95);
                 if (t > 800.0) { break; }
             }
             if (t <= 800.0) {
@@ -1873,15 +1816,15 @@ struct PointInstance {
                 // Determine the base terrain color at p using dynamic biome blending
                 let inside_p = p - normal * 0.4;
                 let inside_voxel_val = sampleVoxelGrid(inside_p, false);
-                var mat_id = i32(round(inside_voxel_val.y));
+                var mat_id = i32(round(abs(inside_voxel_val.y)));
                 if (mat_id < 3) {
-                    let raw_mat = i32(round(voxel_val.y));
+                    let raw_mat = i32(round(abs(voxel_val.y)));
                     if (raw_mat >= 3) {
                         mat_id = raw_mat;
                     } else {
                         let deeper_p = p - normal * 0.8;
                         let deeper_voxel_val = sampleVoxelGrid(deeper_p, false);
-                        let deeper_mat = i32(round(deeper_voxel_val.y));
+                        let deeper_mat = i32(round(abs(deeper_voxel_val.y)));
                         if (deeper_mat >= 3) {
                             mat_id = deeper_mat;
                         }
