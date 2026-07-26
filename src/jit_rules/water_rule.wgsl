@@ -261,10 +261,10 @@ if (self_voxel.x <= solid_thresh) {
     let is_cold = cold_ceiling || (local_temp < 10.0);
     var total_condensed = 0.0;
 
-    // 1. Regular Ceiling Condensation (lowered threshold to 0.02, with a high base speed to guarantee response)
+    // 1. Regular Ceiling Condensation (lowered threshold to 0.02, with a moderate base speed so it pools and lingers)
     if (near_ceiling && steam_here >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let ceiling_condensation_rate = 3.0 * (0.75 * u.shadow_ao_quality.w + 10.0) * dt * rate_mult;
+        let ceiling_condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
         total_condensed = total_condensed + min(steam_here, ceiling_condensation_rate);
     }
 
@@ -273,7 +273,7 @@ if (self_voxel.x <= solid_thresh) {
     let acid_fog_here = gas_here.z;
     if (near_ceiling && acid_fog_here >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let acid_condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        let acid_condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
         acid_condensed = min(acid_fog_here, acid_condensation_rate);
     }
 

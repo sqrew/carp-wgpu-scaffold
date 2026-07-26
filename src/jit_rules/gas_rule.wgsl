@@ -232,11 +232,11 @@ if (self_voxel.x <= solid_thresh) {
     let threshold_mult = select(0.45, 0.15, is_cold);
     let condensation_threshold = u.grid_dims.w * threshold_mult;
 
-    // 1. Steam ceiling condensation (lowered threshold to 0.02, with a high base speed to guarantee response)
+    // 1. Steam ceiling condensation (lowered threshold to 0.02, with a moderate base speed so it pools and lingers)
     var total_condensed = 0.0;
     if (near_ceiling && new_steam >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 3.0 * (0.75 * u.shadow_ao_quality.w + 10.0) * dt * rate_mult;
+        let condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
         total_condensed = total_condensed + min(new_steam, condensation_rate);
     }
 
@@ -260,7 +260,7 @@ if (self_voxel.x <= solid_thresh) {
     var acid_condensed = 0.0;
     if (near_ceiling && new_fog >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        let condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
         acid_condensed = min(new_fog, condensation_rate);
     }
     new_fog = max(0.0, new_fog - acid_condensed);
