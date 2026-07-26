@@ -682,7 +682,18 @@
             (let [pipe-maybe (Map.get-maybe water-cache water-script)]
               (match pipe-maybe
                 (Maybe.Just water-pipe)
-                  (let [jit-info-b @(WGPURenderer.jit-info-buffer ren)
+                  (let [info-b @(Chunk.jit-info-buffer chunk)
+                        info-b-actual (if (WGPU.buffer-null?- info-b)
+                                          (match (WGPU.create-buffer ctx 16)
+                                            (Result.Success new-info-b)
+                                              (do
+                                                (Chunk.set-jit-info-buffer! chunk new-info-b)
+                                                new-info-b)
+                                            (Result.Error err-val)
+                                              (do
+                                                (IO.println &(format "Error creating JIT info buffer: %s" &err-val))
+                                                (null-buffer)))
+                                          info-b)
                         chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
                         voxel-tex @(WGPURenderer.voxel-texture ren)
                         voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
@@ -692,26 +703,18 @@
                         slot-f (Float.from-int @(Chunk.atlas-slot chunk))
                         origin-data [qx-f qy-f qz-f slot-f]]
                     (do
-                      (WGPU.write-floats ctx jit-info-b &origin-data)
-                      (let [water-tex @(WGPURenderer.water-texture ren)]
-                        (do
-                          (when (not (= (WGPURenderer.jit-water-script ren) water-script))
-                            (let [old-bg @(WGPURenderer.jit-water-bind-group ren)
-                                  new-bg-res (WGPURender.create-jit-bind-group-water ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex water-tex @(WGPURenderer.gas-texture ren))]
-                              (match new-bg-res
-                                (Result.Success new-bg)
-                                  (do
-                                    (when (not (= (WGPURenderer.jit-water-script ren) ""))
-                                      (WGPURender.free-bind-group old-bg))
-                                    (WGPURenderer.set-jit-water-bind-group! ren new-bg)
-                                    (WGPURenderer.set-jit-water-script! ren @water-script))
-                                (Result.Error e)
-                                  (IO.println &(str* "JIT Bind Group creation failed: " e)))))
-                          (let [water-bg @(WGPURenderer.jit-water-bind-group ren)]
+                      (WGPU.write-floats ctx info-b-actual &origin-data)
+                      (let [water-tex @(WGPURenderer.water-texture ren)
+                            new-bg-res (WGPURender.create-jit-bind-group-water ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex water-tex @(WGPURenderer.gas-texture ren))]
+                        (match new-bg-res
+                          (Result.Success water-bg)
                             (do
                               (WGPU.dispatch ctx water-pipe water-bg dispatch-cnt)
+                              (WGPURender.free-bind-group water-bg)
                               (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b w-scratch-b (* res (* res (* res 16))))
-                              (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))))
+                              (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res))
+                          (Result.Error err-val)
+                            (IO.println &(str* "JIT Water Bind Group creation failed: " err-val))))))
                 _ ())))
           (pack-and-copy-water-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))
 
@@ -770,7 +773,18 @@
               (Maybe.Just gas-pipe)
                 (let [u-b @(WGPURenderer.u-buffer ren)
                       raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
-                      jit-info-b @(WGPURenderer.jit-info-buffer ren)
+                      info-b @(Chunk.jit-info-buffer chunk)
+                      info-b-actual (if (WGPU.buffer-null?- info-b)
+                                        (match (WGPU.create-buffer ctx 16)
+                                          (Result.Success new-info-b)
+                                            (do
+                                              (Chunk.set-jit-info-buffer! chunk new-info-b)
+                                              new-info-b)
+                                          (Result.Error err-val)
+                                            (do
+                                              (IO.println &(format "Error creating JIT info buffer: %s" &err-val))
+                                              (null-buffer)))
+                                        info-b)
                       chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
                       voxel-tex @(WGPURenderer.voxel-texture ren)
                       voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
@@ -780,27 +794,19 @@
                       slot-f (Float.from-int @(Chunk.atlas-slot chunk))
                       origin-data [qx-f qy-f qz-f slot-f]]
                   (do
-                    (WGPU.write-floats ctx jit-info-b &origin-data)
+                    (WGPU.write-floats ctx info-b-actual &origin-data)
                     (let [water-tex @(WGPURenderer.water-texture ren)
-                          gas-tex @(WGPURenderer.gas-texture ren)]
-                      (do
-                        (when (not (= (WGPURenderer.jit-gas-script ren) gas-script))
-                          (let [old-bg @(WGPURenderer.jit-gas-bind-group ren)
-                                new-bg-res (WGPURender.create-jit-bind-group-water ctx gas-pipe gas-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex water-tex gas-tex)]
-                            (match new-bg-res
-                              (Result.Success new-bg)
-                                (do
-                                  (when (not (= (WGPURenderer.jit-gas-script ren) ""))
-                                    (WGPURender.free-bind-group old-bg))
-                                  (WGPURenderer.set-jit-gas-bind-group! ren new-bg)
-                                  (WGPURenderer.set-jit-gas-script! ren @gas-script))
-                              (Result.Error e)
-                                (IO.println &(str* "JIT Gas Bind Group creation failed: " e)))))
-                        (let [gas-bg @(WGPURenderer.jit-gas-bind-group ren)]
+                          gas-tex @(WGPURenderer.gas-texture ren)
+                          new-bg-res (WGPURender.create-jit-bind-group-water ctx gas-pipe gas-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex water-tex gas-tex)]
+                      (match new-bg-res
+                        (Result.Success gas-bg)
                           (do
                             (WGPU.dispatch ctx gas-pipe gas-bg dispatch-cnt)
+                            (WGPURender.free-bind-group gas-bg)
                             (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b gas-scratch-b (* res (* res (* res 16))))
-                            (pack-and-copy-gas-chunk! ctx ren @(Chunk.atlas-slot chunk) res)))))))
+                            (pack-and-copy-gas-chunk! ctx ren @(Chunk.atlas-slot chunk) res))
+                        (Result.Error err-val)
+                          (IO.println &(str* "JIT Gas Bind Group creation failed: " err-val))))))
               _ ())))
         (pack-and-copy-gas-chunk! ctx ren @(Chunk.atlas-slot chunk) res))))
 )

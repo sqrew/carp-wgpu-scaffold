@@ -1706,7 +1706,11 @@ struct PointInstance {
                 }
 
                 if (res.y < 0.008) { break; }
-                t += max(0.012, res.y * 0.95);
+                let p_local = p - u.grid_origin.xyz;
+                let grid_size = u.grid_dims.xyz * 32.0;
+                let inside_grid = all(p_local >= vec3<f32>(0.0)) && all(p_local < grid_size);
+                let step_limit = select(800.0, 0.85, inside_grid);
+                t += min(step_limit, max(0.012, res.y * 0.95));
                 if (t > 800.0) { break; }
             }
             if (t <= 800.0) {

@@ -13,6 +13,23 @@ let solid_thresh = u.terrain_params3.z;
 if (self_voxel.x <= solid_thresh) {
     water = vec4<f32>(0.0);
 } else {
+    var near_ceiling = false;
+    var cold_ceiling = false;
+    let gas_here = get_gas(local_x, local_y, local_z);
+    let steam_here = gas_here.x;
+
+    for (var dy = 1; dy <= 7; dy = dy + 1) {
+        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
+        if (ceiling_v.x <= solid_thresh) {
+            near_ceiling = true;
+            let ceil_mat = round(abs(ceiling_v.y));
+            if (ceil_mat == 6.0) {
+                cold_ceiling = true;
+            }
+            break;
+        }
+    }
+
     var w_below_v  = vec4<f32>(0.0);
     var w_below2_v = vec4<f32>(0.0);
     var w_above_v  = vec4<f32>(0.0);
@@ -41,14 +58,13 @@ if (self_voxel.x <= solid_thresh) {
     }
 
     // Check voxel solidity for neighbors (SDF <= threshold is solid)
-    let sol_below  = select(false, get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh, local_y > 0);
-    let sol_below2 = select(false, get_voxel(local_x, local_y - 2, local_z).x <= solid_thresh, local_y > 1);
-    let sol_above  = select(false, get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh, local_y < 31);
-    let sol_left  = select(false, get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh, local_x > 0);
-    let sol_right = select(false, get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh, local_x < 31);
-    let sol_back  = select(false, get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh, local_z > 0);
-    let sol_front = select(select(false, get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh, local_z < 31), false, true); // wait, let's just make it simple:
-    // let sol_front = select(false, get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh, local_z < 31);
+    let sol_below  = get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh;
+    let sol_below2 = get_voxel(local_x, local_y - 2, local_z).x <= solid_thresh;
+    let sol_above  = get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh;
+    let sol_left  = get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh;
+    let sol_right = get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh;
+    let sol_back  = get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh;
+    let sol_front = get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh;
     
     let flow_speed = u.misc_params.y;
 
@@ -60,7 +76,7 @@ if (self_voxel.x <= solid_thresh) {
     }
     var w_flow_down = 0.0;
     if (!sol_below) {
-        w_flow_down = min(new_water, 1.0 - w_below_v.x + w_flow_down_below) * flow_speed;
+        w_flow_down = min(new_water, 1.0 - w_below_v.x + w_flow_down_below) * 0.95;
     }
     var w_flow_from_above = 0.0;
     if (!sol_above) {
@@ -82,7 +98,7 @@ if (self_voxel.x <= solid_thresh) {
     if (!sol_back)  { w_flow_back  = (water.x - w_back_v.x)  * w_spread_factor; }
     if (!sol_front) { w_flow_front = (water.x - w_front_v.x) * w_spread_factor; }
     new_water -= (w_flow_left + w_flow_right + w_flow_back + w_flow_front);
-    if (new_water < 0.001) { new_water = 0.0; }
+    if (new_water < 0.001 && !near_ceiling && sol_below) { new_water = 0.0; }
 
     // --- 2. Lava Flow Loop (highly viscous, slow gravity & spreading) ---
     var new_lava = water.y;
@@ -114,7 +130,7 @@ if (self_voxel.x <= solid_thresh) {
     let acid_flow_speed = flow_speed * 0.65;
     var a_flow_down = 0.0;
     if (!sol_below) {
-        a_flow_down = min(new_acid, 1.0 - w_below_v.z) * acid_flow_speed;
+        a_flow_down = min(new_acid, 1.0 - w_below_v.z) * 0.90;
     }
     var a_flow_from_above = 0.0;
     if (!sol_above) {
@@ -139,7 +155,7 @@ if (self_voxel.x <= solid_thresh) {
     let oil_flow_speed = flow_speed * 0.35;
     var o_flow_down = 0.0;
     if (!sol_below) {
-        o_flow_down = min(new_oil, 1.0 - w_below_v.w) * oil_flow_speed;
+        o_flow_down = min(new_oil, 1.0 - w_below_v.w) * 0.85;
     }
     var o_flow_from_above = 0.0;
     if (!sol_above) {
@@ -179,11 +195,13 @@ if (self_voxel.x <= solid_thresh) {
         local_temp = local_temp / total_weight;
     }
 
-    let evap_mult = 1.0 + max(0.0, local_temp - 20.0) * 0.18;
+    let evap_mult = select(0.002, 1.0 + (local_temp - 20.0) * 0.18, local_temp > 20.0);
     let final_evap = u.misc_params.w * evap_mult * 3.5;
 
-    // Water Evaporation (scaled 3.0x to match loop optimization)
-    let evaporated_water = min(new_water, 3.0 * final_evap * dt * 50.0);
+    // Water Evaporation (scaled 3.0x, disabled near ceilings, throttled by air dryness, and scaled down by 98% for falling water)
+    let dryness = max(0.0, 1.0 - steam_here);
+    let evap_scale = select(1.0, 0.02, !sol_below);
+    let evaporated_water = select(min(new_water, 3.0 * final_evap * dt * 50.0 * dryness * evap_scale), 0.0, near_ceiling);
     new_water = new_water - evaporated_water;
 
     // Oil Evaporation (evaporates into Methane Gas)
@@ -217,9 +235,10 @@ if (self_voxel.x <= solid_thresh) {
     }
 
     // --- Acid contact with solid walls ---
-    let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below || sol_above;
+    // Acid eats solid walls, generating fumes (excluding ceiling to allow condensation)
+    let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && new_acid > 0.0) {
-        let consumed_acid = min(new_acid, 0.20 * dt);
+        let consumed_acid = min(new_acid, 0.45);
         new_acid = new_acid - consumed_acid;
     }
 
@@ -239,34 +258,23 @@ if (self_voxel.x <= solid_thresh) {
         }
     }
 
-    let gas_here = get_gas(local_x, local_y, local_z);
-    let steam_here = gas_here.x;
-
-    // We must match gas_rule.wgsl's near_ceiling check exactly so that mass is conserved
-    var near_ceiling = false;
-    var cold_ceiling = false;
-    for (var dy = 1; dy <= 7; dy = dy + 1) {
-        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
-        if (ceiling_v.x <= solid_thresh) {
-            near_ceiling = true;
-            let ceil_mat = round(abs(ceiling_v.y));
-            if (ceil_mat == 6.0) {
-                cold_ceiling = true;
-            }
-            break;
-        }
-    }
     let is_cold = cold_ceiling || (local_temp < 10.0);
-    let threshold_mult = select(0.45, 0.15, is_cold);
-    let condensation_threshold = u.grid_dims.w * threshold_mult;
-
     var total_condensed = 0.0;
 
-    // 1. Regular Ceiling Condensation
-    if (near_ceiling && steam_here >= condensation_threshold) {
+    // 1. Regular Ceiling Condensation (lowered threshold to 0.02, with a high base speed to guarantee response)
+    if (near_ceiling && steam_here >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let ceiling_condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        let ceiling_condensation_rate = 3.0 * (0.75 * u.shadow_ao_quality.w + 10.0) * dt * rate_mult;
         total_condensed = total_condensed + min(steam_here, ceiling_condensation_rate);
+    }
+
+    // 1b. Acid Fog Ceiling Condensation
+    var acid_condensed = 0.0;
+    let acid_fog_here = gas_here.z;
+    if (near_ceiling && acid_fog_here >= 0.02) {
+        let rate_mult = select(1.0, 2.5, is_cold);
+        let acid_condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        acid_condensed = min(acid_fog_here, acid_condensation_rate);
     }
 
     // 2. Shockwave / Pressure Condensation
@@ -275,8 +283,20 @@ if (self_voxel.x <= solid_thresh) {
         total_condensed = total_condensed + min(steam_here - total_condensed, pressure_condensation_rate);
     }
 
-    if (total_condensed > 0.0) {
-        new_water = new_water + total_condensed * 0.45; // convert back to liquid
+    // 3. Mid-air rain condensation (saturation-triggered downpour, with a high base speed to guarantee downpours)
+    let rain_threshold = u.grid_dims.w;
+    var rain_condensed = 0.0;
+    if (steam_here > rain_threshold) {
+        let rain_rate = 3.0 * (1.5 * u.shadow_ao_quality.w + 20.0) * dt * (steam_here - rain_threshold);
+        rain_condensed = min(steam_here, rain_rate);
+    }
+
+    let combined_condensed = total_condensed + rain_condensed;
+    if (combined_condensed > 0.0) {
+        new_water = new_water + combined_condensed * 1.5; // boosted conversion factor for thick visible drops
+    }
+    if (acid_condensed > 0.0) {
+        new_acid = new_acid + acid_condensed * 1.0;
     }
 
     water.x = clamp(new_water, 0.0, 1.0);

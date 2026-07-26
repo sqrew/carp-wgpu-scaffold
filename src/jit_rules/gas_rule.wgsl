@@ -13,6 +13,20 @@ let solid_thresh = u.terrain_params3.z;
 if (self_voxel.x <= solid_thresh) {
     gas = vec4<f32>(0.0);
 } else {
+    var near_ceiling = false;
+    var cold_ceiling = false;
+    for (var dy = 1; dy <= 7; dy = dy + 1) {
+        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
+        if (ceiling_v.x <= solid_thresh) {
+            near_ceiling = true;
+            let ceil_mat = round(abs(ceiling_v.y));
+            if (ceil_mat == 6.0) {
+                cold_ceiling = true;
+            }
+            break;
+        }
+    }
+
     var g_below_v = vec4<f32>(0.0);
     var g_above_v = vec4<f32>(0.0);
     var g_left_v  = vec4<f32>(0.0);
@@ -38,12 +52,12 @@ if (self_voxel.x <= solid_thresh) {
     }
 
     // Check voxel solidity for neighbors (SDF <= threshold is solid)
-    let sol_below = select(false, get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh, local_y > 0);
-    let sol_above = select(false, get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh, local_y < 31);
-    let sol_left  = select(false, get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh, local_x > 0);
-    let sol_right = select(false, get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh, local_x < 31);
-    let sol_back  = select(false, get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh, local_z > 0);
-    let sol_front = select(false, get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh, local_z < 31);
+    let sol_below = get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh;
+    let sol_above = get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh;
+    let sol_left  = get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh;
+    let sol_right = get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh;
+    let sol_back  = get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh;
+    let sol_front = get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh;
 
     let flow_speed = u.misc_params.y;
 
@@ -69,7 +83,8 @@ if (self_voxel.x <= solid_thresh) {
 
     // --- 1. Steam Rising & Spreading (gas.x) ---
     var new_steam = gas.x;
-    let steam_rise_speed = (0.25 + min(0.45, max(0.0, local_temp - 20.0) * 0.007)) * flow_speed;
+    // Strongly biased vertical rise speed (baseline increased to 0.65 for concentrated columns)
+    let steam_rise_speed = (0.65 + min(0.45, max(0.0, local_temp - 20.0) * 0.007)) * flow_speed;
     var s_flow_up = 0.0;
     if (!sol_above) {
         s_flow_up = min(new_steam, 1.0 - g_above_v.x) * steam_rise_speed;
@@ -84,7 +99,8 @@ if (self_voxel.x <= solid_thresh) {
     var s_flow_right = 0.0;
     var s_flow_back  = 0.0;
     var s_flow_front = 0.0;
-    let s_spread = 0.12 * flow_speed;
+    // Extremely low horizontal spreading (reduced to 0.02) to keep the steam column concentrated
+    let s_spread = 0.02 * flow_speed;
     if (!sol_left)  { s_flow_left  = (gas.x - g_left_v.x)  * s_spread; }
     if (!sol_right) { s_flow_right = (gas.x - g_right_v.x) * s_spread; }
     if (!sol_back)  { s_flow_back  = (gas.x - g_back_v.x)  * s_spread; }
@@ -170,11 +186,13 @@ if (self_voxel.x <= solid_thresh) {
 
     // --- Mass Transfer from Liquid Phase ---
     let water_here = get_water(local_x, local_y, local_z);
-    let evap_mult = 1.0 + max(0.0, local_temp - 20.0) * 0.18;
+    let evap_mult = select(0.002, 1.0 + (local_temp - 20.0) * 0.18, local_temp > 20.0);
     let final_evap = u.misc_params.w * evap_mult * 3.5;
 
-    // Steam generation from water evaporation (scaled 3.0x to match loop optimization)
-    let evaporated_water = min(water_here.x, 3.0 * final_evap * dt * 50.0);
+    // Steam generation from water evaporation (scaled 3.0x, throttled by air dryness and falling water slow-evaporation by 98%)
+    let dryness = max(0.0, 1.0 - gas.x);
+    let evap_scale = select(1.0, 0.02, !sol_below);
+    let evaporated_water = select(min(water_here.x, 3.0 * final_evap * dt * 50.0 * dryness * evap_scale), 0.0, near_ceiling);
     new_steam = new_steam + evaporated_water * u.terrain_params3.w;
 
     // Methane generation from Crude Oil evaporation
@@ -187,11 +205,11 @@ if (self_voxel.x <= solid_thresh) {
         new_steam = new_steam + react * u.terrain_params3.w * 2.0;
     }
 
-    // Acid Fog generation from Acid eating solid walls
-    let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below || sol_above;
+    // Acid Fog generation from Acid eating solid walls (excluding ceiling to allow condensation)
+    let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && water_here.z > 0.0) {
-        let consumed_acid = min(water_here.z, 0.20 * dt);
-        new_fog = new_fog + consumed_acid * 2.5;
+        let consumed_acid = min(water_here.z, 0.45);
+        new_fog = new_fog + consumed_acid * 1.0;
     }
 
     // --- Condensation onto Ceilings & Pressure Waves ---
@@ -210,28 +228,15 @@ if (self_voxel.x <= solid_thresh) {
         }
     }
 
-    var near_ceiling = false;
-    var cold_ceiling = false;
-    for (var dy = 1; dy <= 7; dy = dy + 1) {
-        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
-        if (ceiling_v.x <= solid_thresh) {
-            near_ceiling = true;
-            let ceil_mat = round(abs(ceiling_v.y));
-            if (ceil_mat == 6.0) {
-                cold_ceiling = true;
-            }
-            break;
-        }
-    }
     let is_cold = cold_ceiling || (local_temp < 10.0);
     let threshold_mult = select(0.45, 0.15, is_cold);
     let condensation_threshold = u.grid_dims.w * threshold_mult;
 
-    // 1. Steam ceiling condensation
+    // 1. Steam ceiling condensation (lowered threshold to 0.02, with a high base speed to guarantee response)
     var total_condensed = 0.0;
-    if (near_ceiling && new_steam >= condensation_threshold) {
+    if (near_ceiling && new_steam >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
+        let condensation_rate = 3.0 * (0.75 * u.shadow_ao_quality.w + 10.0) * dt * rate_mult;
         total_condensed = total_condensed + min(new_steam, condensation_rate);
     }
 
@@ -242,12 +247,23 @@ if (self_voxel.x <= solid_thresh) {
     }
     new_steam = max(0.0, new_steam - total_condensed);
 
+    // 2b. Mid-air rain condensation (saturation-triggered downpour, with a high base speed to guarantee downpours)
+    let rain_threshold = u.grid_dims.w;
+    var rain_condensed = 0.0;
+    if (new_steam > rain_threshold) {
+        let rain_rate = 3.0 * (1.5 * u.shadow_ao_quality.w + 20.0) * dt * (new_steam - rain_threshold);
+        rain_condensed = min(new_steam, rain_rate);
+        new_steam = new_steam - rain_condensed;
+    }
+
     // 3. Acid Fog ceiling condensation
-    if (near_ceiling && new_fog >= condensation_threshold) {
+    var acid_condensed = 0.0;
+    if (near_ceiling && new_fog >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
         let condensation_rate = 3.0 * 0.75 * dt * u.shadow_ao_quality.w * rate_mult;
-        new_fog = max(0.0, new_fog - condensation_rate);
+        acid_condensed = min(new_fog, condensation_rate);
     }
+    new_fog = max(0.0, new_fog - acid_condensed);
 
 
     // --- Fuel & Atmospheric Combustion ---

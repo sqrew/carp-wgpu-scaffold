@@ -1001,7 +1001,7 @@
                                                               (let [res @(World.voxel-resolution world-data)
                                                                     size-floats (* res (* res (* res 4)))
                                                                     voxel-data (the (Array Float) (replicate size-floats &1000.0f))
-                                                                    chunk (Chunk.init qx yq qz voxel-data slot false 0 (null-buffer) (null-bind-group) (null-bind-group))]
+                                                                    chunk (Chunk.init qx yq qz voxel-data slot false 0 (null-buffer) (null-bind-group) (null-bind-group) (null-buffer))]
                                                                 (do
                                                                   (Array.push-back! (World.chunks world-data) chunk)))
                                                               (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
@@ -1012,7 +1012,7 @@
                                                                   (Result.Error err) (IO.println &(format "Error creating buffer for loaded chunk: %s" &err))
                                                                   (Result.Success b)
                                                                     (let [_ (WGPU.write-floats ctx b &voxel-data)
-                                                                          chunk (Chunk.init qx yq qz voxel-data slot true res b (null-bind-group) (null-bind-group))]
+                                                                          chunk (Chunk.init qx yq qz voxel-data slot true res b (null-bind-group) (null-bind-group) (null-buffer))]
                                                                       (do
                                                                         (VoxelBaker.pack-and-copy-chunk! ctx ren &chunk b slot res)
                                                                         (Array.push-back! (World.chunks world-data) chunk))))))
