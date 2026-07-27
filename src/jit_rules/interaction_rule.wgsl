@@ -112,3 +112,53 @@ if (voxel_self.x >= 0.0) {
         fields.x = min(150.0, fields.x + 90.0 * dt);
     }
 }
+
+// 3. Fluid Heat Interaction (Water cools, Lava heats, Steam warms)
+let water_here = get_water(local_x, local_y, local_z);
+let gas_here = get_gas(local_x, local_y, local_z);
+
+let w_water = water_here.x;
+let w_lava = water_here.y;
+let g_steam = gas_here.x;
+
+if (w_lava > 0.05) {
+    fields.x = min(150.0, fields.x + w_lava * 120.0 * dt);
+} else if (w_water > 0.05) {
+    fields.x = max(15.0, fields.x - w_water * 50.0 * dt);
+} else if (g_steam > 0.05) {
+    fields.x = min(90.0, fields.x + g_steam * 25.0 * dt);
+}
+
+// 4. Thermal Diffusion & Ambient Decay (executed for all voxels)
+var temp_sum = 0.0;
+var count = 0.0;
+
+let directions = array<vec3<i32>, 6>(
+    vec3<i32>(-1, 0, 0), vec3<i32>(1, 0, 0),
+    vec3<i32>(0, -1, 0), vec3<i32>(0, 1, 0),
+    vec3<i32>(0, 0, -1), vec3<i32>(0, 0, 1)
+);
+
+for (var i = 0; i < 6; i = i + 1) {
+    let nx = local_x + directions[i].x;
+    let ny = local_y + directions[i].y;
+    let nz = local_z + directions[i].z;
+    
+    if (nx >= 0 && nx < 32 && ny >= 0 && ny < 32 && nz >= 0 && nz < 32) {
+        let n_idx = u32(nx + ny * 32 + nz * 1024);
+        temp_sum = temp_sum + input_fields[n_idx].x;
+        count = count + 1.0;
+    } else {
+        // Adiabatic boundary (insulated chunk edges)
+        temp_sum = temp_sum + fields.x;
+        count = count + 1.0;
+    }
+}
+
+let avg_neighbor_temp = temp_sum / count;
+
+// Heat diffusion (conduction) rate (1.5)
+fields.x = fields.x + (avg_neighbor_temp - fields.x) * 1.5 * dt;
+
+// Slow decay towards ambient temperature (20.0 C)
+fields.x = fields.x + (20.0 - fields.x) * 0.05 * dt;

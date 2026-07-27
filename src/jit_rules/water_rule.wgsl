@@ -72,19 +72,19 @@ if (self_voxel.x <= solid_thresh) {
     var new_water = water.x;
     var w_flow_down_below = 0.0;
     if (!sol_below && !sol_below2) {
-        w_flow_down_below = min(w_below_v.x, 1.0 - w_below2_v.x) * flow_speed;
+        w_flow_down_below = min(w_below_v.x, (1.0 - w_below2_v.x) * flow_speed);
     }
     var w_flow_down = 0.0;
     if (!sol_below) {
-        w_flow_down = min(new_water, 1.0 - w_below_v.x + w_flow_down_below) * 0.95;
+        w_flow_down = min(new_water, (1.0 - w_below_v.x + w_flow_down_below) * flow_speed);
     }
     var w_flow_from_above = 0.0;
     if (!sol_above) {
         var w_flow_self_below = 0.0;
         if (!sol_below) {
-            w_flow_self_below = min(new_water, 1.0 - w_below_v.x) * flow_speed;
+            w_flow_self_below = min(new_water, (1.0 - w_below_v.x) * flow_speed);
         }
-        w_flow_from_above = min(w_above_v.x, 1.0 - new_water + w_flow_self_below) * flow_speed;
+        w_flow_from_above = min(w_above_v.x, (1.0 - new_water + w_flow_self_below) * flow_speed);
     }
     new_water = new_water - w_flow_down + w_flow_from_above;
 
@@ -92,11 +92,47 @@ if (self_voxel.x <= solid_thresh) {
     var w_flow_right = 0.0;
     var w_flow_back  = 0.0;
     var w_flow_front = 0.0;
-    let w_spread_factor = 0.15 * flow_speed;
-    if (!sol_left)  { w_flow_left  = (water.x - w_left_v.x)  * w_spread_factor; }
-    if (!sol_right) { w_flow_right = (water.x - w_right_v.x) * w_spread_factor; }
-    if (!sol_back)  { w_flow_back  = (water.x - w_back_v.x)  * w_spread_factor; }
-    if (!sol_front) { w_flow_front = (water.x - w_front_v.x) * w_spread_factor; }
+    let w_spread_factor = min(0.20, 0.15 * flow_speed);
+    if (!sol_left) {
+        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_left_below) {
+            w_flow_left = min(water.x, (1.0 - w_left_v.x) * flow_speed * 0.85);
+        } else if (!sol_below && sol_left_below) {
+            w_flow_left = -min(w_left_v.x, (1.0 - water.x) * flow_speed * 0.85);
+        } else if (sol_below) {
+            w_flow_left = (water.x - w_left_v.x) * w_spread_factor;
+        }
+    }
+    if (!sol_right) {
+        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_right_below) {
+            w_flow_right = min(water.x, (1.0 - w_right_v.x) * flow_speed * 0.85);
+        } else if (!sol_below && sol_right_below) {
+            w_flow_right = -min(w_right_v.x, (1.0 - water.x) * flow_speed * 0.85);
+        } else if (sol_below) {
+            w_flow_right = (water.x - w_right_v.x) * w_spread_factor;
+        }
+    }
+    if (!sol_back) {
+        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
+        if (sol_below && !sol_back_below) {
+            w_flow_back = min(water.x, (1.0 - w_back_v.x) * flow_speed * 0.85);
+        } else if (!sol_below && sol_back_below) {
+            w_flow_back = -min(w_back_v.x, (1.0 - water.x) * flow_speed * 0.85);
+        } else if (sol_below) {
+            w_flow_back = (water.x - w_back_v.x) * w_spread_factor;
+        }
+    }
+    if (!sol_front) {
+        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
+        if (sol_below && !sol_front_below) {
+            w_flow_front = min(water.x, (1.0 - w_front_v.x) * flow_speed * 0.85);
+        } else if (!sol_below && sol_front_below) {
+            w_flow_front = -min(w_front_v.x, (1.0 - water.x) * flow_speed * 0.85);
+        } else if (sol_below) {
+            w_flow_front = (water.x - w_front_v.x) * w_spread_factor;
+        }
+    }
     new_water -= (w_flow_left + w_flow_right + w_flow_back + w_flow_front);
     if (new_water < 0.001 && !near_ceiling && sol_below) { new_water = 0.0; }
 
@@ -105,11 +141,11 @@ if (self_voxel.x <= solid_thresh) {
     let lava_flow_speed = flow_speed * select(0.08, 0.015, select(false, get_voxel(local_x, local_y - 1, local_z).y == 13.0, local_y > 0)); // slow viscous flow, unless sitting on hot lava rock
     var l_flow_down = 0.0;
     if (!sol_below) {
-        l_flow_down = min(new_lava, 1.0 - w_below_v.y) * lava_flow_speed;
+        l_flow_down = min(new_lava, (1.0 - w_below_v.y) * lava_flow_speed);
     }
     var l_flow_from_above = 0.0;
     if (!sol_above) {
-        l_flow_from_above = min(w_above_v.y, 1.0 - new_lava) * lava_flow_speed;
+        l_flow_from_above = min(w_above_v.y, (1.0 - new_lava) * lava_flow_speed);
     }
     new_lava = new_lava - l_flow_down + l_flow_from_above;
 
@@ -118,10 +154,46 @@ if (self_voxel.x <= solid_thresh) {
     var l_flow_back  = 0.0;
     var l_flow_front = 0.0;
     let l_spread_factor = 0.06 * lava_flow_speed;
-    if (!sol_left)  { l_flow_left  = (water.y - w_left_v.y)  * l_spread_factor; }
-    if (!sol_right) { l_flow_right = (water.y - w_right_v.y) * l_spread_factor; }
-    if (!sol_back)  { l_flow_back  = (water.y - w_back_v.y)  * l_spread_factor; }
-    if (!sol_front) { l_flow_front = (water.y - w_front_v.y) * l_spread_factor; }
+    if (!sol_left) {
+        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_left_below) {
+            l_flow_left = min(new_lava, (1.0 - w_left_v.y) * lava_flow_speed * 0.85);
+        } else if (!sol_below && sol_left_below) {
+            l_flow_left = -min(w_left_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
+        } else if (sol_below) {
+            l_flow_left = (water.y - w_left_v.y) * l_spread_factor;
+        }
+    }
+    if (!sol_right) {
+        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_right_below) {
+            l_flow_right = min(new_lava, (1.0 - w_right_v.y) * lava_flow_speed * 0.85);
+        } else if (!sol_below && sol_right_below) {
+            l_flow_right = -min(w_right_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
+        } else if (sol_below) {
+            l_flow_right = (water.y - w_right_v.y) * l_spread_factor;
+        }
+    }
+    if (!sol_back) {
+        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
+        if (sol_below && !sol_back_below) {
+            l_flow_back = min(new_lava, (1.0 - w_back_v.y) * lava_flow_speed * 0.85);
+        } else if (!sol_below && sol_back_below) {
+            l_flow_back = -min(w_back_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
+        } else if (sol_below) {
+            l_flow_back = (water.y - w_back_v.y) * l_spread_factor;
+        }
+    }
+    if (!sol_front) {
+        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
+        if (sol_below && !sol_front_below) {
+            l_flow_front = min(new_lava, (1.0 - w_front_v.y) * lava_flow_speed * 0.85);
+        } else if (!sol_below && sol_front_below) {
+            l_flow_front = -min(w_front_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
+        } else if (sol_below) {
+            l_flow_front = (water.y - w_front_v.y) * l_spread_factor;
+        }
+    }
     new_lava -= (l_flow_left + l_flow_right + l_flow_back + l_flow_front);
     if (new_lava < 0.001) { new_lava = 0.0; }
 
@@ -130,11 +202,11 @@ if (self_voxel.x <= solid_thresh) {
     let acid_flow_speed = flow_speed * 0.65;
     var a_flow_down = 0.0;
     if (!sol_below) {
-        a_flow_down = min(new_acid, 1.0 - w_below_v.z) * 0.90;
+        a_flow_down = min(new_acid, (1.0 - w_below_v.z) * acid_flow_speed);
     }
     var a_flow_from_above = 0.0;
     if (!sol_above) {
-        a_flow_from_above = min(w_above_v.z, 1.0 - new_acid) * acid_flow_speed;
+        a_flow_from_above = min(w_above_v.z, (1.0 - new_acid) * acid_flow_speed);
     }
     new_acid = new_acid - a_flow_down + a_flow_from_above;
 
@@ -143,10 +215,46 @@ if (self_voxel.x <= solid_thresh) {
     var a_flow_back  = 0.0;
     var a_flow_front = 0.0;
     let a_spread_factor = 0.15 * acid_flow_speed;
-    if (!sol_left)  { a_flow_left  = (water.z - w_left_v.z)  * a_spread_factor; }
-    if (!sol_right) { a_flow_right = (water.z - w_right_v.z) * a_spread_factor; }
-    if (!sol_back)  { a_flow_back  = (water.z - w_back_v.z)  * a_spread_factor; }
-    if (!sol_front) { a_flow_front = (water.z - w_front_v.z) * a_spread_factor; }
+    if (!sol_left) {
+        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_left_below) {
+            a_flow_left = min(new_acid, (1.0 - w_left_v.z) * acid_flow_speed * 0.85);
+        } else if (!sol_below && sol_left_below) {
+            a_flow_left = -min(w_left_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
+        } else if (sol_below) {
+            a_flow_left = (water.z - w_left_v.z) * a_spread_factor;
+        }
+    }
+    if (!sol_right) {
+        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_right_below) {
+            a_flow_right = min(new_acid, (1.0 - w_right_v.z) * acid_flow_speed * 0.85);
+        } else if (!sol_below && sol_right_below) {
+            a_flow_right = -min(w_right_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
+        } else if (sol_below) {
+            a_flow_right = (water.z - w_right_v.z) * a_spread_factor;
+        }
+    }
+    if (!sol_back) {
+        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
+        if (sol_below && !sol_back_below) {
+            a_flow_back = min(new_acid, (1.0 - w_back_v.z) * acid_flow_speed * 0.85);
+        } else if (!sol_below && sol_back_below) {
+            a_flow_back = -min(w_back_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
+        } else if (sol_below) {
+            a_flow_back = (water.z - w_back_v.z) * a_spread_factor;
+        }
+    }
+    if (!sol_front) {
+        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
+        if (sol_below && !sol_front_below) {
+            a_flow_front = min(new_acid, (1.0 - w_front_v.z) * acid_flow_speed * 0.85);
+        } else if (!sol_below && sol_front_below) {
+            a_flow_front = -min(w_front_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
+        } else if (sol_below) {
+            a_flow_front = (water.z - w_front_v.z) * a_spread_factor;
+        }
+    }
     new_acid -= (a_flow_left + a_flow_right + a_flow_back + a_flow_front);
     if (new_acid < 0.001) { new_acid = 0.0; }
 
@@ -155,11 +263,11 @@ if (self_voxel.x <= solid_thresh) {
     let oil_flow_speed = flow_speed * 0.35;
     var o_flow_down = 0.0;
     if (!sol_below) {
-        o_flow_down = min(new_oil, 1.0 - w_below_v.w) * 0.85;
+        o_flow_down = min(new_oil, (1.0 - w_below_v.w) * oil_flow_speed);
     }
     var o_flow_from_above = 0.0;
     if (!sol_above) {
-        o_flow_from_above = min(w_above_v.w, 1.0 - new_oil) * oil_flow_speed;
+        o_flow_from_above = min(w_above_v.w, (1.0 - new_oil) * oil_flow_speed);
     }
     new_oil = new_oil - o_flow_down + o_flow_from_above;
 
@@ -168,10 +276,46 @@ if (self_voxel.x <= solid_thresh) {
     var o_flow_back  = 0.0;
     var o_flow_front = 0.0;
     let o_spread_factor = 0.10 * oil_flow_speed;
-    if (!sol_left)  { o_flow_left  = (water.w - w_left_v.w)  * o_spread_factor; }
-    if (!sol_right) { o_flow_right = (water.w - w_right_v.w) * o_spread_factor; }
-    if (!sol_back)  { o_flow_back  = (water.w - w_back_v.w)  * o_spread_factor; }
-    if (!sol_front) { o_flow_front = (water.w - w_front_v.w) * o_spread_factor; }
+    if (!sol_left) {
+        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_left_below) {
+            o_flow_left = min(new_oil, (1.0 - w_left_v.w) * oil_flow_speed * 0.85);
+        } else if (!sol_below && sol_left_below) {
+            o_flow_left = -min(w_left_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
+        } else if (sol_below) {
+            o_flow_left = (water.w - w_left_v.w) * o_spread_factor;
+        }
+    }
+    if (!sol_right) {
+        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
+        if (sol_below && !sol_right_below) {
+            o_flow_right = min(new_oil, (1.0 - w_right_v.w) * oil_flow_speed * 0.85);
+        } else if (!sol_below && sol_right_below) {
+            o_flow_right = -min(w_right_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
+        } else if (sol_below) {
+            o_flow_right = (water.w - w_right_v.w) * o_spread_factor;
+        }
+    }
+    if (!sol_back) {
+        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
+        if (sol_below && !sol_back_below) {
+            o_flow_back = min(new_oil, (1.0 - w_back_v.w) * oil_flow_speed * 0.85);
+        } else if (!sol_below && sol_back_below) {
+            o_flow_back = -min(w_back_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
+        } else if (sol_below) {
+            o_flow_back = (water.w - w_back_v.w) * o_spread_factor;
+        }
+    }
+    if (!sol_front) {
+        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
+        if (sol_below && !sol_front_below) {
+            o_flow_front = min(new_oil, (1.0 - w_front_v.w) * oil_flow_speed * 0.85);
+        } else if (!sol_below && sol_front_below) {
+            o_flow_front = -min(w_front_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
+        } else if (sol_below) {
+            o_flow_front = (water.w - w_front_v.w) * o_spread_factor;
+        }
+    }
     new_oil -= (o_flow_left + o_flow_right + o_flow_back + o_flow_front);
     if (new_oil < 0.001) { new_oil = 0.0; }
 

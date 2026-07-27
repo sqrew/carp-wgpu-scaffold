@@ -47,13 +47,17 @@ if (voxel.x <= 0.1) {
     // Take the maximum of neighbors to propagate light waves
     let max_neighbor = max(l_left, max(l_right, max(l_below, max(l_above, max(l_front, l_back)))));
     
-    // 3. Smoke Absorption (read from gas texture)
+    // 3. Smoke & Liquid Light Absorption
     let gas_here = get_gas(local_x, local_y, local_z);
     let smoke_density = gas_here.y; // Volcanic Smoke/Ash is in .y channel
+    let water_density = water_here.x; // Water is in .x channel
+    let oil_density = water_here.w;   // Crude Oil is in .w channel
     
-    // Ambient decay is 0.94; smoke absorbs up to 90% of propagating light
+    // Ambient decay is 0.94; smoke/liquid absorbs propagating light
     let smoke_absorption = clamp(smoke_density * 1.8, 0.0, 0.90);
-    let decay = 0.94 * (1.0 - smoke_absorption);
+    let liquid_absorption = clamp(oil_density * 1.0 + water_density * 0.15, 0.0, 1.0);
+    let total_absorption = clamp(smoke_absorption + liquid_absorption, 0.0, 1.0);
+    let decay = 0.94 * (1.0 - total_absorption);
     
     // Combine emitter and decayed neighbor light propagation
     let propagated = max_neighbor * decay;

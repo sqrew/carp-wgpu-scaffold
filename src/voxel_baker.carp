@@ -606,7 +606,7 @@
                         origin-data [qx-f qy-f qz-f slot-f]]
                     (do
                       (WGPU.write-floats ctx jit-info-b &origin-data)
-                      (with-bind-group (WGPURender.create-jit-bind-group ctx interaction-pipe i-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex) interaction-bg
+                      (with-bind-group (WGPURender.create-jit-bind-group-water ctx interaction-pipe i-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex @(WGPURenderer.water-texture ren) @(WGPURenderer.gas-texture ren)) interaction-bg
                         (WGPU.dispatch ctx interaction-pipe interaction-bg dispatch-cnt)
                         (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b i-scratch-b (* res (* res (* res 16)))))))
                 _ ())))
