@@ -3,7 +3,19 @@
 // Query if this cell is solid terrain
 let voxel = get_voxel(local_x, local_y, local_z);
 if (voxel.x <= 0.1) {
-    light = vec4<f32>(0.0);
+    let mat_id = round(abs(voxel.y));
+    var emitter = vec4<f32>(0.0);
+    let seed = dot(voxel_pos, vec3<f32>(12.9898, 78.233, 37.719));
+    let flicker = 1.0 + 0.10 * sin(u.time * 8.0 + seed);
+    
+    if (mat_id == 11.0) { // Glowing Neon Cyan
+        emitter = vec4<f32>(0.0, 1.5 * flicker, 1.5 * flicker, 1.0);
+    } else if (mat_id == 9.0) { // Amethyst Purple Crystal
+        emitter = vec4<f32>(1.2 * flicker, 0.0, 1.5 * flicker, 1.0);
+    } else if (mat_id == 13.0) { // Pulsating Lava Crimson (hot rock / embers)
+        emitter = vec4<f32>(1.5 * flicker, 0.4 * flicker, 0.0, 1.0);
+    }
+    light = emitter;
 } else {
     // 1. Emitters Check (read from water/liquid texture)
     let water_here = get_water(local_x, local_y, local_z);
