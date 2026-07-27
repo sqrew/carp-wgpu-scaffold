@@ -1687,7 +1687,7 @@ struct PointInstance {
                 if (smoke > 0.01) {
                     let step_density = smoke * 0.85 * min(res.y, 4.0);
                     fog_optical_depth += step_density;
-                    let mist_color = vec3<f32>(0.12, 0.11, 0.10);
+                    let mist_color = vec3<f32>(0.38, 0.36, 0.35);
                     fog_color_accum += mist_color * step_density;
                 }
                 let acid_fog = gas_val.z;
@@ -1739,7 +1739,7 @@ struct PointInstance {
                     if (smoke_ref > 0.01) {
                         let step_density = smoke_ref * 0.85 * min(res.y, 4.0);
                         fog_optical_depth += step_density;
-                        let mist_color = vec3<f32>(0.12, 0.11, 0.10);
+                        let mist_color = vec3<f32>(0.38, 0.36, 0.35);
                         fog_color_accum += mist_color * step_density;
                     }
                     let acid_fog_ref = gas_val.z;

@@ -2,7 +2,8 @@
 
 // Query if this cell is solid terrain
 let voxel = get_voxel(local_x, local_y, local_z);
-if (voxel.x <= 0.1) {
+let solid_thresh = u.terrain_params3.z;
+if (voxel.x <= solid_thresh) {
     let mat_id = round(abs(voxel.y));
     var emitter = vec4<f32>(0.0);
     let seed = dot(voxel_pos, vec3<f32>(12.9898, 78.233, 37.719));

@@ -130,7 +130,7 @@
                     (do
                       (ECS.with-components world @ent [e (fi FieldInstance)]
                         (set! csg-idx @(FieldInstance.csg-index fi)))
-                      (and (< csg-idx 0) (not (and (<= csg-idx -5) (>= csg-idx -7))))))
+                      (and (< csg-idx 0) (not (and (<= csg-idx -5) (>= csg-idx -8))))))
                   true))))
 
   (defn step-ecs! [e world grid]
@@ -329,7 +329,7 @@
                                                        (do
                                                          (ECS.with-components world @&ent1 [e (fi FieldInstance)]
                                                            (let [idx @(FieldInstance.csg-index fi)]
-                                                             (set! w-val (and (<= idx -5) (>= idx -7)))))
+                                                             (set! w-val (and (<= idx -5) (>= idx -8)))))
                                                          w-val))
                                                      false)]
                               (if is-water-bullet

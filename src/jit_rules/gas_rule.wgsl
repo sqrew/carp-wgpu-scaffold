@@ -87,11 +87,11 @@ if (self_voxel.x <= solid_thresh) {
     let steam_rise_speed = (0.65 + min(0.45, max(0.0, local_temp - 20.0) * 0.007)) * flow_speed;
     var s_flow_up = 0.0;
     if (!sol_above) {
-        s_flow_up = min(new_steam, 1.0 - g_above_v.x) * steam_rise_speed;
+        s_flow_up = min(new_steam, (1.0 - g_above_v.x) * steam_rise_speed);
     }
     var s_flow_from_below = 0.0;
     if (!sol_below) {
-        s_flow_from_below = min(g_below_v.x, 1.0 - new_steam) * steam_rise_speed;
+        s_flow_from_below = min(g_below_v.x, (1.0 - new_steam) * steam_rise_speed);
     }
     new_steam = new_steam - s_flow_up + s_flow_from_below;
 
@@ -100,7 +100,7 @@ if (self_voxel.x <= solid_thresh) {
     var s_flow_back  = 0.0;
     var s_flow_front = 0.0;
     // Extremely low horizontal spreading (reduced to 0.02) to keep the steam column concentrated
-    let s_spread = 0.02 * flow_speed;
+    let s_spread = min(0.20, 0.02 * flow_speed);
     if (!sol_left)  { s_flow_left  = (gas.x - g_left_v.x)  * s_spread; }
     if (!sol_right) { s_flow_right = (gas.x - g_right_v.x) * s_spread; }
     if (!sol_back)  { s_flow_back  = (gas.x - g_back_v.x)  * s_spread; }
@@ -113,11 +113,11 @@ if (self_voxel.x <= solid_thresh) {
     let smoke_rise_speed = 0.15 * flow_speed;
     var sm_flow_up = 0.0;
     if (!sol_above) {
-        sm_flow_up = min(new_smoke, 1.0 - g_above_v.y) * smoke_rise_speed;
+        sm_flow_up = min(new_smoke, (1.0 - g_above_v.y) * smoke_rise_speed);
     }
     var sm_flow_from_below = 0.0;
     if (!sol_below) {
-        sm_flow_from_below = min(g_below_v.y, 1.0 - new_smoke) * smoke_rise_speed;
+        sm_flow_from_below = min(g_below_v.y, (1.0 - new_smoke) * smoke_rise_speed);
     }
     new_smoke = new_smoke - sm_flow_up + sm_flow_from_below;
 
@@ -125,7 +125,7 @@ if (self_voxel.x <= solid_thresh) {
     var sm_flow_right = 0.0;
     var sm_flow_back  = 0.0;
     var sm_flow_front = 0.0;
-    let sm_spread = 0.18 * flow_speed; // smoke spreads wider horizontally
+    let sm_spread = min(0.20, 0.18 * flow_speed); // smoke spreads wider horizontally
     if (!sol_left)  { sm_flow_left  = (gas.y - g_left_v.y)  * sm_spread; }
     if (!sol_right) { sm_flow_right = (gas.y - g_right_v.y) * sm_spread; }
     if (!sol_back)  { sm_flow_back  = (gas.y - g_back_v.y)  * sm_spread; }
@@ -138,11 +138,11 @@ if (self_voxel.x <= solid_thresh) {
     let fog_rise_speed = 0.20 * flow_speed;
     var f_flow_up = 0.0;
     if (!sol_above) {
-        f_flow_up = min(new_fog, 1.0 - g_above_v.z) * fog_rise_speed;
+        f_flow_up = min(new_fog, (1.0 - g_above_v.z) * fog_rise_speed);
     }
     var f_flow_from_below = 0.0;
     if (!sol_below) {
-        f_flow_from_below = min(g_below_v.z, 1.0 - new_fog) * fog_rise_speed;
+        f_flow_from_below = min(g_below_v.z, (1.0 - new_fog) * fog_rise_speed);
     }
     new_fog = new_fog - f_flow_up + f_flow_from_below;
 
@@ -150,7 +150,7 @@ if (self_voxel.x <= solid_thresh) {
     var f_flow_right = 0.0;
     var f_flow_back  = 0.0;
     var f_flow_front = 0.0;
-    let f_spread = 0.10 * flow_speed;
+    let f_spread = min(0.20, 0.10 * flow_speed);
     if (!sol_left)  { f_flow_left  = (gas.z - g_left_v.z)  * f_spread; }
     if (!sol_right) { f_flow_right = (gas.z - g_right_v.z) * f_spread; }
     if (!sol_back)  { f_flow_back  = (gas.z - g_back_v.z)  * f_spread; }
@@ -163,11 +163,11 @@ if (self_voxel.x <= solid_thresh) {
     let methane_rise_speed = 0.45 * flow_speed; // methane is extremely light, rises very fast
     var m_flow_up = 0.0;
     if (!sol_above) {
-        m_flow_up = min(new_methane, 1.0 - g_above_v.w) * methane_rise_speed;
+        m_flow_up = min(new_methane, (1.0 - g_above_v.w) * methane_rise_speed);
     }
     var m_flow_from_below = 0.0;
     if (!sol_below) {
-        m_flow_from_below = min(g_below_v.w, 1.0 - new_methane) * methane_rise_speed;
+        m_flow_from_below = min(g_below_v.w, (1.0 - new_methane) * methane_rise_speed);
     }
     new_methane = new_methane - m_flow_up + m_flow_from_below;
 
@@ -175,7 +175,7 @@ if (self_voxel.x <= solid_thresh) {
     var m_flow_right = 0.0;
     var m_flow_back  = 0.0;
     var m_flow_front = 0.0;
-    let m_spread = 0.15 * flow_speed;
+    let m_spread = min(0.20, 0.15 * flow_speed);
     if (!sol_left)  { m_flow_left  = (gas.w - g_left_v.w)  * m_spread; }
     if (!sol_right) { m_flow_right = (gas.w - g_right_v.w) * m_spread; }
     if (!sol_back)  { m_flow_back  = (gas.w - g_back_v.w)  * m_spread; }
@@ -278,18 +278,18 @@ if (self_voxel.x <= solid_thresh) {
     // Crude Oil burned in liquid pass also generates volcanic smoke/ash
     var burned_oil = 0.0;
     if (has_combustion_source && water_here.w > 0.0) {
-        burned_oil = min(water_here.w, 1.8 * dt);
+        burned_oil = min(water_here.w, 0.10 * dt);
     }
 
     // Generate Volcanic Ash/Smoke as combustion product
     if (burned_oil > 0.0 || burned_methane > 0.0) {
-        new_smoke = new_smoke + burned_oil * 1.5 + burned_methane * 1.8;
+        new_smoke = new_smoke + burned_oil * 1.1 + burned_methane * 1.3;
     }
 
     // Dispersal/decay over time
     let decay_rate = select(0.012 * dt, 0.001 * dt, near_ceiling);
     new_steam = max(0.0, new_steam - decay_rate);
-    new_smoke = max(0.0, new_smoke - decay_rate * 0.15); // smoke lingers longer
+    new_smoke = max(0.0, new_smoke - decay_rate * 0.70); // smoke decays moderately
     new_fog = max(0.0, new_fog - decay_rate * 0.50);
     new_methane = max(0.0, new_methane - decay_rate * 0.20);
 

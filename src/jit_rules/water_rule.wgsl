@@ -373,8 +373,8 @@ if (self_voxel.x <= solid_thresh) {
                                  w_back_v.y > 0.05 || w_front_v.y > 0.05 ||
                                  local_temp > 120.0;
     if (has_combustion_source && new_oil > 0.0) {
-        // Oil burns extremely rapidly!
-        let burned_oil = min(new_oil, 1.8 * dt);
+        // Oil burns steadily and generates smoke/heat
+        let burned_oil = min(new_oil, 0.10 * dt);
         new_oil = new_oil - burned_oil;
     }
 
