@@ -382,7 +382,7 @@ if (self_voxel.x <= solid_thresh) {
     // Acid eats solid walls, generating fumes (excluding ceiling to allow condensation)
     let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && new_acid > 0.0) {
-        let consumed_acid = min(new_acid, 0.45);
+        let consumed_acid = min(new_acid, 0.50 * dt);
         new_acid = new_acid - consumed_acid;
     }
 

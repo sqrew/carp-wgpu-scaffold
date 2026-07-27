@@ -208,7 +208,7 @@ if (self_voxel.x <= solid_thresh) {
     // Acid Fog generation from Acid eating solid walls (excluding ceiling to allow condensation)
     let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && water_here.z > 0.0) {
-        let consumed_acid = min(water_here.z, 0.45);
+        let consumed_acid = min(water_here.z, 0.50 * dt);
         new_fog = new_fog + consumed_acid * 1.0;
     }
 
