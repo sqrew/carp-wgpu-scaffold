@@ -209,7 +209,7 @@ if (self_voxel.x <= solid_thresh) {
     let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && water_here.z > 0.0) {
         let consumed_acid = min(water_here.z, 2.20 * dt);
-        new_fog = new_fog + consumed_acid * 0.02;
+        new_fog = new_fog + consumed_acid * 0.15;
     }
 
     // --- Condensation onto Ceilings & Pressure Waves ---
@@ -258,10 +258,10 @@ if (self_voxel.x <= solid_thresh) {
 
     // 3. Acid Fog ceiling condensation
     var acid_condensed = 0.0;
-    if (near_ceiling && new_fog >= 0.02) {
+    if (near_ceiling && gas.z >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
         let condensation_rate = 0.008 * u.shadow_ao_quality.w * dt * rate_mult;
-        acid_condensed = min(new_fog, condensation_rate);
+        acid_condensed = min(gas.z, condensation_rate);
     }
     new_fog = max(0.0, new_fog - acid_condensed);
 
