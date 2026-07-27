@@ -208,8 +208,8 @@ if (self_voxel.x <= solid_thresh) {
     // Acid Fog generation from Acid eating solid walls (excluding ceiling to allow condensation)
     let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && water_here.z > 0.0) {
-        let consumed_acid = min(water_here.z, 0.50 * dt);
-        new_fog = new_fog + consumed_acid * 1.0;
+        let consumed_acid = min(water_here.z, 2.20 * dt);
+        new_fog = new_fog + consumed_acid * 0.02;
     }
 
     // --- Condensation onto Ceilings & Pressure Waves ---
@@ -260,7 +260,7 @@ if (self_voxel.x <= solid_thresh) {
     var acid_condensed = 0.0;
     if (near_ceiling && new_fog >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
+        let condensation_rate = 0.008 * u.shadow_ao_quality.w * dt * rate_mult;
         acid_condensed = min(new_fog, condensation_rate);
     }
     new_fog = max(0.0, new_fog - acid_condensed);

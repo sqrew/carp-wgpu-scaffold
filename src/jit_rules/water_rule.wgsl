@@ -382,7 +382,7 @@ if (self_voxel.x <= solid_thresh) {
     // Acid eats solid walls, generating fumes (excluding ceiling to allow condensation)
     let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
     if (adjacent_to_solid && new_acid > 0.0) {
-        let consumed_acid = min(new_acid, 0.50 * dt);
+        let consumed_acid = min(new_acid, 2.20 * dt);
         new_acid = new_acid - consumed_acid;
     }
 
@@ -417,7 +417,7 @@ if (self_voxel.x <= solid_thresh) {
     let acid_fog_here = gas_here.z;
     if (near_ceiling && acid_fog_here >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
-        let acid_condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
+        let acid_condensation_rate = 0.008 * u.shadow_ao_quality.w * dt * rate_mult;
         acid_condensed = min(acid_fog_here, acid_condensation_rate);
     }
 
@@ -440,7 +440,7 @@ if (self_voxel.x <= solid_thresh) {
         new_water = new_water + combined_condensed * 1.5; // boosted conversion factor for thick visible drops
     }
     if (acid_condensed > 0.0) {
-        new_acid = new_acid + acid_condensed * 1.0;
+        new_acid = new_acid + acid_condensed * 0.40;
     }
 
     water.x = clamp(new_water, 0.0, 1.0);
