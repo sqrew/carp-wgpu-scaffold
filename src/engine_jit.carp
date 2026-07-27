@@ -762,9 +762,13 @@
                 _ ()))
             affected))))
 
+  (def readback-frame-counter 0)
+
   (sig run-jit-physics-loop! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn run-jit-physics-loop! [e ctx ren]
-    (let [world-data (Engine.world-data e)
+    (do
+      (set! readback-frame-counter (Int.mod (inc readback-frame-counter) 6))
+      (let [world-data (Engine.world-data e)
           world (Engine.world e)
           chunks (World.chunks world-data)
           num-chunks (Array.length chunks)
@@ -831,5 +835,20 @@
                                     (do
                                       (WGPU.dispatch ctx pipe bg dispatch-cnt)
                                       (WGPURender.copy-buffer-to-buffer ctx @(WGPURenderer.voxel-gpu-buffer ren) v-gpu-b (* res (* res (* res 16))))
-                                      (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)))))))))))))
-              _ ()))))))
+                                      (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
+                                      ;; --- Sync to CPU for Player/Physics Collision ---
+                                      (let [cam-pos (Camera.pos (Engine.camera e))
+                                            p-qx (World.camera-chunk-qx cam-pos)
+                                            p-qy (World.camera-chunk-qy cam-pos)
+                                            p-qz (World.camera-chunk-qz cam-pos)
+                                            c-qx @(Chunk.coord-x chunk)
+                                            c-qy @(Chunk.coord-y chunk)
+                                            c-qz @(Chunk.coord-z chunk)]
+                                        (when (and (= p-qx c-qx)
+                                                   (and (= p-qy c-qy)
+                                                        (and (= p-qz c-qz)
+                                                             (= readback-frame-counter 0))))
+                                          (let [n-floats (* res (* res (* res 4)))
+                                                read-back (WGPU.read-floats ctx v-gpu-b n-floats)]
+                                            (Chunk.set-voxel-data! chunk read-back))))))))))))))))
+              _ ())))))))
