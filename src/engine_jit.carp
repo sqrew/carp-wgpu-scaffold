@@ -762,6 +762,8 @@
                 _ ()))
             affected))))
 
+  (def JIT-readback-counter 0)
+
   (sig run-jit-physics-loop! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn run-jit-physics-loop! [e ctx ren]
     (let [world-data (Engine.world-data e)
@@ -779,12 +781,14 @@
               (Maybe.Just pipe)
                 (let [u-b (WGPURender.uniform-buffer-get-buffer @(WGPURenderer.u-buffer ren))
                       has-global-rules (check-global-jit-rules?)]
-                  (for [i 0 num-chunks]
+                  (do
+                    (for [i 0 num-chunks]
                     (let [chunk (Array.unsafe-nth chunks i)
                           v-gpu-b @(Chunk.gpu-buffer chunk)]
                       (if (WGPU.buffer-null?- v-gpu-b)
                           ()
-                          (when (chunk-affected-by-jit? world chunk has-global-rules)
+                          (when (and (chunk-affected-by-jit? world chunk has-global-rules)
+                                     (= @(Chunk.bake-progress chunk) res))
                             (let [qx-f (Double.to-float (* (Double.from-int @(Chunk.coord-x chunk)) 32.0))
                                   qy-f (Double.to-float (* (Double.from-int @(Chunk.coord-y chunk)) 32.0))
                                   qz-f (Double.to-float (* (Double.from-int @(Chunk.coord-z chunk)) 32.0))
@@ -831,5 +835,8 @@
                                     (do
                                       (WGPU.dispatch ctx pipe bg dispatch-cnt)
                                       (WGPURender.copy-buffer-to-buffer ctx @(WGPURenderer.voxel-gpu-buffer ren) v-gpu-b (* res (* res (* res 16))))
-                                      (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)))))))))))))
+                                      (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
+                                      (when (= (Int.mod i 8) JIT-readback-counter)
+                                        (WGPU.read-buffer- ctx v-gpu-b (array->ptr (Chunk.voxel-data chunk)) (Uint64.from-long (Long.from-int (* res (* res (* res 16))))))))))))))))))
+                    (set! JIT-readback-counter (Int.mod (inc JIT-readback-counter) 8))))
               _ ()))))))
