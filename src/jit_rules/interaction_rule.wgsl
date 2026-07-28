@@ -121,10 +121,11 @@ if (voxel_self.x >= 0.0) {
         limit = 30.0;
     }
 
-    let total_stress = (fields.z - 1.0) + fields.y * 3.0;
-    if (total_stress >= limit) {
-        let excess = total_stress - limit;
-        fatigue = fatigue + (0.4 + excess * 0.35) * dt; // Build fatigue faster (fully cracked in ~1-2s)
+    let total_stress = (fields.z - 1.0) * 0.5 + fields.y * 3.0; // Scale down pure vertical load so stable walls don't crack
+    let fatigue_threshold = limit * 0.65; // Start cracking at 65% of ultimate collapse strength
+    if (total_stress >= fatigue_threshold) {
+        let excess = total_stress - fatigue_threshold;
+        fatigue = fatigue + (0.3 + excess * 0.2) * dt; // Build fatigue under sustained load
     } else {
         fatigue = fatigue - 0.05 * dt; // Healing micro-fractures over ~20s
     }

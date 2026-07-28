@@ -580,7 +580,17 @@
                        (Double.to-float cell-size)
                        (Double.to-float num-instances)
                        0.0f 0.0f 0.0f]
+          slot @(Chunk.atlas-slot chunk)
+          slots-per-dim (/ 384 res)
+          slots-per-dim-sq (* slots-per-dim slots-per-dim)
+          slot-x (Int.mod slot slots-per-dim)
+          slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+          slot-z (/ slot slots-per-dim-sq)
+          ox-tex (* slot-x res)
+          oy-tex (* slot-y res)
+          oz-tex (* slot-z res)
           i-scratch-b @(WGPURenderer.interaction-scratch-buffer ren)
+          i-half-b @(WGPURenderer.interaction-half-buffer ren)
           i-params-b @(WGPURenderer.interaction-params-buffer ren)
           pipe @(WGPURenderer.interaction-splat-pipeline ren)
           u-b @(WGPURenderer.u-buffer ren)
@@ -588,6 +598,17 @@
           bufs [i-scratch-b raw-u-b i-params-b]
           dispatch-cnt (/ (* res (* res res)) 64)]
       (do
+        (wgpu-copy-3d-texture-to-buffer-offset
+          ctx
+          @(WGPURenderer.interaction-texture ren)
+          ox-tex oy-tex oz-tex
+          i-half-b
+          0
+          res res res)
+        (let [unpack-pipe @(WGPURenderer.unpack-pipeline ren)
+              unpack-bufs [i-half-b i-scratch-b]]
+          (with-bind-group (WGPU.create-bind-group ctx unpack-pipe &unpack-bufs) bg-un
+            (WGPU.dispatch ctx unpack-pipe bg-un dispatch-cnt)))
         (WGPU.write-floats ctx i-params-b &params-data)
         (with-bind-group (WGPU.create-bind-group ctx pipe &bufs) bg
           (WGPU.dispatch ctx pipe bg dispatch-cnt)

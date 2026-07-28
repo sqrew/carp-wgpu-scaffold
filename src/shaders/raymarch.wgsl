@@ -1981,23 +1981,7 @@ struct PointInstance {
                 var base_col = terr_col;
                 var edge = 0.0;
 
-                // Apply structural fatigue cracks visually
-                let interaction = sampleInteractionGrid(p);
-                let fatigue = interaction.w;
-                if (fatigue > 0.01) {
-                    let crack_scale = 5.0;
-                    let n = noise3d(p.x * crack_scale, p.y * crack_scale, p.z * crack_scale);
-                    
-                    // Thicker dark crack core
-                    let crack_pattern = smoothstep(0.70, 0.95, sin(n * 4.0 + p.y * 1.5));
-                    let crack_intensity = crack_pattern * fatigue;
-                    base_col = mix(base_col, vec3<f32>(0.02, 0.02, 0.03), crack_intensity);
-                    
-                    // Glowing friction/stress edges (orange/red energy emission)
-                    let glow_pattern = smoothstep(0.45, 0.70, sin(n * 4.0 + p.y * 1.5));
-                    let glow_intensity = glow_pattern * fatigue * 0.75;
-                    base_col = mix(base_col, vec3<f32>(1.0, 0.20, 0.02), glow_intensity);
-                }
+
 
                 if (hitId != -1.0) {
                     let s_idx = i32(hitId);
@@ -2123,6 +2107,29 @@ struct PointInstance {
                     }
                 } else {
                     base_col = terr_col;
+                }
+
+                // Apply structural fatigue cracks visually (Jagged black crystalline cracks)
+                let interaction = sampleInteractionGrid(p - normal * 0.4);
+                let fatigue = interaction.w;
+                if (fatigue > 0.01) {
+                    // Crystalline cell-like fragmentation noise
+                    let scale1 = 4.0;
+                    let n1 = noise3d(p.x * scale1, p.y * scale1, p.z * scale1) * 2.0 - 1.0;
+                    
+                    let scale2 = 12.0;
+                    let n2 = noise3d(p.x * scale2, p.y * scale2, p.z * scale2) * 2.0 - 1.0;
+                    
+                    // Combine frequencies and take absolute value for sharp cusps/ridges
+                    let combined = n1 * 0.7 + n2 * 0.3;
+                    let sharp_ridges = 1.0 - abs(combined);
+                    
+                    // High-contrast threshold to form thin, jagged fissures
+                    let crack_pattern = smoothstep(0.85, 0.95, sharp_ridges);
+                    let crack_intensity = crack_pattern * fatigue;
+                    
+                    // Darken the crack fissures to black
+                    base_col = mix(base_col, vec3<f32>(0.0, 0.0, 0.0), crack_intensity);
                 }
 
                 color = base_col * lighting * ao + vec3<f32>(specular * custom_specular_mult);
