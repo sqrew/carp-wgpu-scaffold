@@ -15,9 +15,10 @@
 let voxel_self = get_voxel(local_x, local_y, local_z);
 
 if (voxel_self.x >= 0.0) {
-    // Air has no stress or density
+    // Air has no stress or shear/fatigue
     fields.y = 0.0;
     fields.z = 0.0;
+    fields.w = 0.0;
 } else {
     // Solid terrain
     var stress = 1.0;
@@ -33,6 +34,7 @@ if (voxel_self.x >= 0.0) {
     }
     
     // 2. Shear Stress (Overhangs): If unsupported below, find the distance to the nearest vertical support
+    var shear_stress = 0.0;
     let below_voxel = get_voxel(local_x, local_y - 1, local_z);
     if (below_voxel.x >= 0.0) {
         var min_dist = 999.0;
@@ -93,19 +95,42 @@ if (voxel_self.x >= 0.0) {
             }
         }
         
-        var shear_stress = 15.0;
+        shear_stress = 15.0;
         if (min_dist < 999.0) {
             shear_stress = min_dist * 2.5;
         }
-        stress = max(stress, shear_stress);
     }
     
-    // Clamp stress to avoid infinite build-up and match our scale range [0, 15.0]
+    // Write Compressive Stress to fields.z and Shear Stress to fields.y
     fields.z = min(stress, 15.0);
-    fields.y = 1.0; // Density
+    fields.y = min(shear_stress, 15.0);
+
+    // 3. Accumulate Structural Fatigue / Damage in fields.w
+    var fatigue = fields.w;
+    var limit = 14.0;
+    let mat_id = round(abs(voxel_self.y));
+    if (mat_id == 3.0) { // Stone
+        limit = 24.0;
+    } else if (mat_id == 5.0) { // Sand
+        limit = 4.0;
+    } else if (mat_id == 6.0) { // Snow / Ice
+        limit = 8.0;
+    } else if (mat_id == 7.0 || mat_id == 14.0) { // Obsidian
+        limit = 36.0;
+    } else if (mat_id == 12.0) { // Gold / Brass
+        limit = 30.0;
+    }
+
+    let total_stress = (fields.z - 1.0) + fields.y * 3.0;
+    if (total_stress >= limit) {
+        let excess = total_stress - limit;
+        fatigue = fatigue + (0.4 + excess * 0.35) * dt; // Build fatigue faster (fully cracked in ~1-2s)
+    } else {
+        fatigue = fatigue - 0.05 * dt; // Healing micro-fractures over ~20s
+    }
+    fields.w = clamp(fatigue, 0.0, 1.0);
 
     // Material thermal conductivity influence (Snow/Ice cools, Lava heats)
-    let mat_id = round(abs(voxel_self.y));
     if (mat_id == 6.0) { // Snow / Ice
         fields.x = max(-50.0, fields.x - 35.0 * dt);
     } else if (mat_id == 13.0) { // Lava / Burning embers

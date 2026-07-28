@@ -912,7 +912,7 @@ struct PointInstance {
                 // Stress View - disable volumetric fog to keep solid surface crisp
                 d = 0.0;
             } else if (view_mode == 4.0) {
-                // Density View
+                // Shear Stress View
                 d = clamp(interaction.y, 0.0, 1.0) * 0.6;
             } else {
                 // Default Normal View (Water Volume / SPH fluid)
@@ -948,115 +948,14 @@ struct PointInstance {
                 return default_color;
             }
 
-            // 1. Compressive stress (gravity load): scan upwards
-            var gravity_load = 1.0;
-            for (var dy = 1.0; dy <= 12.0; dy += 1.0) {
-                let check_p = p + vec3<f32>(0.0, dy, 0.0);
-                let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
-                if (check_slot < 0) {
-                    break; // Unloaded above doesn't press down
-                }
-                let voxel = sampleVoxelGrid(check_p, true);
-                if (voxel.x < 0.0) { // Solid
-                    gravity_load += 1.0;
-                } else {
-                    break; // Stop scanning if we hit air
-                }
-            }
-
-            // 2. Shear stress: scan below to see if unsupported
-            let below_p = p - vec3<f32>(0.0, 1.0, 0.0);
-            let below_slot = getChunkSlot(vec3<i32>(floor(below_p / 32.0)) - chunk_lookup.origin.xyz);
-            let below_voxel = sampleVoxelGrid(below_p, true);
-            var shear_load = 0.0;
-            if (below_voxel.x >= 0.0 && below_slot >= 0) { // Air below us (overhang!)
-                var min_dist = 999.0;
-                // Scan Left (-X)
-                for (var dx = 1.0; dx <= 6.0; dx += 1.0) {
-                    let check_p = p - vec3<f32>(dx, 0.0, 0.0);
-                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
-                    let is_unloaded = check_slot < 0;
-                    let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0 || is_unloaded) {
-                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
-                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
-                        let below_unloaded = below_check_slot < 0;
-                        let voxel_below = sampleVoxelGrid(below_check_p, true);
-                        if (voxel_below.x < 0.0 || below_unloaded) {
-                            min_dist = min(min_dist, dx);
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                // Scan Right (+X)
-                for (var dx = 1.0; dx <= 6.0; dx += 1.0) {
-                    let check_p = p + vec3<f32>(dx, 0.0, 0.0);
-                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
-                    let is_unloaded = check_slot < 0;
-                    let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0 || is_unloaded) {
-                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
-                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
-                        let below_unloaded = below_check_slot < 0;
-                        let voxel_below = sampleVoxelGrid(below_check_p, true);
-                        if (voxel_below.x < 0.0 || below_unloaded) {
-                            min_dist = min(min_dist, dx);
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                // Scan Forward (+Z)
-                for (var dz = 1.0; dz <= 6.0; dz += 1.0) {
-                    let check_p = p + vec3<f32>(0.0, 0.0, dz);
-                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
-                    let is_unloaded = check_slot < 0;
-                    let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0 || is_unloaded) {
-                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
-                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
-                        let below_unloaded = below_check_slot < 0;
-                        let voxel_below = sampleVoxelGrid(below_check_p, true);
-                        if (voxel_below.x < 0.0 || below_unloaded) {
-                            min_dist = min(min_dist, dz);
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                // Scan Backward (-Z)
-                for (var dz = 1.0; dz <= 6.0; dz += 1.0) {
-                    let check_p = p - vec3<f32>(0.0, 0.0, dz);
-                    let check_slot = getChunkSlot(vec3<i32>(floor(check_p / 32.0)) - chunk_lookup.origin.xyz);
-                    let is_unloaded = check_slot < 0;
-                    let voxel_here = sampleVoxelGrid(check_p, true);
-                    if (voxel_here.x < 0.0 || is_unloaded) {
-                        let below_check_p = check_p - vec3<f32>(0.0, 1.0, 0.0);
-                        let below_check_slot = getChunkSlot(vec3<i32>(floor(below_check_p / 32.0)) - chunk_lookup.origin.xyz);
-                        let below_unloaded = below_check_slot < 0;
-                        let voxel_below = sampleVoxelGrid(below_check_p, true);
-                        if (voxel_below.x < 0.0 || below_unloaded) {
-                            min_dist = min(min_dist, dz);
-                            break;
-                        }
-                    } else {
-                        break;
-                    }
-                }
-                if (min_dist < 999.0) {
-                    shear_load = min_dist;
-                } else {
-                    shear_load = 6.0;
-                }
-            }
-
             let self_voxel = sampleVoxelGrid(p, true);
+
+            let interaction = sampleInteractionGrid(p);
+            let comp_stress = interaction.z; // fields.z
+            let shear_stress = interaction.y; // fields.y
+
             let limit = getMaterialStressLimit(self_voxel.y);
-            let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
+            let total_stress = (comp_stress - 1.0) + shear_stress * 3.0;
             let norm_stress = clamp(total_stress / limit, 0.0, 1.0);
 
             // Heatmap color stops:
@@ -2079,8 +1978,26 @@ struct PointInstance {
                     terr_col = getFieldColor(p, terr_col);
                 }
 
-                 var base_col = terr_col;
-                 var edge = 0.0;
+                var base_col = terr_col;
+                var edge = 0.0;
+
+                // Apply structural fatigue cracks visually
+                let interaction = sampleInteractionGrid(p);
+                let fatigue = interaction.w;
+                if (fatigue > 0.01) {
+                    let crack_scale = 5.0;
+                    let n = noise3d(p.x * crack_scale, p.y * crack_scale, p.z * crack_scale);
+                    
+                    // Thicker dark crack core
+                    let crack_pattern = smoothstep(0.70, 0.95, sin(n * 4.0 + p.y * 1.5));
+                    let crack_intensity = crack_pattern * fatigue;
+                    base_col = mix(base_col, vec3<f32>(0.02, 0.02, 0.03), crack_intensity);
+                    
+                    // Glowing friction/stress edges (orange/red energy emission)
+                    let glow_pattern = smoothstep(0.45, 0.70, sin(n * 4.0 + p.y * 1.5));
+                    let glow_intensity = glow_pattern * fatigue * 0.75;
+                    base_col = mix(base_col, vec3<f32>(1.0, 0.20, 0.02), glow_intensity);
+                }
 
                 if (hitId != -1.0) {
                     let s_idx = i32(hitId);

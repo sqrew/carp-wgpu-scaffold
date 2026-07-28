@@ -121,8 +121,8 @@ if (cell.x < 0.0) {
 
     // Critical stress threshold per material ID (Only collapse unsupported overhangs with shear_load > 0.5!)
     if (total_stress >= limit && shear_load > 0.5) {
-        // Slowly dissolve and crumble! (takes ~0.6 seconds of sustained stress to vanish)
-        cell.x = cell.x + dt * 2.5; 
+        // Slowly dissolve and crumble! (takes ~1.7 seconds of sustained stress to vanish)
+        cell.x = cell.x + dt * 0.35; 
         
         // Push downward and outward slightly to simulate collapsing gravel/slump
         cell_velocity += vec3<f32>(
@@ -161,8 +161,12 @@ if (cell.x < 0.0) {
             erosion_rate = 0.005; // obsidian is highly resistant (was 0.001)
         }
         
+        // Stressed rock is fractured and erodes up to 3x faster
+        let stress_factor = 1.0 + clamp((total_stress - limit) / limit, 0.0, 2.0);
+        let actual_erosion = erosion_rate * stress_factor;
+        
         // Erode density (increment SDF towards empty space)
-        cell.x = cell.x + dt * water_vol * erosion_rate * 25.0 * u.misc_params.z;
+        cell.x = cell.x + dt * water_vol * actual_erosion * 2.5 * u.misc_params.z;
         
         // Turn partially eroded blocks to wet clay/mud (Material 10)
         if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
