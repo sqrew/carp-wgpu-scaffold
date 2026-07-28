@@ -77,6 +77,11 @@
                 (set! has-code true)))))
         has-code)))
 
+  (defn read-materials-shader []
+    (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/materials.wgsl")
+      (Result.Success s) s
+      _ @""))
+
   (sig assemble-dynamic-ecs-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
   (defn assemble-dynamic-ecs-shader [e world]
     (let [db (Engine.db e)
@@ -298,7 +303,7 @@
               (set! injection-accum (str* injection-accum "\n{\n  let instance = u.instances[" (Int.str inst-idx) "];\n" (GravitySource.wgsl-interaction-snippet) "\n}")))))
         (if (String.empty? &injection-accum)
             @""
-            (str* header-block injection-accum footer-block)))))
+            (str* (read-materials-shader) header-block injection-accum footer-block)))))
 
   (sig assemble-generic-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld) (Ref String) (Ref String) (Ref String)] String))
   (defn assemble-generic-rule-shader [e world rule-file-path var-name injection-label]
@@ -521,7 +526,7 @@
             (Result.Error _) ()))
         (if (String.empty? &injection-accum)
             @""
-            (str* header-block injection-accum footer-block)))))
+            (str* (read-materials-shader) header-block injection-accum footer-block)))))
 
   (sig assemble-light-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
   (defn assemble-light-rule-shader [e world]

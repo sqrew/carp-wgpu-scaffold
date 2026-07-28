@@ -1,27 +1,14 @@
 // physics_rule.wgsl - Native GPU-Resident JIT Shader Injection Loop
 // Modifying this file live updates the global physical behaviors of the voxel grid.
 
-// --- Structural Collapse / Exploding Red Stress Blocks ---
 if (cell.x < 0.0) {
-    // 1. Compressive stress (gravity load): scan upwards with material density weighting
     var gravity_load = 1.0;
     for (var dy = 1; dy <= 12; dy = dy + 1) {
         let voxel = get_voxel(local_x, local_y + dy, local_z);
         if (voxel.x < 0.0) { // Solid
             let top_mat = round(abs(voxel.y));
-            var density = 1.0; // Soil/Grass default
-            if (top_mat == 6.0) {          // Snow/Ice (lightweight)
-                density = 0.4;
-            } else if (top_mat == 5.0) {   // Sand/Gravel
-                density = 1.3;
-            } else if (top_mat == 3.0) {   // Stone (heavy rock)
-                density = 1.8;
-            } else if (top_mat == 7.0 || top_mat == 14.0) { // Obsidian
-                density = 3.5;
-            } else if (top_mat == 12.0) {  // Gold/Brass (extremely dense payload!)
-                density = 5.0;
-            }
-            gravity_load = gravity_load + density;
+            let top_props = get_material_properties(top_mat);
+            gravity_load = gravity_load + top_props.density;
         } else {
             break;
         }
@@ -105,19 +92,9 @@ if (cell.x < 0.0) {
 
     let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
 
-    var limit = 14.0;
     let mat = round(abs(cell.y));
-    if (mat == 3.0) { // Stone grey
-        limit = 24.0;
-    } else if (mat == 5.0) { // Sand Beige
-        limit = 4.0; // Very weak!
-    } else if (mat == 6.0) { // Snow / Ice
-        limit = 8.0; 
-    } else if (mat == 7.0 || mat == 14.0) { // Obsidian
-        limit = 36.0;
-    } else if (mat == 12.0) { // Gold / Brass
-        limit = 30.0;
-    }
+    let props = get_material_properties(mat);
+    let limit = props.strength;
 
     // Critical stress threshold per material ID (Only collapse unsupported overhangs with shear_load > 0.5!)
     if (total_stress >= limit && shear_load > 0.5) {
@@ -152,14 +129,7 @@ if (cell.x < 0.0) {
     
     let water_vol = max(w_above, max(w_left, max(w_right, max(w_front, w_back))));
     if (water_vol > 0.05) {
-        var erosion_rate = 0.25; // default grass/soil erosion (was 0.05)
-        if (mat == 3.0) { // Stone
-            erosion_rate = 0.06; // stone is hard to erode (was 0.01)
-        } else if (mat == 5.0) { // Sand
-            erosion_rate = 0.95; // sand washes away immediately! (was 0.35)
-        } else if (mat == 7.0 || mat == 14.0) { // Obsidian
-            erosion_rate = 0.005; // obsidian is highly resistant (was 0.001)
-        }
+        let erosion_rate = props.erosion_rate;
         
         // Stressed rock is fractured and erodes up to 3x faster
         let stress_factor = 1.0 + clamp((total_stress - limit) / limit, 0.0, 2.0);
@@ -185,8 +155,9 @@ if (cell.x > solid_thresh) {
     }
 }
 
-// --- Acid Corrosion & Lava Melting (Runs in solid cells) ---
 if (cell.x <= solid_thresh) {
+    let mat = round(abs(cell.y));
+    let props = get_material_properties(mat);
     let a_above = get_water(local_x, local_y + 1, local_z).z;
     let a_left  = get_water(local_x - 1, local_y, local_z).z;
     let a_right = get_water(local_x + 1, local_y, local_z).z;
@@ -194,20 +165,19 @@ if (cell.x <= solid_thresh) {
     let a_back  = get_water(local_x, local_y, local_z + 1).z;
     let acid_vol = max(a_above, max(a_left, max(a_right, max(a_front, a_back))));
     if (acid_vol > 0.05) {
-        cell.x = cell.x + dt * acid_vol * 15.0;
+        // Acid corrosion speed scaled by material vulnerability
+        let corrosion_speed = 15.0 * (1.0 - props.acid_resist);
+        cell.x = cell.x + dt * acid_vol * corrosion_speed;
     }
 
-    let mat = round(abs(cell.y));
-    if (mat == 3.0) { // Stone grey
-        let l_above = get_water(local_x, local_y + 1, local_z).y;
-        let l_left  = get_water(local_x - 1, local_y, local_z).y;
-        let l_right = get_water(local_x + 1, local_y, local_z).y;
-        let l_front = get_water(local_x, local_y, local_z - 1).y;
-        let l_back  = get_water(local_x, local_y, local_z + 1).y;
-        let lava_vol = max(l_above, max(l_left, max(l_right, max(l_front, l_back))));
-        if (lava_vol > 0.05) {
-            cell.x = cell.x + dt * lava_vol * 2.0; // Melt stone grey
-        }
+    let l_above = get_water(local_x, local_y + 1, local_z).y;
+    let l_left  = get_water(local_x - 1, local_y, local_z).y;
+    let l_right = get_water(local_x + 1, local_y, local_z).y;
+    let l_front = get_water(local_x, local_y, local_z - 1).y;
+    let l_back  = get_water(local_x, local_y, local_z + 1).y;
+    let lava_vol = max(l_above, max(l_left, max(l_right, max(l_front, l_back))));
+    if (lava_vol > 0.05 && props.melt_speed > 0.0) {
+        cell.x = cell.x + dt * lava_vol * props.melt_speed;
     }
 }
 

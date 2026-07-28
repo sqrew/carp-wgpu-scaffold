@@ -23,11 +23,13 @@ if (voxel_self.x >= 0.0) {
     // Solid terrain
     var stress = 1.0;
     
-    // 1. Compressive Stress (Gravity): Count the number of solid voxels sitting directly above us
+    // 1. Compressive Stress (Gravity): Count solid voxels directly above us with density weighting from database
     for (var dy = 1; dy <= 12; dy = dy + 1) {
         let v = get_voxel(local_x, local_y + dy, local_z);
         if (v.x < 0.0) {
-            stress = stress + 1.0;
+            let top_mat = round(abs(v.y));
+            let top_props = get_material_properties(top_mat);
+            stress = stress + top_props.density;
         } else {
             break; // Stop scanning if we hit air
         }
@@ -107,19 +109,9 @@ if (voxel_self.x >= 0.0) {
 
     // 3. Accumulate Structural Fatigue / Damage in fields.w
     var fatigue = fields.w;
-    var limit = 14.0;
     let mat_id = round(abs(voxel_self.y));
-    if (mat_id == 3.0) { // Stone
-        limit = 24.0;
-    } else if (mat_id == 5.0) { // Sand
-        limit = 4.0;
-    } else if (mat_id == 6.0) { // Snow / Ice
-        limit = 8.0;
-    } else if (mat_id == 7.0 || mat_id == 14.0) { // Obsidian
-        limit = 36.0;
-    } else if (mat_id == 12.0) { // Gold / Brass
-        limit = 30.0;
-    }
+    let props = get_material_properties(mat_id);
+    let limit = props.strength;
 
     let total_stress = (fields.z - 1.0) * 0.5 + fields.y * 3.0; // Scale down pure vertical load so stable walls don't crack
     let fatigue_threshold = limit * 0.65; // Start cracking at 65% of ultimate collapse strength
