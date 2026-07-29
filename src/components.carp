@@ -90,35 +90,6 @@
   (defn zero [] (FieldInstance.init 0 (Vector4.init-zero) 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0))
   (implements zero FieldInstance.zero)
 )
-
-(deftype BillboardTag [])
-(defmodule BillboardTag
-  (defn zero [] (BillboardTag.init))
-  (implements zero BillboardTag.zero)
-)
-
-(deftype ControlKind
-  (Slider [])
-  (Button [])
-  (Toggle [])
-)
-(defmodule ControlKind
-  (defn zero [] (ControlKind.Slider))
-  (implements zero ControlKind.zero)
-)
-
-(deftype UiControl [
-  kind ControlKind
-  local-pos (Vector3 Double)
-  width Double
-  value Double
-  label-id Int
-])
-(defmodule UiControl
-  (defn zero [] (UiControl.init (ControlKind.Slider) (Vector3.init 0.0 0.0 0.0) 1.0 0.0 0))
-  (implements zero UiControl.zero)
-)
-
 (defprotocol (GPUFieldNode a)
   [(node-type-id (Fn [(Ref a)] Int))
    (wgsl-interaction-snippet (Fn [] String))
@@ -143,17 +114,5 @@
       0.0f 0.0f 0.0f ])
 )
 
-(deftype UiPanel [
-  target (Handle ())
-  width Double
-  height Double
-  controls (Array UiControl)
-  active Bool
-])
-(defmodule UiPanel
-  (defn zero [] (UiPanel.init (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)) 2.0 1.2 [] true))
-  (implements zero UiPanel.zero)
-)
-
-(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag StaticWorldTag GravitySource FieldInstance BillboardTag UiPanel)
+(ECS.defworld GameWorld RigidBody Collidable Color PlayerTag RotationState Lifetime Parent CsgNode BouncyTag StaticWorldTag GravitySource FieldInstance)
 

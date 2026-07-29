@@ -53,7 +53,6 @@
 (load "entity_database.carp")
 (load "field_database.carp")
 (load "components.carp")
-(load "ui_system.carp")
 (load "fields.carp")
 (load "world.carp")
 (load "render_database.carp")
@@ -100,7 +99,8 @@
         left-clicked (= (GLFW.get-mouse-button win GLFW.Mouse.BUTTON_LEFT) GLFW.PRESS)
         left-pressed (and left-clicked (not (Pointer.to-value lwd-ptr)))
         right-clicked (= (GLFW.get-mouse-button win GLFW.Mouse.BUTTON_RIGHT) GLFW.PRESS)
-        right-pressed (and right-clicked (not (Pointer.to-value rwd-ptr)))]
+        right-pressed (and right-clicked (not (Pointer.to-value rwd-ptr)))
+        keep-open true]
     (do
       (let [vx-val 280.0f
             vy-val 10.0f
@@ -540,119 +540,111 @@
                     (Context.tooltip gui-ctx-ref "Max steps for shadow tracing calculations."))))
             (= curr-tab 4)
               (do
-                (let [active-panel-maybe @(Engine.active-ui-panel eng-ref)]
-                  (match active-panel-maybe
+                (let [active-source-maybe @(Engine.active-ui-panel eng-ref)]
+                  (match active-source-maybe
                     (Maybe.Nothing)
                       (Context.label gui-ctx-ref (copy "No source selected. Click in viewport to spawn/select."))
-                    (Maybe.Just panel-handle)
+                    (Maybe.Just target-handle)
                       (let [world (Engine.world eng-ref)
-                            found-panel-maybe (let [val (Maybe.Nothing)]
-                                                (do
-                                                  (ECS.query world [ent (p-comp UiPanel)]
-                                                    (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
-                                                      (set! val (Maybe.Just @p-comp))))
-                                                  val))]
-                        (match found-panel-maybe
+                            found-source-maybe (let [val (Maybe.Nothing)]
+                                                 (do
+                                                   (ECS.query world [ent2 (target-fi FieldInstance)]
+                                                     (when (= (ECS.Entity.id &ent2) (handle-id &target-handle))
+                                                       (set! val (Maybe.Just @target-fi))))
+                                                   val))]
+                        (match found-source-maybe
                           (Maybe.Nothing)
-                            (Context.label gui-ctx-ref (copy "Error: Panel entity not found."))
-                          (Maybe.Just panel)
-                            (let [target-handle @(UiPanel.target &panel)]
-                              (ECS.query world [ent2 (target-fi FieldInstance) (color Color)]
-                                (when (= (ECS.Entity.id &ent2) (handle-id &target-handle))
-                                  (do
-                                    (Context.label gui-ctx-ref (copy "--- Source Properties ---"))
-                                    
-                                    ;; Dropdown menu to customize primitive shape type
-                                    (Context.label gui-ctx-ref (copy "Shape Primitive:"))
-                                    (let [shape-options [@"Sphere" @"Box" @"Cylinder" @"Capsule" @"Torus" @"Cone" @"Black Hole"]
-                                          current-shape-type @(FieldInstance.shape-type target-fi)
-                                          current-shape-idx (dec current-shape-type)]
-                                      (match (Context.combo gui-ctx-ref "shape_combo" &shape-options current-shape-idx)
-                                        (Maybe.Just new-idx)
-                                          (do
-                                            (if (= new-idx 6)
-                                              (do
-                                                (FieldInstance.set-shape-type! target-fi 7)
-                                                (FieldInstance.set-csg-index! target-fi -10))
-                                              (do
-                                                (FieldInstance.set-shape-type! target-fi (inc new-idx))
-                                                (FieldInstance.set-csg-index! target-fi -1)))
-                                            (Engine.set-grid-dirty! eng-ref true)
-                                            (Engine.set-voxel-dirty! eng-ref true))
-                                        (Maybe.Nothing) ()))
-                                    (Context.tooltip gui-ctx-ref "Change the CSG/SDF primitive geometry shape of this field source.")
-                                    (Gui.separator gui-ctx-ref)
-                                    
-                                    (let [controls (UiPanel.controls &panel)]
+                            (Context.label gui-ctx-ref (copy "Error: Source entity not found."))
+                          (Maybe.Just target-fi)
+                            (do
+                              (Context.label gui-ctx-ref (copy "--- Source Properties ---"))
+                              
+                              ;; Dropdown menu to customize primitive shape type
+                              (Context.label gui-ctx-ref (copy "Shape Primitive:"))
+                              (let [shape-options [@"Sphere" @"Box" @"Cylinder" @"Capsule" @"Torus" @"Cone" @"Black Hole"]
+                                    current-shape-type @(FieldInstance.shape-type &target-fi)
+                                    current-shape-idx (dec current-shape-type)]
+                                (match (Context.combo gui-ctx-ref "shape_combo" &shape-options current-shape-idx)
+                                  (Maybe.Just new-idx)
+                                    (do
+                                      (if (= new-idx 6)
+                                        (do
+                                          (FieldInstance.set-shape-type! &target-fi 7)
+                                          (FieldInstance.set-csg-index! &target-fi -10))
+                                        (do
+                                          (FieldInstance.set-shape-type! &target-fi (inc new-idx))
+                                          (FieldInstance.set-csg-index! &target-fi -1)))
+                                      (Engine.set-grid-dirty! eng-ref true)
+                                      (Engine.set-voxel-dirty! eng-ref true))
+                                  (Maybe.Nothing) ()))
+                              (Context.tooltip gui-ctx-ref "Change the CSG/SDF primitive geometry shape of this field source.")
+                              (Gui.separator gui-ctx-ref)
+                              
+                              (let [curr-scale-val (Double.to-float (/ @(FieldInstance.scale &target-fi) 8.0))]
+                                (match (Context.slider gui-ctx-ref "scale_slider" curr-scale-val 0.0f 1.0f (copy "Scale"))
+                                  (Maybe.Just nv)
+                                    (let [d-nv (Double.from-float nv)
+                                          scale-val (* d-nv 8.0)]
                                       (do
-                                        (let [ctrl (Array.unsafe-nth controls 0)
-                                              curr-val (Double.to-float @(UiControl.value ctrl))]
-                                          (match (Context.slider gui-ctx-ref "scale_slider" curr-val 0.0f 1.0f (copy "Scale"))
-                                            (Maybe.Just nv)
-                                              (let [d-nv (Double.from-float nv)]
-                                                (do
-                                                  (UiControl.set-value! ctrl d-nv)
-                                                  (FieldInstance.set-humidity! target-fi d-nv)
-                                                  (Engine.apply-control-value! eng-ref @&target-handle 0 d-nv)))
-                                            (Maybe.Nothing) ()))
-                                        (Context.tooltip gui-ctx-ref "Change volumetric sphere radius or box bounds scale.")
-                                        
-                                        (let [ctrl (Array.unsafe-nth controls 1)
-                                              curr-val (Double.to-float @(UiControl.value ctrl))]
-                                          (match (Context.slider gui-ctx-ref "grav_slider" curr-val 0.0f 1.0f (copy "Gravity"))
-                                            (Maybe.Just nv)
-                                              (let [d-nv (Double.from-float nv)]
-                                                (do
-                                                  (UiControl.set-value! ctrl d-nv)
-                                                  (FieldInstance.set-pressure! target-fi d-nv)
-                                                  (Engine.apply-control-value! eng-ref @&target-handle 1 d-nv)))
-                                            (Maybe.Nothing) ()))
-                                        (Context.tooltip gui-ctx-ref "Gravity acceleration pull strength exerted on simulation particles.")
-                                        
-                                        (let [ctrl (Array.unsafe-nth controls 2)
-                                              curr-val (Double.to-float @(UiControl.value ctrl))
-                                              cv @(Color.v color)
-                                              cy @(Vector3.y &cv)
-                                              cz @(Vector3.z &cv)]
-                                          (match (Context.slider gui-ctx-ref "temp_slider" curr-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type target-fi) 7) "Disk Radius" "Temperature")))
-                                            (Maybe.Just nv)
-                                              (let [d-nv (Double.from-float nv)]
-                                                (do
-                                                  (UiControl.set-value! ctrl d-nv)
-                                                  (Color.set-v! color (Vector3.init d-nv cy cz))
-                                                  (Engine.apply-control-value! eng-ref @&target-handle 2 d-nv)))
-                                            (Maybe.Nothing) ()))
-                                        (Context.tooltip gui-ctx-ref "Thermal field value mapped to RED shader color channel.")
-                                        
-                                        (let [ctrl (Array.unsafe-nth controls 3)
-                                              curr-val (Double.to-float @(UiControl.value ctrl))
-                                              cv @(Color.v color)
-                                              cx @(Vector3.x &cv)
-                                              cz @(Vector3.z &cv)]
-                                          (match (Context.slider gui-ctx-ref "chg_slider" curr-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type target-fi) 7) "Disk Thickness" "Stress")))
-                                            (Maybe.Just nv)
-                                              (let [d-nv (Double.from-float nv)]
-                                                (do
-                                                  (UiControl.set-value! ctrl d-nv)
-                                                  (Color.set-v! color (Vector3.init cx d-nv cz))
-                                                  (Engine.apply-control-value! eng-ref @&target-handle 3 d-nv)))
-                                            (Maybe.Nothing) ()))
-                                        (Context.tooltip gui-ctx-ref "Physical stress/structural load value.")
-                                        
-                                        (let [ctrl (Array.unsafe-nth controls 4)
-                                              curr-val (Double.to-float @(UiControl.value ctrl))
-                                              cv @(Color.v color)
-                                              cx @(Vector3.x &cv)
-                                              cy @(Vector3.y &cv)]
-                                          (match (Context.slider gui-ctx-ref "inf_slider" curr-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type target-fi) 7) "Disk Smoothness" "Influence")))
-                                            (Maybe.Just nv)
-                                              (let [d-nv (Double.from-float nv)]
-                                                (do
-                                                  (UiControl.set-value! ctrl d-nv)
-                                                  (Color.set-v! color (Vector3.init cx cy d-nv))
-                                                  (Engine.apply-control-value! eng-ref @&target-handle 4 d-nv)))
-                                            (Maybe.Nothing) ()))
-                                        (Context.tooltip gui-ctx-ref "Physical decay radius modifier of force/collision calculations."))))))))))))
+                                        (FieldInstance.set-scale! &target-fi scale-val)
+                                        (ECS.query world [ent3 (col Collidable)]
+                                          (when (= (ECS.Entity.id &ent3) (handle-id &target-handle))
+                                            (match-ref (Collidable.volume col)
+                                              (Volume.Ball sphere) (Sphere.set-radius! sphere scale-val)
+                                              (Volume.Sdf sdf) (SDF.set-scale! sdf scale-val)
+                                              _ ())))
+                                        (Engine.set-grid-dirty! eng-ref true)
+                                        (Engine.set-voxel-dirty! eng-ref true)))
+                                  (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "Change volumetric sphere radius or box bounds scale.")
+                                
+                                (let [curr-grav-val (Double.to-float (/ (+ @(FieldInstance.gravity &target-fi) 5.0) 10.0))]
+                                  (match (Context.slider gui-ctx-ref "grav_slider" curr-grav-val 0.0f 1.0f (copy "Gravity"))
+                                    (Maybe.Just nv)
+                                      (let [d-nv (Double.from-float nv)
+                                            grav-val (- (* d-nv 10.0) 5.0)]
+                                        (do
+                                          (FieldInstance.set-gravity! &target-fi grav-val)
+                                          (ECS.query world [ent3 (gs GravitySource)]
+                                            (when (= (ECS.Entity.id &ent3) (handle-id &target-handle))
+                                              (GravitySource.set-strength! gs grav-val)))
+                                          (Engine.set-grid-dirty! eng-ref true)
+                                          (Engine.set-voxel-dirty! eng-ref true)))
+                                    (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "Gravity acceleration pull strength exerted on simulation particles.")
+                                
+                                (let [curr-temp-val (Double.to-float (/ (+ @(FieldInstance.temperature &target-fi) 100.0) 200.0))]
+                                  (match (Context.slider gui-ctx-ref "temp_slider" curr-temp-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type &target-fi) 7) "Disk Radius" "Temperature")))
+                                    (Maybe.Just nv)
+                                      (let [d-nv (Double.from-float nv)]
+                                        (do
+                                          (FieldInstance.set-temperature! &target-fi (- (* d-nv 200.0) 100.0))
+                                          (Engine.set-grid-dirty! eng-ref true)
+                                          (Engine.set-voxel-dirty! eng-ref true)))
+                                    (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "Thermal field value mapped to RED shader color channel.")
+                                
+                                (let [curr-stress-val (Double.to-float (/ @(FieldInstance.stress &target-fi) 1000.0))]
+                                  (match (Context.slider gui-ctx-ref "chg_slider" curr-stress-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type &target-fi) 7) "Disk Thickness" "Stress")))
+                                    (Maybe.Just nv)
+                                      (let [d-nv (Double.from-float nv)]
+                                        (do
+                                          (FieldInstance.set-stress! &target-fi (* d-nv 1000.0))
+                                          (Engine.set-grid-dirty! eng-ref true)
+                                          (Engine.set-voxel-dirty! eng-ref true)))
+                                    (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "Physical stress/structural load value.")
+                                
+                                (let [curr-inf-val (Double.to-float (/ @(FieldInstance.influence &target-fi) 5.0))]
+                                  (match (Context.slider gui-ctx-ref "inf_slider" curr-inf-val 0.0f 1.0f (copy (if (= @(FieldInstance.shape-type &target-fi) 7) "Disk Smoothness" "Influence")))
+                                    (Maybe.Just nv)
+                                      (let [d-nv (Double.from-float nv)]
+                                        (do
+                                          (FieldInstance.set-influence! &target-fi (* d-nv 5.0))
+                                          (Engine.set-grid-dirty! eng-ref true)
+                                          (Engine.set-voxel-dirty! eng-ref true)))
+                                    (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "Physical decay radius modifier of force/collision calculations.")))))))
             ()
             )))
 
@@ -666,14 +658,12 @@
       (Context.tooltip gui-ctx-ref "Build the sparse voxel grid buffer mapping physical volumes.")
 
       (when (Context.button gui-ctx-ref "close_editor_btn" (copy "Close Editor [TAB]"))
-        (do
-          (Engine.close-ui! eng-ref)
-          (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)))
+        (set! keep-open false))
       (Context.tooltip gui-ctx-ref "Return to game viewport with captured mouse focus.")
 
       (Context.end-panel gui-ctx-ref)
       
-      ()
+
 
       (let [pvx (Pointer.to-value pvx-ptr)
             pvy (Pointer.to-value pvy-ptr)
@@ -690,34 +680,25 @@
                   cam (Engine.camera eng-ref)
                   world (Engine.world eng-ref)
                   grid (Engine.grid eng-ref)
-                  ray (UiSystem.get-cursor-ray cam vmx vmy vsw vsh)
+                  ray (PlayerSystem.get-cursor-ray cam vmx vmy vsw vsh)
                   config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
                   hit (PlayerSystem.march-world world (Engine.world-data eng-ref) grid &ray &config)]
               (when @(RaymarchHit.hit &hit)
                 (let [hit-p (RaymarchHit.p &hit)
-                      hit-ent-maybe (UiSystem.find-hit-entity world hit-p)
-                      cam-pos (Camera.pos cam)]
+                      hit-ent-maybe (PlayerSystem.find-hit-entity world hit-p)]
                   (match hit-ent-maybe
                     (Maybe.Nothing)
                       (let [target-pos @hit-p
-                            target-handle (UiSystem.spawn-voxel-field-source! world @&target-pos)
-                            new-panel (UiSystem.spawn-ui-panel! world @&target-handle @&target-pos @cam-pos)]
+                            target-handle (Engine.spawn-voxel-field-source! world @&target-pos)]
                         (do
                           (Engine.set-show-debug-lines! eng-ref true)
-                          (Engine.set-active-ui-panel! eng-ref (Maybe.Just new-panel))
+                          (Engine.set-active-ui-panel! eng-ref (Maybe.Just @&target-handle))
                           (IO.println &(str* "Spawned and selected new source #" (Long.str (Uint64.to-long (Handle.index &target-handle)))))))
                     (Maybe.Just target-handle)
-                      (let [target-pos (let [pos-val (Vector3.init 0.0 0.0 0.0)]
-                                         (do
-                                           (ECS.query world [ent (rb RigidBody)]
-                                             (when (= (ECS.Entity.id &ent) (handle-id &target-handle))
-                                               (set! pos-val @(RigidBody.position rb))))
-                                           pos-val))
-                            new-panel (UiSystem.spawn-ui-panel! world @&target-handle @&target-pos @cam-pos)]
-                        (do
-                          (Engine.set-show-debug-lines! eng-ref true)
-                          (Engine.set-active-ui-panel! eng-ref (Maybe.Just new-panel))
-                          (IO.println &(str* "Selected existing source #" (Long.str (Uint64.to-long (Handle.index &target-handle))))))))))))
+                      (do
+                        (Engine.set-show-debug-lines! eng-ref true)
+                        (Engine.set-active-ui-panel! eng-ref (Maybe.Just @&target-handle))
+                        (IO.println &(str* "Selected existing source #" (Long.str (Uint64.to-long (Handle.index &target-handle)))))))))))
           
           (when (and right-pressed is-in-viewport)
             (let [vmx (- mx (Double.from-float pvx))
@@ -727,7 +708,7 @@
                   cam (Engine.camera eng-ref)
                   world (Engine.world eng-ref)
                   grid (Engine.grid eng-ref)
-                  ray (UiSystem.get-cursor-ray cam vmx vmy vsw vsh)
+                  ray (PlayerSystem.get-cursor-ray cam vmx vmy vsw vsh)
                   config (RaymarchConfig.init 128 100.0 0.005 0.001 0.05)
                   hit (PlayerSystem.march-world world (Engine.world-data eng-ref) grid &ray &config)]
               (when @(RaymarchHit.hit &hit)
@@ -738,10 +719,11 @@
                       ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
                   (do
                     (IO.println &(str* "Editor laser hit at " &(Vector3.str hit-p)))
-                    (Coordinator.dispatch! (Engine.coordinator eng-ref) ev))))))))
+                    (Coordinator.dispatch! (Engine.coordinator eng-ref) ev))))))
 
       (Pointer.set lwd-ptr left-clicked)
-      (Pointer.set rwd-ptr right-clicked))))
+      (Pointer.set rwd-ptr right-clicked)
+      keep-open)))))
 
 (defn main []
   (let [cfg (Settings.load-from-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/settings.cfg")
@@ -821,11 +803,12 @@
                                   (set! editor-mode (not editor-mode))
                                   (if editor-mode
                                     (do
-                                      (Engine.set-active-ui-panel! &eng (Maybe.Just (Handle.init (Uint64.from-long 999999l) (Uint32.from-long 0l))))
+                                      (Engine.set-active-ui-panel! &eng (Maybe.Nothing))
                                       (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_NORMAL)
                                       (IO.println "Editor Mode: ENABLED"))
                                     (do
-                                      (Engine.close-ui! &eng)
+                                      (Engine.set-active-ui-panel! &eng (Maybe.Nothing))
+                                      (Engine.set-show-debug-lines! &eng false)
                                       (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)
                                       (IO.println "Editor Mode: DISABLED")))))
                               (set! tab-was-down tab-pressed-now)))
@@ -841,14 +824,22 @@
                                          (Diagnostics.start-zone! diag "GUI Update & Layout"))
                                        (let [t-gui-start (System.nanotime)]
                                          (do
-                                           (draw-editor-ui! win &eng &gui-ctx dt-frame &cfg
-                                                            (Pointer.address &pvx) (Pointer.address &pvy) (Pointer.address &pvw) (Pointer.address &pvh)
-                                                            (Pointer.address &left-was-down) (Pointer.address &right-was-down)
-                                                            (Pointer.address &volumetric-sdf-val) (Pointer.address &show-debug-lines-val)
-                                                            (Pointer.address &fixed-dt-val) (Pointer.address &ray-steps-val) (Pointer.address &shadow-steps-val)
-                                                            (Pointer.address &sim-open-val) (Pointer.address &ray-open-val) (Pointer.address &terrain-open-val) (Pointer.address &lighting-open-val)
-                                                            gui-time-val gui-cmd-val gui-vert-val)
-                                           (set! gui-cmd-val (Array.length (Context.draw-commands &gui-ctx)))
+                                            (let [keep-open (draw-editor-ui! win &eng &gui-ctx dt-frame &cfg
+                                                             (Pointer.address &pvx) (Pointer.address &pvy) (Pointer.address &pvw) (Pointer.address &pvh)
+                                                             (Pointer.address &left-was-down) (Pointer.address &right-was-down)
+                                                             (Pointer.address &volumetric-sdf-val) (Pointer.address &show-debug-lines-val)
+                                                             (Pointer.address &fixed-dt-val) (Pointer.address &ray-steps-val) (Pointer.address &shadow-steps-val)
+                                                             (Pointer.address &sim-open-val) (Pointer.address &ray-open-val) (Pointer.address &terrain-open-val) (Pointer.address &lighting-open-val)
+                                                             gui-time-val gui-cmd-val gui-vert-val)]
+                                              (do
+                                                (when (not keep-open)
+                                                  (do
+                                                    (set! editor-mode false)
+                                                    (Engine.set-active-ui-panel! &eng (Maybe.Nothing))
+                                                    (Engine.set-show-debug-lines! &eng false)
+                                                    (GLFW.set-input-mode win GLFW.CURSOR GLFW.CURSOR_DISABLED)
+                                                    (IO.println "Editor Mode: DISABLED")))
+                                                (set! gui-cmd-val (Array.length (Context.draw-commands &gui-ctx)))))
                                            (set! gui-flat-verts (Context.generate-vertices-flat &gui-ctx))
                                            (set! gui-vert-val (/ (Array.length &gui-flat-verts) 12))
                                            (set! gui-num-verts (Uint32.from-long (Long.from-int gui-vert-val)))

@@ -63,6 +63,8 @@ struct PointInstance {
       @group(0) @binding(10) var water_texture: texture_3d<f32>;
       @group(0) @binding(11) var gas_texture: texture_3d<f32>;
 
+      var<private> fractal_trap: f32 = 0.0;
+
       fn positive_mod(n: i32, m: i32) -> i32 {
           let r = n % m;
           if (r < 0) {
@@ -923,23 +925,8 @@ struct PointInstance {
         }
 
         fn getMaterialStressLimit(mat_id: f32) -> f32 {
-            let mat = round(mat_id);
-            if (mat == 3.0) { // Stone grey
-                return 24.0;
-            }
-            if (mat == 5.0) { // Sand Beige
-                return 4.0; // Very weak!
-            }
-            if (mat == 6.0) { // Snow / Ice
-                return 8.0; 
-            }
-            if (mat == 7.0 || mat == 14.0) { // Obsidian
-                return 36.0; // Super strong!
-            }
-            if (mat == 12.0) { // Gold / Brass
-                return 30.0;
-            }
-            return 14.0; // Default grass/soil strength (e.g. material 2)
+            let props = get_material_properties(mat_id);
+            return props.strength;
         }
 
         fn getFieldColor(p: vec3<f32>, default_color: vec3<f32>) -> vec3<f32> {
@@ -1031,6 +1018,43 @@ struct PointInstance {
         }
 
 
+
+      fn sdMandelbox(p: vec3<f32>, params: vec4<f32>) -> f32 {
+          let scale = params.x * 6.0 - 3.0; // Map [0,1] to [-3,3]
+          let foldingLimit = params.y * 3.0; // Map [0,1] to [0,3]
+          let minRad2 = params.z * 1.5; // Map [0,1] to [0,1.5]
+          let fixedRad2 = (params.w + 5.0) / 10.0 * 2.0; // Map gravity [-5,5] back to [0,2]
+          
+          var z = p;
+          var dr = 1.0;
+          var trap = 1e10;
+          
+          for (var i = 0; i < 7; i = i + 1) {
+              // Box fold
+              z = clamp(z, vec3<f32>(-foldingLimit), vec3<f32>(foldingLimit)) * 2.0 - z;
+              
+              // Sphere fold
+              let r2 = dot(z, z);
+              if (r2 < minRad2) {
+                  let factor = fixedRad2 / minRad2;
+                  z = z * factor;
+                  dr = dr * factor;
+              } else if (r2 < fixedRad2) {
+                  let factor = fixedRad2 / r2;
+                  z = z * factor;
+                  dr = dr * factor;
+              }
+              
+              // Scale and shift
+              z = z * scale + p;
+              dr = dr * abs(scale) + 1.0;
+              
+              trap = min(trap, dot(z.xz, z.xz));
+          }
+          
+          fractal_trap = trap;
+          return length(z) / abs(dr);
+      }
 
       fn sdPlane(p: vec3<f32>, n: vec3<f32>, h: f32) -> f32 {
           return dot(p, n) + h;
@@ -2096,6 +2120,22 @@ struct PointInstance {
                                 exp_temp_factor = 1.0;
                                 exp_n_col = 0.5;
                             }
+                        } else if (inst_type == 7) { // Mandelbox Fractal
+                            let trap_val = clamp(sqrt(fractal_trap) * 0.15, 0.0, 1.0);
+                            let col1 = vec3<f32>(0.02, 0.08, 0.35); // Deep space blue
+                            let col2 = vec3<f32>(0.0, 0.85, 0.95);  // Neon Cyan
+                            let col3 = vec3<f32>(1.0, 0.0, 0.5);    // Hot Magenta
+                            let col4 = vec3<f32>(1.0, 0.95, 0.4);   // Electric Gold
+                            
+                            var f_col = col1;
+                            if (trap_val < 0.33) {
+                                f_col = mix(col1, col2, trap_val / 0.33);
+                            } else if (trap_val < 0.66) {
+                                f_col = mix(col2, col3, (trap_val - 0.33) / 0.33);
+                            } else {
+                                f_col = mix(col3, col4, (trap_val - 0.66) / 0.34);
+                            }
+                            base_col = f_col;
                         } else {
                             base_col = s_data.color_csg.rgb;
                             let csg_root_idx = i32(round(s_data.shape_info.z));

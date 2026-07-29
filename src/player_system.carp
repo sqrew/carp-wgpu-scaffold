@@ -301,4 +301,35 @@
             ev (EventKind.Game (GameEvent.SpawnBullet data))]
         (Coordinator.dispatch! (Engine.coordinator e) ev))))))
   )
+
+  (defn get-cursor-ray [cam mx my sw sh]
+    (let [ndc-x (if (> sw 0.0) (- (* 2.0 (/ mx sw)) 1.0) 0.0)
+          ndc-y (if (> sh 0.0) (- 1.0 (* 2.0 (/ my sh))) 0.0)
+          fov @(Camera.fov cam)
+          aspect @(Camera.aspect cam)
+          half-h (Double.tan (* fov 0.00872664625))
+          half-w (* half-h aspect)
+          dx (* ndc-x half-w)
+          dy (* ndc-y half-h)
+          right (Camera.right cam)
+          up (Camera.up cam)
+          front (Camera.front cam)
+          scaled-right (the (Vector3 Double) (Vector3.mul right dx))
+          scaled-up (the (Vector3 Double) (Vector3.mul up dy))
+          dir (the (Vector3 Double) (Vector3.normalize &(Vector3.add &(Vector3.add front &scaled-right) &scaled-up)))]
+      (Ray.make @(Camera.pos cam) dir)))
+
+  (defn find-hit-entity [world hit-p]
+    (let [best-ent (Maybe.Nothing)
+          best-dist 10.0]
+      (do
+        (ECS.query world [ent (rb RigidBody) (col Collidable)]
+          (when (not (ECS.has-component? world &ent StaticWorldTag))
+            (let [pos (RigidBody.position rb)
+                  d (Vector3.dist hit-p pos)]
+              (when (< d best-dist)
+                (do
+                  (set! best-dist d)
+                  (set! best-ent (Maybe.Just @(ECS.Entity.handle &ent))))))))
+        best-ent)))
 )

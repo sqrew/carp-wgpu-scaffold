@@ -156,4 +156,22 @@
             (ECS.add-component! world &ent col)
             (ECS.add-component! world &ent color)
             (ECS.add-component! world &ent fi))))))
+
+  (defn spawn-voxel-field-source! [world pos]
+    (let [ent (GameWorld.create-entity! world)
+          rb (RigidBody.static @&pos (Quaternion.identity) 0.0 0.0)
+          vol (Volume.Sdf (SDF.init-sphere 4.0 @&pos (Quaternion.identity)))
+          col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
+          color (Color.init (Vector3.init 0.8 0.2 0.8))
+          fi (FieldInstance.init 1 (Vector4.init 1.0 1.0 1.0 0.0) 4.0 -2 0.5 0.5 0.0 0.5 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+          csg (CsgNode.init (Box.init (SDF.init-sphere 4.0 pos (Quaternion.identity))) 1)
+          gs (GravitySource.init 0.0)]
+      (do
+        (ECS.add-component! world &ent rb)
+        (ECS.add-component! world &ent col)
+        (ECS.add-component! world &ent color)
+        (ECS.add-component! world &ent fi)
+        (ECS.add-component! world &ent csg)
+        (ECS.add-component! world &ent gs)
+        @(ECS.Entity.handle &ent))))
 )

@@ -6,6 +6,11 @@
   (defn replace-all [s pat-str repl-str]
     (Pattern.substitute &(Pattern.init pat-str) s repl-str -1))
 
+  (defn read-materials-shader []
+    (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/materials.wgsl")
+      (Result.Success s) s
+      _ @""))
+
   (defn shader-wgsl [limit max-ids ray-steps shadow-steps voxel-res]
     (let [log-res (Double.to-int (/ (Double.log (Double.from-int voxel-res)) (Double.log 2.0)))
           slots-per-dim (/ 384 voxel-res)
@@ -38,7 +43,7 @@
                 s8 (replace-all &s7 "\\{\\{SLOTS_PER_DIM_SQ\\}\\}" &slots-per-dim-sq-str)
                 s9 (replace-all &s8 "\\{\\{VOXEL_RES\\}\\}" &voxel-res-str)
                 s10 (replace-all &s9 "\\{\\{VOXEL_CELL_SIZE\\}\\}" &voxel-cell-size-str)]
-            s10)
+            (str* (read-materials-shader) s10))
         (Result.Error err)
           (do
             (IO.println &(str* "Error reading raymarch.wgsl: " &err))

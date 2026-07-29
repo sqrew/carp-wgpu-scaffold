@@ -1,7 +1,6 @@
 ;; engine.carp
 
 (load "engine_spawning.carp")
-(load "engine_ui.carp")
 (load "engine_input.carp")
 (load "engine_jit.carp")
 
@@ -1035,14 +1034,10 @@
               _ ()))
           (if (Array.empty? craters)
             (match @(Engine.active-ui-panel e)
-              (Maybe.Just panel-handle)
-                (let [target-handle (the (Handle ()) (Handle.init (Uint64.from-long 0l) (Uint32.from-long 0l)))
-                      target-pos (Vector3.init 0.0 0.0 0.0)
+              (Maybe.Just target-handle)
+                (let [target-pos (Vector3.init 0.0 0.0 0.0)
                       target-scale 1.0]
                   (do
-                    (ECS.query world [ent (panel UiPanel)]
-                      (when (= (ECS.Entity.id &ent) (handle-id &panel-handle))
-                        (set! target-handle @(UiPanel.target panel))))
                     (ECS.query world [ent (rb RigidBody) (fi FieldInstance)]
                       (when (= (ECS.Entity.id &ent) (handle-id &target-handle))
                         (do
@@ -1320,7 +1315,6 @@
         (Engine.tick-events! e)
         (Diagnostics.with-zone diag "Input Handling"
           (Engine.tick-input! e dt))
-        (Engine.tick-ui! e dt width height)
         (Diagnostics.with-zone diag "Physics Simulation"
           (Engine.tick-simulation! e dt))
         (Diagnostics.with-zone diag "ECS Lifecycle"
