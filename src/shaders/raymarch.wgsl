@@ -1010,7 +1010,7 @@ struct PointInstance {
             } else if (mat_id == 8) {
                 return vec3<f32>(0.05, 0.62, 0.54); // Deep Cave Moss
             } else if (mat_id == 9) {
-                return vec3<f32>(0.55, 0.25, 0.65); // Amethyst Purple Crystal
+                return vec3<f32>(0.20, 0.08, 0.30); // Amethyst Purple Crystal
             } else if (mat_id == 10) {
                 return vec3<f32>(0.35, 0.25, 0.18); // Clay Brown
             }
@@ -1933,9 +1933,8 @@ struct PointInstance {
                     terr_col += noise3d(p.x * 0.2, p.y * 0.2, p.z * 0.2) * 0.04;
                 } else if (mat_id == 9) {
                     // Custom Material 9: Amethyst Purple Crystal
-                    terr_col = vec3<f32>(0.45, 0.15, 0.55);
-                    let pulse = sin(u.time * 2.0) * 0.25 + 0.75;
-                    custom_glow = vec3<f32>(0.8, 0.2, 1.0) * pulse * 2.0;
+                    terr_col = vec3<f32>(0.16, 0.06, 0.24);
+                    custom_glow = vec3<f32>(0.0);
                     custom_specular_mult = 4.0;
                 } else if (mat_id == 10) {
                     // Custom Material 10: Clay Brown
