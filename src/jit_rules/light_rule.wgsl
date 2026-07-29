@@ -12,7 +12,7 @@ if (voxel.x <= solid_thresh) {
     if (mat_id == 11.0) { // Glowing Neon Cyan
         emitter = vec4<f32>(0.0, 1.5 * flicker, 1.5 * flicker, 1.0);
     } else if (mat_id == 9.0) { // Amethyst Purple Crystal
-        emitter = vec4<f32>(0.0);
+        emitter = vec4<f32>(1.2 * flicker, 0.0, 1.5 * flicker, 1.0);
     } else if (mat_id == 13.0) { // Pulsating Lava Crimson (hot rock / embers)
         emitter = vec4<f32>(1.5 * flicker, 0.4 * flicker, 0.0, 1.0);
     }

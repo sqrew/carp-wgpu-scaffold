@@ -1934,7 +1934,8 @@ struct PointInstance {
                 } else if (mat_id == 9) {
                     // Custom Material 9: Amethyst Purple Crystal
                     terr_col = vec3<f32>(0.16, 0.06, 0.24);
-                    custom_glow = vec3<f32>(0.0);
+                    let pulse = sin(u.time * 2.0) * 0.25 + 0.75;
+                    custom_glow = vec3<f32>(0.32, 0.08, 0.40) * pulse * 1.5;
                     custom_specular_mult = 4.0;
                 } else if (mat_id == 10) {
                     // Custom Material 10: Clay Brown
