@@ -91,67 +91,134 @@ if (cell.x < 0.0) {
     }
 
     let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
-
     let mat = round(abs(cell.y));
     let props = get_material_properties(mat);
     let limit = props.strength;
 
-    // Critical stress threshold per material ID (Only collapse unsupported overhangs with shear_load > 0.5!)
-    if (total_stress >= limit && shear_load > 0.5) {
-        // Slowly dissolve and crumble! (takes ~1.7 seconds of sustained stress to vanish)
-        cell.x = cell.x + dt * 0.35; 
-        
-        // Push downward and outward slightly to simulate collapsing gravel/slump
-        cell_velocity += vec3<f32>(
-            sin(voxel_pos.x * 20.0) * 1.5,
-            -6.0,
-            cos(voxel_pos.z * 20.0) * 1.5
-        ) * dt * 20.0;
-        
-        // Flag cell.y as negative to indicate actively crumbling parent material!
-        cell.y = -abs(cell.y);
-    }
+    if (cell.y < 0.0) {
+        let below = get_voxel(local_x, local_y - 1, local_z);
+        let solid_thresh_check = u.terrain_params3.z;
+        if (below.x > solid_thresh_check && below.x != 1.5) {
+            // Fall straight down
+            cell.x = 0.5;
+            cell.y = 0.0;
+        } else {
+            // Try sliding diagonally below in 4 directions
+            let below_r = get_voxel(local_x + 1, local_y - 1, local_z);
+            let below_l = get_voxel(local_x - 1, local_y - 1, local_z);
+            let below_b = get_voxel(local_x, local_y - 1, local_z - 1);
+            let below_f = get_voxel(local_x, local_y - 1, local_z + 1);
+            
+            if (below_r.x > solid_thresh_check && below_r.x != 1.5) {
+                cell.x = 0.5;
+                cell.y = 0.0;
+            } else if (below_l.x > solid_thresh_check && below_l.x != 1.5) {
+                cell.x = 0.5;
+                cell.y = 0.0;
+            } else if (below_b.x > solid_thresh_check && below_b.x != 1.5) {
+                cell.x = 0.5;
+                cell.y = 0.0;
+            } else if (below_f.x > solid_thresh_check && below_f.x != 1.5) {
+                cell.x = 0.5;
+                cell.y = 0.0;
+            } else {
+                cell.y = abs(cell.y); // stabilize and land!
+            }
+        }
+    } else {
+        if (total_stress >= limit && shear_load > 0.5) {
+            cell_velocity += vec3<f32>(
+                sin(voxel_pos.x * 20.0) * 1.5,
+                -6.0,
+                cos(voxel_pos.z * 20.0) * 1.5
+            ) * dt * 20.0;
+            cell.y = -abs(cell.y); // start crumbling!
+        }
 
-    // Once a crumbling cell is fully dissolved and cleared of debris, reset its material ID to empty air (0.0)
-    if (cell.x >= 0.3 && cell.y < 0.0) {
-        cell.y = 0.0;
-    }
-
-
-    // --- Water Erosion ---
-    // Since water simulation only runs in air/empty voxels, a solid voxel's own water volume is always 0.
-    // We check the water volume of the voxels adjacent to it (above and horizontal neighbors).
-    let w_above = get_water(local_x, local_y + 1, local_z).x;
-    let w_left  = get_water(local_x - 1, local_y, local_z).x;
-    let w_right = get_water(local_x + 1, local_y, local_z).x;
-    let w_front = get_water(local_x, local_y, local_z - 1).x;
-    let w_back  = get_water(local_x, local_y, local_z + 1).x;
-    
-    let water_vol = max(w_above, max(w_left, max(w_right, max(w_front, w_back))));
-    if (water_vol > 0.05) {
-        let erosion_rate = props.erosion_rate;
+        // --- Water Erosion ---
+        let w_above = get_water(local_x, local_y + 1, local_z).x;
+        let w_left  = get_water(local_x - 1, local_y, local_z).x;
+        let w_right = get_water(local_x + 1, local_y, local_z).x;
+        let w_front = get_water(local_x, local_y, local_z - 1).x;
+        let w_back  = get_water(local_x, local_y, local_z + 1).x;
         
-        // Stressed rock is fractured and erodes up to 3x faster
-        let stress_factor = 1.0 + clamp((total_stress - limit) / limit, 0.0, 2.0);
-        let actual_erosion = erosion_rate * stress_factor;
-        
-        // Erode density (increment SDF towards empty space)
-        cell.x = cell.x + dt * water_vol * actual_erosion * 2.5 * u.misc_params.z;
-        
-        // Turn partially eroded blocks to wet clay/mud (Material 10)
-        if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
-            cell.y = 10.0; 
+        let water_vol = max(w_above, max(w_left, max(w_right, max(w_front, w_back))));
+        if (water_vol > 0.05) {
+            let erosion_rate = props.erosion_rate;
+            let stress_factor = 1.0 + clamp((total_stress - limit) / limit, 0.0, 2.0);
+            let actual_erosion = erosion_rate * stress_factor;
+            cell.x = cell.x + dt * water_vol * actual_erosion * 2.5 * u.misc_params.z;
+            
+            if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
+                cell.y = 10.0; 
+            }
         }
     }
 }
 
-// --- Lava Solidification (Runs in air cells) ---
+// --- Lava Solidification & Falling Material (Runs in air cells) ---
 let solid_thresh = u.terrain_params3.z;
 if (cell.x > solid_thresh) {
     let water_here = get_water(local_x, local_y, local_z);
     if (water_here.x > 0.08 && water_here.y > 0.08) {
         cell.x = -0.6; // turn to solid!
         cell.y = 7.0;  // Volcanic Obsidian
+    } else {
+        // Receive falling material
+        var incoming_cell = vec4<f32>(0.0);
+        var has_incoming = false;
+        
+        // 1. Check directly above
+        let above = get_voxel(local_x, local_y + 1, local_z);
+        if (above.x <= solid_thresh && above.y < 0.0) {
+            incoming_cell = above;
+            has_incoming = true;
+        } else {
+            // 2. Check left-above (slides into us because its directly-below is solid)
+            let la = get_voxel(local_x - 1, local_y + 1, local_z);
+            let la_below = get_voxel(local_x - 1, local_y, local_z);
+            if (la.x <= solid_thresh && la.y < 0.0 && la_below.x <= solid_thresh) {
+                incoming_cell = la;
+                has_incoming = true;
+            } else {
+                // 3. Check right-above (slides into us because its directly-below is solid)
+                let ra = get_voxel(local_x + 1, local_y + 1, local_z);
+                let ra_below = get_voxel(local_x + 1, local_y, local_z);
+                if (ra.x <= solid_thresh && ra.y < 0.0 && ra_below.x <= solid_thresh) {
+                    incoming_cell = ra;
+                    has_incoming = true;
+                } else {
+                    // 4. Check back-above (slides into us because its directly-below is solid)
+                    let ba = get_voxel(local_x, local_y + 1, local_z - 1);
+                    let ba_below = get_voxel(local_x, local_y, local_z - 1);
+                    if (ba.x <= solid_thresh && ba.y < 0.0 && ba_below.x <= solid_thresh) {
+                        incoming_cell = ba;
+                        has_incoming = true;
+                    } else {
+                        // 5. Check front-above (slides into us because its directly-below is solid)
+                        let fa = get_voxel(local_x, local_y + 1, local_z + 1);
+                        let fa_below = get_voxel(local_x, local_y, local_z + 1);
+                        if (fa.x <= solid_thresh && fa.y < 0.0 && fa_below.x <= solid_thresh) {
+                            incoming_cell = fa;
+                            has_incoming = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (has_incoming) {
+            let below = get_voxel(local_x, local_y - 1, local_z);
+            if (below.x > solid_thresh && below.x != 1.5) {
+                // Keep falling down
+                cell.x = incoming_cell.x;
+                cell.y = incoming_cell.y;
+            } else {
+                // Land and solidify!
+                cell.x = incoming_cell.x;
+                cell.y = abs(incoming_cell.y);
+            }
+        }
     }
 }
 
