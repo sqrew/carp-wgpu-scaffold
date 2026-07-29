@@ -293,6 +293,15 @@ if (self_voxel.x <= solid_thresh) {
     new_fog = max(0.0, new_fog - decay_rate * 0.50);
     new_methane = max(0.0, new_methane - decay_rate * 0.20);
 
+    // Delete gas if it reaches the unloaded top/boundary of the active world (prevents chunk-edge lag)
+    let above_voxel_check = get_voxel(local_x, local_y + 1, local_z);
+    if (above_voxel_check.x == 1.5 && above_voxel_check.y == 1.0) {
+        new_steam = 0.0;
+        new_smoke = 0.0;
+        new_fog = 0.0;
+        new_methane = 0.0;
+    }
+
     // Prevent compiler optimization of gas_texture binding
     let dummy_gas = get_gas(0, 0, 0);
     gas.x = clamp(new_steam, 0.0, 1.0) + dummy_gas.x * 1e-10;
