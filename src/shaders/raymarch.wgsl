@@ -1541,6 +1541,61 @@ struct PointInstance {
             return color;
         }
 
+       fn computeFogScattering(p: vec3<f32>, res_y: f32, rd: vec3<f32>, dither_threshold: f32, dominant_sun_dir: vec3<f32>, dominant_sun_col: vec3<f32>) -> vec4<f32> {
+           let gas_val = sampleGasGrid(p);
+           let steam = gas_val.x;
+           let smoke = gas_val.y;
+           let acid_fog = gas_val.z;
+           let methane = gas_val.w;
+           
+           let total_gas = steam + smoke + acid_fog + methane;
+           if (total_gas < 0.01) {
+               return vec4<f32>(0.0);
+           }
+           
+           var base_color = vec3<f32>(0.0);
+           var density_factor = 0.0;
+           
+           if (steam > 0.01) {
+               let step_density = steam * 0.38 * min(res_y, 4.0);
+               base_color += vec3<f32>(0.85, 0.90, 0.95) * step_density;
+               density_factor += step_density;
+           }
+           if (smoke > 0.01) {
+               let step_density = smoke * 0.85 * min(res_y, 4.0);
+               base_color += vec3<f32>(0.38, 0.36, 0.35) * step_density;
+               density_factor += step_density;
+           }
+           if (acid_fog > 0.01) {
+               let step_density = acid_fog * 0.45 * min(res_y, 4.0);
+               base_color += vec3<f32>(0.25, 0.95, 0.15) * step_density;
+               density_factor += step_density;
+           }
+           if (methane > 0.01) {
+               let step_density = methane * 0.22 * min(res_y, 4.0);
+               base_color += vec3<f32>(0.92, 0.65, 0.12) * step_density;
+               density_factor += step_density;
+           }
+           
+           if (density_factor <= 0.0) {
+               return vec4<f32>(0.0);
+           }
+           
+           let norm_color = base_color / density_factor;
+           
+           let sun_dot = max(dot(rd, dominant_sun_dir), 0.0);
+           let phase = 1.0 + 3.0 * pow(sun_dot, 8.0);
+           
+           let voxel_val = sampleVoxelGrid(p, false);
+           let fog_shadow = voxel_val.z;
+           
+           let ambient_light = getSkyColor(rd) * 0.15;
+           let step_lighting = ambient_light + dominant_sun_col * phase * fog_shadow;
+           let lit_color = norm_color * step_lighting;
+           
+           return vec4<f32>(density_factor, lit_color * density_factor);
+       }
+
        @fragment
         fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
             let dummy_light = textureSampleLevel(light_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
@@ -1574,6 +1629,18 @@ struct PointInstance {
             }
             let dither_threshold = getDitherThreshold(frag_in.position.xy);
             let cam_sky_visibility = getShadow(u.cam_pos.xyz, vec3<f32>(0.0, 1.0, 0.0), 0.05, 120.0, 4.0, dither_threshold, SHADOW_STEPS);
+            let num_suns = u32(round(u.misc_params.x));
+            var dominant_sun_dir = vec3<f32>(0.0, 1.0, 0.0);
+            var dominant_sun_col = vec3<f32>(0.0);
+            var max_alt = -1.0;
+            for (var s_i = 0u; s_i < num_suns; s_i = s_i + 1u) {
+                let s_dir = normalize(u.suns[s_i].dir.xyz);
+                if (s_dir.y > max_alt) {
+                    max_alt = s_dir.y;
+                    dominant_sun_dir = s_dir;
+                    dominant_sun_col = u.suns[s_i].color.rgb * u.suns[s_i].dir.w;
+                }
+            }
            
             var t = 0.0;
             var hitId = -1.0;
@@ -1598,35 +1665,9 @@ struct PointInstance {
                 max_oil_sampled = max(max_oil_sampled, water_val.w);
 
                 // Accumulate volumetric gases
-                let gas_val = sampleGasGrid(p);
-                let steam = gas_val.x;
-                if (steam > 0.01) {
-                    let step_density = steam * 0.38 * min(res.y, 4.0);
-                    fog_optical_depth += step_density;
-                    let mist_color = vec3<f32>(0.85, 0.90, 0.95);
-                    fog_color_accum += mist_color * step_density;
-                }
-                let smoke = gas_val.y;
-                if (smoke > 0.01) {
-                    let step_density = smoke * 0.85 * min(res.y, 4.0);
-                    fog_optical_depth += step_density;
-                    let mist_color = vec3<f32>(0.38, 0.36, 0.35);
-                    fog_color_accum += mist_color * step_density;
-                }
-                let acid_fog = gas_val.z;
-                if (acid_fog > 0.01) {
-                    let step_density = acid_fog * 0.45 * min(res.y, 4.0);
-                    fog_optical_depth += step_density;
-                    let mist_color = vec3<f32>(0.25, 0.95, 0.15);
-                    fog_color_accum += mist_color * step_density;
-                }
-                let methane = gas_val.w;
-                if (methane > 0.01) {
-                    let step_density = methane * 0.22 * min(res.y, 4.0);
-                    fog_optical_depth += step_density;
-                    let mist_color = vec3<f32>(0.92, 0.65, 0.12);
-                    fog_color_accum += mist_color * step_density;
-                }
+                let fog_scatter = computeFogScattering(p, res.y, rd, dither_threshold, dominant_sun_dir, dominant_sun_col);
+                fog_optical_depth += fog_scatter.x;
+                fog_color_accum += fog_scatter.yzw;
 
                 if (res.y < 0.008) { break; }
                 let p_local = p - u.grid_origin.xyz;
@@ -1650,35 +1691,9 @@ struct PointInstance {
                     max_oil_sampled = max(max_oil_sampled, water_val.w);
 
                     // Accumulate volumetric gases
-                    let gas_val = sampleGasGrid(p);
-                    let steam_ref = gas_val.x;
-                    if (steam_ref > 0.01) {
-                        let step_density = steam_ref * 0.38 * min(res.y, 4.0);
-                        fog_optical_depth += step_density;
-                        let mist_color = vec3<f32>(0.85, 0.90, 0.95);
-                        fog_color_accum += mist_color * step_density;
-                    }
-                    let smoke_ref = gas_val.y;
-                    if (smoke_ref > 0.01) {
-                        let step_density = smoke_ref * 0.85 * min(res.y, 4.0);
-                        fog_optical_depth += step_density;
-                        let mist_color = vec3<f32>(0.38, 0.36, 0.35);
-                        fog_color_accum += mist_color * step_density;
-                    }
-                    let acid_fog_ref = gas_val.z;
-                    if (acid_fog_ref > 0.01) {
-                        let step_density = acid_fog_ref * 0.45 * min(res.y, 4.0);
-                        fog_optical_depth += step_density;
-                        let mist_color = vec3<f32>(0.25, 0.95, 0.15);
-                        fog_color_accum += mist_color * step_density;
-                    }
-                    let methane_ref = gas_val.w;
-                    if (methane_ref > 0.01) {
-                        let step_density = methane_ref * 0.22 * min(res.y, 4.0);
-                        fog_optical_depth += step_density;
-                        let mist_color = vec3<f32>(0.92, 0.65, 0.12);
-                        fog_color_accum += mist_color * step_density;
-                    }
+                    let fog_scatter = computeFogScattering(p, res.y, rd, dither_threshold, dominant_sun_dir, dominant_sun_col);
+                    fog_optical_depth += fog_scatter.x;
+                    fog_color_accum += fog_scatter.yzw;
 
                     t += res.y * 0.5;
                 }
