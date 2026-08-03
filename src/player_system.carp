@@ -332,4 +332,96 @@
                   (set! best-dist d)
                   (set! best-ent (Maybe.Just @(ECS.Entity.handle &ent))))))))
         best-ent)))
+
+  (defn draw-lightning-bolt-branch! [r-db start end color segments displacement]
+    (let [prev @start
+          step-dir (Vector3.sub end start)]
+      (do
+        (for [i 1 (inc segments)]
+          (let [t (/ (Double.from-int i) (Double.from-int segments))
+                lerp-p (Vector3.add start &(Vector3.mul &step-dir t))
+                weight (Double.sin (* 3.14159265 t))
+                rand-x (Double.random-between -1.0 1.0)
+                rand-y (Double.random-between -1.0 1.0)
+                rand-z (Double.random-between -1.0 1.0)
+                offset (Vector3.mul &(Vector3.init rand-x rand-y rand-z) (* displacement weight))
+                next-p (if (= i segments) @end (Vector3.add &lerp-p &offset))]
+            (do
+              (DebugDraw.submit-line! r-db &prev &next-p color)
+              (set! prev next-p)))))))
+
+  (defn draw-lightning-bolt! [r-db start end color segments displacement]
+    (let [prev @start
+          step-dir (Vector3.sub end start)
+          step-len (/ (Vector3.mag &step-dir) (Double.from-int segments))
+          dir-norm (Vector3.normalize &step-dir)]
+      (do
+        (for [i 1 (inc segments)]
+          (let [t (/ (Double.from-int i) (Double.from-int segments))
+                lerp-p (Vector3.add start &(Vector3.mul &step-dir t))
+                weight (Double.sin (* 3.14159265 t))
+                rand-x (Double.random-between -1.0 1.0)
+                rand-y (Double.random-between -1.0 1.0)
+                rand-z (Double.random-between -1.0 1.0)
+                offset (Vector3.mul &(Vector3.init rand-x rand-y rand-z) (* displacement weight))
+                next-p (if (= i segments) @end (Vector3.add &lerp-p &offset))]
+            (do
+              (DebugDraw.submit-line! r-db &prev &next-p color)
+              (do
+                (when (and (and (> i 2) (< i (- segments 2))) (< (Double.random-between 0.0 1.0) 0.15))
+                  (let [branch-len (* step-len (Double.random-between 2.0 5.0))
+                        branch-dir (Vector3.normalize &(Vector3.init 
+                                                         (+ @(Vector3.x &dir-norm) (Double.random-between -0.5 0.5))
+                                                         (+ @(Vector3.y &dir-norm) (Double.random-between -0.5 0.5))
+                                                         (+ @(Vector3.z &dir-norm) (Double.random-between -0.5 0.5))))
+                        branch-end (Vector3.add &next-p &(Vector3.mul &branch-dir branch-len))]
+                    (draw-lightning-bolt-branch! r-db &next-p &branch-end color 4 (* displacement 0.5))))
+                (set! prev next-p))))))))
+
+  (defn cast-lightning! [e]
+    (let [cam (Engine.camera e)
+          world (Engine.world e)
+          grid (Engine.grid e)
+          r-db (Engine.render-db e)
+          cam-pos (Camera.pos cam)
+          cam-front (Camera.front cam)
+          ray (Ray.make @cam-pos @cam-front)
+          config (RaymarchConfig.init 128 150.0 0.005 0.001 0.05)
+          hit (march-world world (Engine.world-data e) grid &ray &config)]
+      (if @(RaymarchHit.hit &hit)
+          (let [hit-p (RaymarchHit.p &hit)
+                cyan-color (Vector3.init 0.0 0.8 1.0)
+                white-color (Vector3.init 1.0 1.0 1.0)]
+            (do
+              (draw-lightning-bolt! r-db cam-pos hit-p &cyan-color 15 1.5)
+              (draw-lightning-bolt! r-db cam-pos hit-p &white-color 12 0.8)
+              (let [crater-data (CraterSpawnData.init @hit-p 3.5 0.0)
+                    ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+                (Coordinator.dispatch! (Engine.coordinator e) ev))
+              ;; Spawn charge nodes along the lightning channel with jagged deviations
+              (let [dir (Vector3.sub hit-p cam-pos)
+                    dist (Vector3.mag &dir)
+                    steps (let [n (Double.to-int (/ dist 4.0))] (if (< n 1) 1 n))
+                    step-dir (Vector3.div &dir (Double.from-int steps))]
+                (for [s 0 (inc steps)]
+                  (let [t (/ (Double.from-int s) (Double.from-int steps))
+                        lerp-p (Vector3.add cam-pos &(Vector3.mul &step-dir (Double.from-int s)))
+                        weight (Double.sin (* 3.14159265 t))
+                        rand-x (Double.random-between -1.0 1.0)
+                        rand-y (Double.random-between -1.0 1.0)
+                        rand-z (Double.random-between -1.0 1.0)
+                        offset (Vector3.mul &(Vector3.init rand-x rand-y rand-z) (* 1.5 weight))
+                        step-p (if (or (= s 0) (= s steps)) lerp-p (Vector3.add &lerp-p &offset))
+                        spark-ent (GameWorld.create-entity! world)
+                        rb (RigidBody.static step-p (Quaternion.identity) 0.0 0.0)
+                        color (Color.init (Vector3.init 0.0 0.7 1.0))
+                        ;; Thin out the radius to 1.0 voxel
+                        fi (FieldInstance.init 1 (Vector4.init 0.1 0.0 0.0 0.0) 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 15.0 0.0 (Vector3.init 0.0 0.0 0.0))]
+                    (do
+                      (ECS.add-component! world &spark-ent rb)
+                      (ECS.add-component! world &spark-ent color)
+                      (ECS.add-component! world &spark-ent fi)
+                      (ECS.add-component! world &spark-ent (Lifetime.init 0.5))))))
+              (IO.println &(str* "LIGHTNING STRIKE! Cast at " &(Vector3.str hit-p)))))
+          (IO.println "Lightning missed! No ground target."))))
 )

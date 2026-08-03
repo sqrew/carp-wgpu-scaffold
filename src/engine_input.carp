@@ -45,7 +45,8 @@
       (InputManager.add-binding! mgr "ToggleChunkLoading" (InputSource.Key GLFW.Keycode.L) 1.0)
       (InputManager.add-binding! mgr "ToggleUI" (InputSource.Key GLFW.Keycode.U) 1.0)
       (InputManager.add-binding! mgr "CycleMaterial" (InputSource.Key GLFW.Keycode.K) 1.0)
-      (InputManager.add-binding! mgr "CycleLiquid" (InputSource.Key GLFW.Keycode.X) 1.0)))
+      (InputManager.add-binding! mgr "CycleLiquid" (InputSource.Key GLFW.Keycode.X) 1.0)
+      (InputManager.add-binding! mgr "CastLightning" (InputSource.Key GLFW.Keycode.H) 1.0)))
 
   (sig tick-settings-input! (Fn [(Ref Engine.Engine) (Ref InputManager)] ()))
   (defn tick-settings-input! [e mgr]
@@ -165,5 +166,7 @@
           (PlayerSystem.build-laser! e))
         (when (InputManager.action-pressed? mgr "Implode")
           (PlayerSystem.fire-implosion-laser! e))
+        (when (InputManager.action-pressed? mgr "CastLightning")
+          (PlayerSystem.cast-lightning! e))
         (tick-settings-input! e mgr))))
 )

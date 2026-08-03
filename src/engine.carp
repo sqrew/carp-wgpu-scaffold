@@ -89,6 +89,7 @@
             (the String @"")
             (the String @"")
             (the String @"")
+            (the String @"")
             cfg
             2.0
             1)))))
@@ -542,6 +543,11 @@
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.gravity-slot new-idx @(FieldInstance.gravity fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.density-slot new-idx @(FieldInstance.density fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.lifetime-slot new-idx @(FieldInstance.lifetime fi))
+                          (FieldDatabase.set-scalar-field! edb FieldDatabase.charge-slot new-idx @(FieldInstance.charge fi))
+                          (FieldDatabase.set-scalar-field! edb FieldDatabase.potential-slot new-idx @(FieldInstance.potential fi))
+                          (let [m-val @(FieldInstance.magnetic fi)
+                                m-vec (Vector4.init @(Vector3.x &m-val) @(Vector3.y &m-val) @(Vector3.z &m-val) 0.0)]
+                            (FieldDatabase.set-field-vector! edb FieldDatabase.magnetic-slot new-idx &m-vec))
                           ())))))
               ;; Update
               (let [idx db-idx]
@@ -582,6 +588,11 @@
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.gravity-slot idx @(FieldInstance.gravity fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.density-slot idx @(FieldInstance.density fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.lifetime-slot idx @(FieldInstance.lifetime fi))
+                  (FieldDatabase.set-scalar-field! edb FieldDatabase.charge-slot idx @(FieldInstance.charge fi))
+                  (FieldDatabase.set-scalar-field! edb FieldDatabase.potential-slot idx @(FieldInstance.potential fi))
+                  (let [m-val @(FieldInstance.magnetic fi)
+                        m-vec (Vector4.init @(Vector3.x &m-val) @(Vector3.y &m-val) @(Vector3.z &m-val) 0.0)]
+                    (FieldDatabase.set-field-vector! edb FieldDatabase.magnetic-slot idx &m-vec))
                   (Array.aset! (EntityDatabase.influences edb) idx @(FieldInstance.influence fi))
                   (EntityDatabase.set-root-csg-index! edb h @(FieldInstance.csg-index fi)))))))))
 
@@ -1186,6 +1197,7 @@
                   (VoxelBaker.bake-interaction-gpu! ctx ren chunk num-instances (Engine.last-known-interaction-rule e) (Engine.jit-cache e) voxel-res))
                 (VoxelBaker.bake-water-gpu! ctx ren chunk num-instances (Engine.last-known-water-rule e) (Engine.jit-cache e) voxel-res)
                 (VoxelBaker.bake-gas-gpu! ctx ren chunk num-instances (Engine.last-known-gas-rule e) (Engine.jit-cache e) voxel-res)
+                (VoxelBaker.bake-em-gpu! ctx ren chunk num-instances (Engine.last-known-em-rule e) (Engine.jit-cache e) voxel-res)
                 (if (> current-ticks 0)
                   (let [new-ticks (dec current-ticks)]
                     (do
@@ -1341,7 +1353,8 @@
                 (Engine.evaluate-light-rule-hot-reload! e ctx ren)
                 (Engine.evaluate-interaction-rule-hot-reload! e ctx ren)
                 (Engine.evaluate-water-rule-hot-reload! e ctx ren)
-                (Engine.evaluate-gas-rule-hot-reload! e ctx ren)))
+                (Engine.evaluate-gas-rule-hot-reload! e ctx ren)
+                (Engine.evaluate-em-rule-hot-reload! e ctx ren)))
             (Diagnostics.with-zone diag "Sync: JIT Physics Loop"
               (Engine.run-jit-physics-loop! e ctx ren))
             (Diagnostics.with-zone diag "Sync: Submit Render Cmds"

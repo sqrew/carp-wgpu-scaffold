@@ -110,7 +110,10 @@
                (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
                (the (Array Vector4) (replicate n &(Vector4.init 1.0 1.0 1.0 1.0)))
                (the (Array Vector4) (replicate n &(Vector4.init 1.0 0.0 0.0 0.0)))
-               (the (Array Vector4) (replicate n &(Vector4.init 1.0 0.0 0.0 0.0)))]
+               (the (Array Vector4) (replicate n &(Vector4.init 1.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
+               (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))]
           inf (the (Array Double) (replicate n &1.0))]
       (EntityDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 grid esc inf)))
 
@@ -153,6 +156,9 @@
             (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 5) (Vector4.init 1.0 1.0 1.0 1.0))
             (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 6) (Vector4.init 1.0 0.0 0.0 0.0))
             (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 7) (Vector4.init 1.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 8) (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 9) (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 10) (Vector4.init 0.0 0.0 0.0 0.0))
             (Array.push-back! (EntityDatabase.influences db) 1.0)
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
@@ -195,6 +201,9 @@
             (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 5) id (Vector4.init 1.0 1.0 1.0 1.0))
             (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 6) id (Vector4.init 1.0 0.0 0.0 0.0))
             (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 7) id (Vector4.init 1.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 8) id (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 9) id (Vector4.init 0.0 0.0 0.0 0.0))
+            (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 10) id (Vector4.init 0.0 0.0 0.0 0.0))
             (Array.aset! (EntityDatabase.influences db) id 1.0)
             ()))
         (when (< h-idx (Array.length (EntityDatabase.handle-to-index db)))

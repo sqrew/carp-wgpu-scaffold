@@ -63,6 +63,7 @@ struct PointInstance {
       @group(0) @binding(9) var interaction_texture: texture_3d<f32>;
       @group(0) @binding(10) var water_texture: texture_3d<f32>;
       @group(0) @binding(11) var gas_texture: texture_3d<f32>;
+      @group(0) @binding(12) var em_texture: texture_3d<f32>;
 
       var<private> fractal_trap: f32 = 0.0;
 
@@ -470,6 +471,77 @@ struct PointInstance {
              tex_val = mix(v_y0, v_y1, f.z);
           }
           
+          return tex_val;
+      }
+
+      fn getEMAt(gx: i32, gy: i32, gz: i32) -> vec4<f32> {
+          let qx = gx >> {{LOG_RES}}u;
+          let qy = gy >> {{LOG_RES}}u;
+          let qz = gz >> {{LOG_RES}}u;
+          
+          let lx = gx & {{VOXEL_RES_SUB_1}}i;
+          let ly = gy & {{VOXEL_RES_SUB_1}}i;
+          let lz = gz & {{VOXEL_RES_SUB_1}}i;
+          
+          let slot = getChunkSlot(vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz);
+          
+          if (slot >= 0) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              
+              let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
+              return textureLoad(em_texture, atlas_coord, 0);
+          } else {
+              return vec4<f32>(0.0);
+          }
+      }
+
+      fn sampleEMGrid(p: vec3<f32>) -> vec4<f32> {
+          let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
+          
+          if (slot < 0) {
+              return vec4<f32>(0.0);
+          }
+          
+          let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
+          let c0 = vec3<i32>(floor(tx));
+          let f = fract(tx);
+          
+          let lx = c0.x & {{VOXEL_RES_SUB_1}}i;
+          let ly = c0.y & {{VOXEL_RES_SUB_1}}i;
+          let lz = c0.z & {{VOXEL_RES_SUB_1}}i;
+          
+          var tex_val = vec4<f32>(0.0);
+          let local_pos = vec3<f32>(f32(lx), f32(ly), f32(lz)) + f;
+          if (all(local_pos >= vec3<f32>(0.5)) && all(local_pos <= vec3<f32>({{VOXEL_RES_SUB_1}}.0))) {
+              let slot_x = slot % {{SLOTS_PER_DIM}};
+              let slot_y = (slot / {{SLOTS_PER_DIM}}) % {{SLOTS_PER_DIM}};
+              let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
+              let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
+              
+              let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
+              tex_val = textureSampleLevel(em_texture, voxel_sampler, sample_coords, 0.0);
+          } else {
+             let v0 = getEMAt(c0.x,     c0.y,     c0.z);
+             let v1 = getEMAt(c0.x + 1, c0.y,     c0.z);
+             let v2 = getEMAt(c0.x,     c0.y + 1, c0.z);
+             let v3 = getEMAt(c0.x + 1, c0.y + 1, c0.z);
+             let v4 = getEMAt(c0.x,     c0.y,     c0.z + 1);
+             let v5 = getEMAt(c0.x + 1, c0.y,     c0.z + 1);
+             let v6 = getEMAt(c0.x,     c0.y + 1, c0.z + 1);
+             let v7 = getEMAt(c0.x + 1, c0.y + 1, c0.z + 1);
+             
+             let v_01 = mix(v0, v1, f.x);
+             let v_23 = mix(v2, v3, f.x);
+             let v_45 = mix(v4, v5, f.x);
+             let v_67 = mix(v6, v7, f.x);
+             
+             let v_y0 = mix(v_01, v_23, f.y);
+             let v_y1 = mix(v_45, v_67, f.y);
+             
+             tex_val = mix(v_y0, v_y1, f.z);
+          }
           return tex_val;
       }
 
@@ -1543,19 +1615,29 @@ struct PointInstance {
         }
 
        fn computeFogScattering(p: vec3<f32>, res_y: f32, rd: vec3<f32>, dither_threshold: f32, dominant_sun_dir: vec3<f32>, dominant_sun_col: vec3<f32>) -> vec4<f32> {
-           let gas_val = sampleGasGrid(p);
-           let steam = gas_val.x;
-           let smoke = gas_val.y;
-           let acid_fog = gas_val.z;
-           let methane = gas_val.w;
-           
-           let total_gas = steam + smoke + acid_fog + methane;
-           if (total_gas < 0.01) {
-               return vec4<f32>(0.0);
-           }
-           
-           var base_color = vec3<f32>(0.0);
-           var density_factor = 0.0;
+            let gas_val = sampleGasGrid(p);
+            let steam = gas_val.x;
+            let smoke = gas_val.y;
+            let acid_fog = gas_val.z;
+            let methane = gas_val.w;
+            
+            let em_val = sampleEMGrid(p);
+            let potential = em_val.w;
+            
+            let total_gas = steam + smoke + acid_fog + methane + abs(potential);
+            if (total_gas < 0.01) {
+                return vec4<f32>(0.0);
+            }
+            
+            var base_color = vec3<f32>(0.0);
+            var density_factor = 0.0;
+            
+            if (abs(potential) > 0.05) {
+                let step_density = abs(potential) * 0.45 * min(res_y, 4.0);
+                let glow_color = mix(vec3<f32>(0.05, 0.4, 0.95), vec3<f32>(0.6, 0.1, 0.95), clamp(potential * 0.5 + 0.5, 0.0, 1.0));
+                base_color += glow_color * step_density * 3.0;
+                density_factor += step_density * 0.15;
+            }
            
            if (steam > 0.01) {
                let step_density = steam * 0.38 * min(res_y, 4.0);
@@ -1599,12 +1681,6 @@ struct PointInstance {
 
        @fragment
         fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
-            let dummy_light = textureSampleLevel(light_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
-            let dummy_interaction = textureSampleLevel(interaction_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
-            let dummy_water = textureSampleLevel(water_texture, voxel_sampler, vec3<f32>(0.0), 0.0);
-            if (dummy_light.w > 9999.0 || dummy_interaction.w > 9999.0 || dummy_water.w > 9999.0) {
-                return vec4<f32>(dummy_light.xyz + dummy_interaction.xyz + dummy_water.xyz, 1.0);
-            }
             let aspect = u.width / u.height;
             let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
             let ro = u.cam_pos.xyz;
@@ -2345,6 +2421,10 @@ struct PointInstance {
                   color = vec3<f32>(0.0, 1.0, 0.0);
               }
           }
-          return vec4<f32>(color, 1.0);
+          return vec4<f32>(color, 1.0) + vec4<f32>(f32((textureDimensions(light_texture) +
+                                                         textureDimensions(interaction_texture) +
+                                                         textureDimensions(water_texture) +
+                                                         textureDimensions(gas_texture) +
+                                                         textureDimensions(em_texture)).x) * 0.0f);
       }
     

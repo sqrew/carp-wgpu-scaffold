@@ -34,6 +34,7 @@
         (Maybe.Nothing)
           (let [diag (Engine.diagnostics e)]
             (do
+              (let [_ (IO.write-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/last_jit_compiled.wgsl" &master-wgsl-source)] ())
               (Diagnostics.start-zone! diag "Sync: Compile JIT Shader")
               (let [res (WGPU.create-pipeline ctx &master-wgsl-source "main")]
                 (do
@@ -379,7 +380,7 @@
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
             const GRID_RES: i32 = " @&res-str "i;
 "
-            (if (or (= var-name &@"fields") (or (= var-name &@"water") (or (= var-name &@"gas") (= var-name &@"light"))))
+            (if (or (= var-name &@"em") (or (= var-name &@"fields") (or (= var-name &@"water") (or (= var-name &@"gas") (= var-name &@"light")))))
               (str*
                 "            @group(0) @binding(6) var water_texture: texture_3d<f32>;\n"
                 "            @group(0) @binding(7) var gas_texture: texture_3d<f32>;\n"
@@ -550,11 +551,11 @@
                 
                 var " @var-name " = input_fields[idx];
                 let voxel_pos = chunk_info.origin_slot.xyz + vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * " @&cell-size-str ";
-                let dt = 0.00833;
-                let dummy_use = u.time * 0.0;
-                " @var-name ".x += dummy_use;
-                // --- DYNAMIC INJECTIONS LOOP ---")
-          footer-block (str* "\n                output_fields[idx] = " @var-name ";\n            }")
+                 let dt = 0.00833;
+                 let dummy_use = u.time * 0.0;
+                 " @var-name ".x += dummy_use;
+                 // --- DYNAMIC INJECTIONS LOOP ---")
+           footer-block (str* "\n                output_fields[idx] = " @var-name " + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture)).x) * 0.0f);\n            }")
           injection-accum @""]
       (do
         (let [file-res (IO.read-file rule-file-path)]
@@ -662,6 +663,30 @@
                     (do
                        (IO.println "Gas rule JIT system reloaded and active.")
                        (World.dirty-all-chunks! (Engine.world-data e))))))))))
+
+  (sig assemble-em-rule-shader (Fn [(Ref Engine.Engine) (Ref GameWorld)] String))
+  (defn assemble-em-rule-shader [e world]
+    (assemble-generic-rule-shader e world &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/jit_rules/em_rule.wgsl" &@"em" &@"em_rule.wgsl"))
+
+  (sig evaluate-em-rule-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
+  (defn evaluate-em-rule-hot-reload! [e ctx ren]
+    (let [world (Engine.world e)
+          new-source (Engine.assemble-em-rule-shader e world)]
+      (if (String.empty? &new-source)
+          (when (not (= (Engine.last-known-em-rule e) &new-source))
+            (do
+               (Engine.set-last-known-em-rule! e @&new-source)
+               (IO.println "EM rule JIT system cleared.")
+               (World.dirty-all-chunks! (Engine.world-data e))))
+          (when (not (= (Engine.last-known-em-rule e) &new-source))
+            (do
+               (Engine.set-last-known-em-rule! e @&new-source)
+               (let [pipe (Engine.get-or-compile-jit-pipeline! e ctx @&new-source)]
+                 (if (WGPU.pipeline-null?- pipe)
+                     ()
+                     (do
+                        (IO.println "EM rule JIT system reloaded and active.")
+                        (World.dirty-all-chunks! (Engine.world-data e))))))))))
 
   (sig evaluate-jit-hot-reload! (Fn [(Ref Engine.Engine) (Ptr WGPUContext) (Ref WGPURenderer)] ()))
   (defn evaluate-jit-hot-reload! [e ctx ren]

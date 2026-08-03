@@ -830,4 +830,96 @@
                           (IO.println &(str* "JIT Gas Bind Group creation failed: " err-val))))))
               _ ())))
         (pack-and-copy-gas-chunk! ctx ren @(Chunk.atlas-slot chunk) res))))
+
+  (defn pack-and-copy-em-chunk! [ctx ren slot res]
+    (let [w-half-b @(WGPURenderer.gas-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          slots-per-dim (/ 384 res)
+          slots-per-dim-sq (* slots-per-dim slots-per-dim)
+          slot-x (Int.mod slot slots-per-dim)
+          slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+          slot-z (/ slot slots-per-dim-sq)
+          ox (* slot-x res)
+          oy (* slot-y res)
+          oz (* slot-z res)
+          bg @(WGPURenderer.gas-pack-bind-group ren)
+          dispatch-cnt (/ (* res (* res res)) 64)]
+      (do
+        (WGPU.dispatch ctx pipe bg dispatch-cnt)
+        (WGPURender.copy-buffer-to-3d-texture-offset 
+          ctx 
+          w-half-b 
+          @(WGPURenderer.em-texture ren) 
+          ox oy oz res res res))))
+
+  (defn bake-em-gpu! [ctx ren chunk num-instances em-script em-cache res]
+    (let [qx @(Chunk.coord-x chunk)
+          qy @(Chunk.coord-y chunk)
+          qz @(Chunk.coord-z chunk)
+          gas-scratch-b @(WGPURenderer.gas-scratch-buffer ren)
+          gas-half-b @(WGPURenderer.gas-half-buffer ren)
+          slot @(Chunk.atlas-slot chunk)
+          slots-per-dim (/ 384 res)
+          slots-per-dim-sq (* slots-per-dim slots-per-dim)
+          slot-x (Int.mod slot slots-per-dim)
+          slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+          slot-z (/ slot slots-per-dim-sq)
+          ox-tex (* slot-x res)
+          oy-tex (* slot-y res)
+          oz-tex (* slot-z res)
+          dispatch-cnt (/ (* res (* res res)) 64)]
+      (do
+        (wgpu-copy-3d-texture-to-buffer-offset
+          ctx
+          @(WGPURenderer.em-texture ren)
+          ox-tex oy-tex oz-tex
+          gas-half-b
+          0
+          res res res)
+        (let [unpack-pipe @(WGPURenderer.unpack-pipeline ren)
+              unpack-bufs [gas-half-b gas-scratch-b]]
+          (with-bind-group (WGPU.create-bind-group ctx unpack-pipe &unpack-bufs) bg
+            (WGPU.dispatch ctx unpack-pipe bg dispatch-cnt)))
+        (when (not (String.empty? em-script))
+          (let [pipe-maybe (Map.get-maybe em-cache em-script)]
+            (match pipe-maybe
+              (Maybe.Just em-pipe)
+                (let [u-b @(WGPURenderer.u-buffer ren)
+                      raw-u-b (WGPURender.uniform-buffer-get-buffer u-b)
+                      info-b @(Chunk.jit-info-buffer chunk)
+                      info-b-actual (if (WGPU.buffer-null?- info-b)
+                                        (match (WGPU.create-buffer ctx 16)
+                                          (Result.Success new-info-b)
+                                            (do
+                                              (Chunk.set-jit-info-buffer! chunk new-info-b)
+                                              new-info-b)
+                                          (Result.Error err-val)
+                                            (do
+                                              (IO.println &(format "Error creating JIT info buffer: %s" &err-val))
+                                              (null-buffer)))
+                                        info-b)
+                      chunk-lookup-b @(WGPURenderer.chunk-lookup-buffer ren)
+                      voxel-tex @(WGPURenderer.voxel-texture ren)
+                      voxel-gpu-b @(WGPURenderer.voxel-gpu-buffer ren)
+                      qx-f (Double.to-float (* (Double.from-int qx) 32.0))
+                      qy-f (Double.to-float (* (Double.from-int qy) 32.0))
+                      qz-f (Double.to-float (* (Double.from-int qz) 32.0))
+                      slot-f (Float.from-int @(Chunk.atlas-slot chunk))
+                      origin-data [qx-f qy-f qz-f slot-f]]
+                  (do
+                    (WGPU.write-floats ctx info-b-actual &origin-data)
+                    (let [water-tex @(WGPURenderer.water-texture ren)
+                          gas-tex @(WGPURenderer.gas-texture ren)
+                          new-bg-res (create-jit-bind-group-em-result ctx em-pipe gas-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex water-tex gas-tex @(WGPURenderer.em-texture ren))]
+                      (match new-bg-res
+                        (Result.Success em-bg)
+                          (do
+                            (WGPU.dispatch ctx em-pipe em-bg dispatch-cnt)
+                            (WGPURender.free-bind-group em-bg)
+                            (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b gas-scratch-b (* res (* res (* res 16))))
+                            (pack-and-copy-em-chunk! ctx ren @(Chunk.atlas-slot chunk) res))
+                        (Result.Error err-val)
+                          (IO.println &(str* "JIT EM Bind Group creation failed: " err-val))))))
+              _ ())))
+        (pack-and-copy-em-chunk! ctx ren @(Chunk.atlas-slot chunk) res))))
 )
