@@ -90,7 +90,9 @@ if (cell.x < 0.0) {
         }
     }
 
-    let total_stress = (gravity_load - 1.0) + shear_load * 3.0;
+    // Reduced coefficients (gravity * 0.4, shear * 1.2) to allow natural terrain overhangs
+    // and arches to stand stable, while still slumping under heavy structural loads.
+    let total_stress = (gravity_load - 1.0) * 0.4 + shear_load * 1.2;
     let mat = round(abs(cell.y));
     let props = get_material_properties(mat);
     let limit = props.strength;
