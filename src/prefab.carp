@@ -57,7 +57,7 @@
                        (if (= liquid-type 3) -7
                        (if (= liquid-type 4) -8
                        (if bouncy -99 -1)))))
-          fi (FieldInstance.init (+ shape-type 1) params scale root-csg-idx 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+          fi (FieldInstance.init (+ shape-type 1) params scale root-csg-idx 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)
         (Body.set-angular-velocity! (RigidBody.body &rb) @ang-vel)
@@ -88,7 +88,7 @@
           p-y (if (= shape-type 0) 0.0 0.4)
           p-z (if (= shape-type 0) 0.0 0.4)
           params (Vector4.init p-x p-y p-z 0.0)
-          fi (FieldInstance.init (+ shape-type 1) params scale material-id 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+          fi (FieldInstance.init (+ shape-type 1) params scale material-id 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
       (do
         (Body.set-velocity! (RigidBody.body &rb) @vel)
         (ECS.add-component! world &rubble-ent rb)

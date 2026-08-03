@@ -28,7 +28,7 @@
           root-col (Collidable.init @(ECS.Entity.handle &root-ent) root-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
           root-color (Color.init (Vector3.init 0.2 0.8 0.2))
           params (Vector4.init 1.5 1.5 1.5 0.0)
-          root-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+          root-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
           child-ent (GameWorld.create-entity! world)
           child-vol (Volume.Sdf (SDF.init-cylinder 0.6 2.0 (Vector3.init 0.0 0.0 0.0) (Quaternion.identity)))
           child-col (Collidable.init @(ECS.Entity.handle &child-ent) child-vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
@@ -72,7 +72,7 @@
             zero-g-color-v (Vector3.init 0.6 0.1 0.8)
             zero-g-color (Color.init @&zero-g-color-v)
             params (Vector4.init 1.0 0.0 0.0 0.0)
-            zero-g-fi (FieldInstance.init 1 params 4.0 -3 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+            zero-g-fi (FieldInstance.init 1 params 4.0 -3 0.0 0.0 0.0 0.0 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
             gs (GravitySource.init 0.0)]
         (do
           (ECS.add-component! world &zero-g-ent zero-g-rb)
@@ -90,7 +90,7 @@
               c-val (Vector3.init 0.6 0.1 0.8)
               color (Color.init @&c-val)
               params (Vector4.init 0.5 0.5 0.5 0.0)
-              box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+              box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
           (do
             (ECS.add-component! world &box-ent rb)
             (ECS.add-component! world &box-ent col)
@@ -104,7 +104,7 @@
             inv-g-color-v (Vector3.init 0.9 0.2 0.1)
             inv-g-color (Color.init @&inv-g-color-v)
             params (Vector4.init 1.0 0.0 0.0 0.0)
-            inv-g-fi (FieldInstance.init 1 params 4.0 -3 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+            inv-g-fi (FieldInstance.init 1 params 4.0 -3 0.0 0.0 0.0 0.0 0.0 -1.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
             gs (GravitySource.init -1.0)]
         (do
           (ECS.add-component! world &inv-g-ent inv-g-rb)
@@ -122,7 +122,7 @@
               c-val (Vector3.init 0.9 0.2 0.1)
               color (Color.init @&c-val)
               params (Vector4.init 0.5 0.5 0.5 0.0)
-              box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+              box-fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
           (do
             (ECS.add-component! world &box-ent rb)
             (ECS.add-component! world &box-ent col)
@@ -150,7 +150,7 @@
                                 (Vector3.init 1.0 1.0 0.0))))
               color (Color.init @&c-val)
               params (Vector4.init 0.5 0.5 0.5 0.0)
-              fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)]
+              fi (FieldInstance.init 2 params 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))]
           (do
             (ECS.add-component! world &ent rb)
             (ECS.add-component! world &ent col)
@@ -163,7 +163,7 @@
           vol (Volume.Sdf (SDF.init-sphere 4.0 @&pos (Quaternion.identity)))
           col (Collidable.init @(ECS.Entity.handle &ent) vol (Uint32.from-long 1l) (Uint32.from-long 1l) false)
           color (Color.init (Vector3.init 0.8 0.2 0.8))
-          fi (FieldInstance.init 1 (Vector4.init 1.0 1.0 1.0 0.0) 4.0 -2 0.5 0.5 0.0 0.5 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0)
+          fi (FieldInstance.init 1 (Vector4.init 1.0 1.0 1.0 0.0) 4.0 -2 0.5 0.5 0.0 0.5 0.0 0.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0))
           csg (CsgNode.init (Box.init (SDF.init-sphere 4.0 pos (Quaternion.identity))) 1)
           gs (GravitySource.init 0.0)]
       (do

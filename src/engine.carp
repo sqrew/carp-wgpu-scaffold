@@ -745,7 +745,7 @@
                                               (if (<= final-csg-idx -99) 3.0 0.0))))))
                       _ (when (or (or (or (= instance-type 2.0) (= instance-type 4.0)) (= instance-type 5.0)) (= instance-type 6.0))
                           (IO.println &(str* "Active Liquid Bullet Packed: id=" (Int.str id) " type=" (Double.str instance-type) " pos=" (Vector3.str pos) " scale=" (Double.str rad-scale))))
-                      base (+ (/ WGPURenderer.header-size 4) (* id 24))]
+                      base (+ (/ WGPURenderer.header-size 4) (* id 28))]
                   (do
                     (set! max-active-id (+ id 1))
                     (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
@@ -767,26 +767,32 @@
                     (let [temp (FieldDatabase.get-entity-scalar edb FieldDatabase.temp-slot id)
                           density (FieldDatabase.get-entity-scalar edb FieldDatabase.density-slot id)
                           stress (FieldDatabase.get-entity-scalar edb FieldDatabase.stress-slot id)
-                          mat-id (Double.from-int shape-type)]
+                          mat-id (Double.from-int shape-type)
+                          charge (FieldDatabase.get-entity-scalar edb FieldDatabase.charge-slot id)
+                          mag (FieldDatabase.get-field-vector edb FieldDatabase.magnetic-slot id)]
                       (do
                         (Array.aset! u-data (+ base 16) (Double.to-float temp))
                         (Array.aset! u-data (+ base 17) (Double.to-float density))
                         (Array.aset! u-data (+ base 18) (Double.to-float stress))
-                        (Array.aset! u-data (+ base 19) (Double.to-float mat-id))))
-                    (Array.aset! u-data (+ base 20) (Double.to-float (Double.from-int shape-type)))
-                    (Array.aset! u-data (+ base 21) (Double.to-float instance-type))
-                    (Array.aset! u-data (+ base 22) (Double.to-float (Double.from-int final-csg-idx)))
+                        (Array.aset! u-data (+ base 19) (Double.to-float mat-id))
+                        (Array.aset! u-data (+ base 20) (Double.to-float @(Vector4.x &mag)))
+                        (Array.aset! u-data (+ base 21) (Double.to-float @(Vector4.y &mag)))
+                        (Array.aset! u-data (+ base 22) (Double.to-float @(Vector4.z &mag)))
+                        (Array.aset! u-data (+ base 23) (Double.to-float charge))))
+                    (Array.aset! u-data (+ base 24) (Double.to-float (Double.from-int shape-type)))
+                    (Array.aset! u-data (+ base 25) (Double.to-float instance-type))
+                    (Array.aset! u-data (+ base 26) (Double.to-float (Double.from-int final-csg-idx)))
                     (let [vel-arr (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
                           vel-ref (Array.unsafe-nth vel-arr id)
                           speed (Vector3.mag vel-ref)]
-                      (Array.aset! u-data (+ base 23) (Double.to-float speed)))))
-              (let [base (+ (/ WGPURenderer.header-size 4) (* id 24))]
+                      (Array.aset! u-data (+ base 27) (Double.to-float speed)))))
+              (let [base (+ (/ WGPURenderer.header-size 4) (* id 28))]
                 (do
                   (Array.aset! u-data base 0.0f)
                   (Array.aset! u-data (+ base 1) 0.0f)
                   (Array.aset! u-data (+ base 2) 0.0f)
                   (Array.aset! u-data (+ base 3) 0.0f)
-                  (Array.aset! u-data (+ base 21) 0.0f)
+                  (Array.aset! u-data (+ base 25) 0.0f)
                   ()))))
             (Array.aset! u-data 69 (Double.to-float (Double.from-int max-active-id))))))))
 
@@ -1376,7 +1382,7 @@
                         (WGPURender.free-pipeline old-pipe)
                         (WGPURenderer.set-pipeline! ren new-pipe)
                         (let [old-bg @(WGPURenderer.bind-group ren)
-                               new-bg-res (WGPURender.create-voxel-render-bind-group-chunked ctx new-pipe 
+                               new-bg-res (create-voxel-render-bind-group-chunked-em-result ctx new-pipe 
                                             @(WGPURenderer.s-buffer ren) 
                                             @(WGPURenderer.csg-buffer ren) 
                                             @(WGPURenderer.u-buffer ren) 
@@ -1385,6 +1391,7 @@
                                             @(WGPURenderer.interaction-texture ren) 
                                             @(WGPURenderer.water-texture ren) 
                                             @(WGPURenderer.gas-texture ren) 
+                                            @(WGPURenderer.em-texture ren) 
                                             @(WGPURenderer.voxel-sampler ren) 
                                             @(WGPURenderer.chunk-lookup-buffer ren) 
                                             @(WGPURenderer.noise-texture ren) 

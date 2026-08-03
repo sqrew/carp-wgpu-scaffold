@@ -4,6 +4,7 @@ struct PointInstance {
     color_csg: vec4<f32>,
     light_fields: vec4<f32>,
     interaction_fields: vec4<f32>,
+    em_fields: vec4<f32>,
     shape_info: vec4<f32>,
 }
 
