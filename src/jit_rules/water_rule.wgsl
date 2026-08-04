@@ -346,7 +346,15 @@ if (self_voxel.x <= solid_thresh) {
     let dryness = max(0.0, 1.0 - steam_here);
     let evap_scale = select(1.0, 0.02, !sol_below);
     let evaporated_water = select(min(new_water, 3.0 * final_evap * dt * 50.0 * dryness * evap_scale), 0.0, near_ceiling);
-    new_water = new_water - evaporated_water;
+    
+    // Additional rapid electro-vaporization from lightning zapping water
+    let em_val = get_em(local_x, local_y, local_z);
+    let potential = em_val.w;
+    var zapped_evap = 0.0;
+    if (abs(potential) > 0.1) {
+        zapped_evap = min(new_water, abs(potential) * 1.5 * dt);
+    }
+    new_water = new_water - evaporated_water - zapped_evap;
 
     // Oil Evaporation (evaporates into Methane Gas)
     let evaporated_oil = min(new_oil, final_evap * dt * 15.0 * select(1.0, 5.0, local_temp > 60.0));

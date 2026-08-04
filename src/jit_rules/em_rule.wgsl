@@ -43,15 +43,18 @@ for (var i = 0u; i < 512u; i = i + 1u) {
 }
 
 // Compute new potential V and vector potential A
+let water_here = get_water(local_x, local_y, local_z).x;
+let conductivity = select(0.97, 0.998, water_here > 0.05);
+
 var new_V = 0.0;
 if (grounded) {
     new_V = 0.0;
 } else {
     // Diffuse potential and add source charge with decay
-    new_V = relaxed_V * 0.98 + local_charge * 0.5;
+    new_V = relaxed_V * conductivity + local_charge * 0.5;
 }
 
-var new_A = relaxed_A * 0.98 + local_current * 0.5;
+var new_A = relaxed_A * conductivity + local_current * 0.5;
 
 // Save back to output em field voxel
 em = vec4<f32>(new_A, new_V);

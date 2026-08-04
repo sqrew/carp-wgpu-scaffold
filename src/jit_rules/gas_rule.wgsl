@@ -193,7 +193,15 @@ if (self_voxel.x <= solid_thresh) {
     let dryness = max(0.0, 1.0 - gas.x);
     let evap_scale = select(1.0, 0.02, !sol_below);
     let evaporated_water = select(min(water_here.x, 3.0 * final_evap * dt * 50.0 * dryness * evap_scale), 0.0, near_ceiling);
-    new_steam = new_steam + evaporated_water * u.terrain_params3.w;
+    
+    // Additional rapid steam generation from lightning strikes zapping water
+    let em_val_here = get_em(local_x, local_y, local_z);
+    let potential_here = em_val_here.w;
+    var zapped_steam = 0.0;
+    if (abs(potential_here) > 0.1) {
+        zapped_steam = min(water_here.x, abs(potential_here) * 1.5 * dt);
+    }
+    new_steam = new_steam + (evaporated_water + zapped_steam) * u.terrain_params3.w;
 
     // Methane generation from Crude Oil evaporation
     let evaporated_oil = min(water_here.w, final_evap * dt * 15.0 * select(1.0, 5.0, local_temp > 60.0));
@@ -267,8 +275,9 @@ if (self_voxel.x <= solid_thresh) {
 
 
     // --- Fuel & Atmospheric Combustion ---
-    // Methane combusts instantly if exposed to Lava or high local temperature
-    let has_combustion_source = water_here.y > 0.05 || local_temp > 120.0;
+    let em_val = get_em(local_x, local_y, local_z);
+    let potential = em_val.w;
+    let has_combustion_source = water_here.y > 0.05 || local_temp > 120.0 || abs(potential) > 0.15;
     var burned_methane = 0.0;
     if (has_combustion_source && new_methane > 0.0) {
         burned_methane = min(new_methane, 2.5 * dt);
