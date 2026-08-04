@@ -26,8 +26,14 @@ var grounded = false;
 
 for (var i = 0u; i < 512u; i = i + 1u) {
     let inst = u.instances[i];
-    let radius = inst.pos_scale.w;
+    var radius = inst.pos_scale.w;
     if (radius <= 0.0) { continue; }
+    
+    // Override EM charge radius to 1.0 for invisible spark entities (instance-type = 99.0)
+    let inst_type = round(inst.shape_info.y);
+    if (inst_type == 99.0) {
+        radius = 1.0;
+    }
     
     let dist = distance(voxel_pos, inst.pos_scale.xyz);
     if (dist < radius) {
@@ -44,7 +50,10 @@ for (var i = 0u; i < 512u; i = i + 1u) {
 
 // Compute new potential V and vector potential A
 let water_here = get_water(local_x, local_y, local_z).x;
-let conductivity = select(0.97, 0.998, water_here > 0.05);
+let voxel_here = get_voxel(local_x, local_y, local_z);
+let mat_here = round(abs(voxel_here.y));
+let is_metal = voxel_here.x < 0.0 && (mat_here == 11.0 || mat_here == 12.0);
+let conductivity = select(0.97, select(0.998, 0.9995, is_metal), water_here > 0.05 || is_metal);
 
 var new_V = 0.0;
 if (grounded) {

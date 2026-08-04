@@ -396,33 +396,22 @@
             (do
               (draw-lightning-bolt! r-db &sky-pos hit-p &cyan-color 15 1.5)
               (draw-lightning-bolt! r-db &sky-pos hit-p &white-color 12 0.8)
-              (let [crater-data (CraterSpawnData.init @hit-p 3.5 0.0)
-                    ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
-                (Coordinator.dispatch! (Engine.coordinator e) ev))
-              ;; Spawn charge nodes along the lightning channel with jagged deviations
-              (let [dir (Vector3.sub hit-p &sky-pos)
-                    dist (Vector3.mag &dir)
-                    steps (let [n (Double.to-int (/ dist 4.0))] (if (< n 1) 1 n))
-                    step-dir (Vector3.div &dir (Double.from-int steps))]
-                (for [s 0 (inc steps)]
-                  (let [t (/ (Double.from-int s) (Double.from-int steps))
-                        lerp-p (Vector3.add &sky-pos &(Vector3.mul &step-dir (Double.from-int s)))
-                        weight (Double.sin (* 3.14159265 t))
-                        rand-x (Double.random-between -1.0 1.0)
-                        rand-y (Double.random-between -1.0 1.0)
-                        rand-z (Double.random-between -1.0 1.0)
-                        offset (Vector3.mul &(Vector3.init rand-x rand-y rand-z) (* 1.5 weight))
-                        step-p (if (or (= s 0) (= s steps)) lerp-p (Vector3.add &lerp-p &offset))
-                        spark-ent (GameWorld.create-entity! world)
-                        rb (RigidBody.static step-p (Quaternion.identity) 0.0 0.0)
-                        color (Color.init (Vector3.init 0.0 0.7 1.0))
-                        ;; Thin out the radius to 0.1 voxel
-                        fi (FieldInstance.init 1 (Vector4.init 0.1 0.0 0.0 0.0) 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 15.0 0.0 (Vector3.init 0.0 0.0 0.0))]
-                    (do
-                      (ECS.add-component! world &spark-ent rb)
-                      (ECS.add-component! world &spark-ent color)
-                      (ECS.add-component! world &spark-ent fi)
-                      (ECS.add-component! world &spark-ent (Lifetime.init 0.5))))))
+               ;; Spawn charge and pressure explosion nodes along the lightning channel using the unified abstraction
+               (let [dir (Vector3.sub hit-p &sky-pos)
+                     dist (Vector3.mag &dir)
+                     steps (let [n (Double.to-int (/ dist 4.0))] (if (< n 1) 1 n))
+                     step-dir (Vector3.div &dir (Double.from-int steps))]
+                 (for [s 0 (inc steps)]
+                   (let [t (/ (Double.from-int s) (Double.from-int steps))
+                         lerp-p (Vector3.add &sky-pos &(Vector3.mul &step-dir (Double.from-int s)))
+                         weight (Double.sin (* 3.14159265 t))
+                         rand-x (Double.random-between -1.0 1.0)
+                         rand-y (Double.random-between -1.0 1.0)
+                         rand-z (Double.random-between -1.0 1.0)
+                         offset (Vector3.mul &(Vector3.init rand-x rand-y rand-z) (* 1.5 weight))
+                         step-p (if (or (= s 0) (= s steps)) lerp-p (Vector3.add &lerp-p &offset))
+                         is-ground (= s steps)]
+                     (Explosion.trigger! world (Engine.coordinator e) &step-p 8.0 350.0 100.0 15.0 0.0 is-ground))))
               (IO.println &(str* "LIGHTNING STRIKE! Cast at " &(Vector3.str hit-p)))))
           (IO.println "Lightning missed! No ground target."))))
 )

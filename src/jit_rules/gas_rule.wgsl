@@ -13,6 +13,38 @@ let solid_thresh = u.terrain_params3.z;
 if (self_voxel.x <= solid_thresh) {
     gas = vec4<f32>(0.0);
 } else {
+    // --- Lightning Potential Shockwave Push ---
+    let pot_self  = abs(get_em(local_x, local_y, local_z).w);
+    let pot_left  = abs(get_em(local_x - 1, local_y, local_z).w);
+    let pot_right = abs(get_em(local_x + 1, local_y, local_z).w);
+    let pot_below = abs(get_em(local_x, local_y - 1, local_z).w);
+    let pot_above = abs(get_em(local_x, local_y + 1, local_z).w);
+    let pot_front = abs(get_em(local_x, local_y, local_z - 1).w);
+    let pot_back  = abs(get_em(local_x, local_y, local_z + 1).w);
+    
+    let fx = pot_left - pot_right;
+    let fy = pot_below - pot_above;
+    let fz = pot_front - pot_back;
+    
+    let force_mag = sqrt(fx*fx + fy*fy + fz*fz);
+    if (force_mag > 0.05) {
+        let dx = fx / force_mag;
+        let dy = fy / force_mag;
+        let dz = fz / force_mag;
+        
+        let sx = local_x - i32(round(dx));
+        let sy = local_y - i32(round(dy));
+        let sz = local_z - i32(round(dz));
+        
+        let push_speed = clamp(force_mag * 18.0 * dt, 0.0, 0.95);
+        let upstream_fluid = get_fluid(sx, sy, sz);
+        
+        gas.x = mix(gas.x, upstream_fluid.x, push_speed);
+        gas.y = mix(gas.y, upstream_fluid.y, push_speed);
+        gas.z = mix(gas.z, upstream_fluid.z, push_speed);
+        gas.w = mix(gas.w, upstream_fluid.w, push_speed);
+    }
+
     var near_ceiling = false;
     var cold_ceiling = false;
     for (var dy = 1; dy <= 7; dy = dy + 1) {

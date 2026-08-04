@@ -37,6 +37,14 @@ if (voxel.x <= solid_thresh) {
         emitter = vec4<f32>(0.0, acid_val * 1.2 * flicker, acid_val * 0.15 * flicker, acid_val * 1.0);
     }
     
+    // Inject lightning illumination based on electromagnetic potential
+    let em_here = get_em(local_x, local_y, local_z);
+    let potential = em_here.w;
+    if (abs(potential) > 0.05) {
+        let flash = clamp(abs(potential) * 2.5, 0.0, 3.0);
+        emitter = max(emitter, vec4<f32>(0.3 * flash, 0.75 * flash, 1.3 * flash, 1.0));
+    }
+    
     // 2. Light Propagation (Average or max of neighbors in the light grid)
     let l_left  = get_fluid(local_x - 1, local_y, local_z);
     let l_right = get_fluid(local_x + 1, local_y, local_z);

@@ -1,0 +1,53 @@
+;; src/explosion.carp
+;; Unified explosion manager for physical, electrical, and thermal detonations.
+
+(load "../carp-ecs-lite/src/ecs.carp")
+(load "components.carp")
+(load "events.carp")
+(load "coordinator.carp")
+
+(defmodule Explosion
+  (use Double)
+  (use Vector3)
+  (use Quaternion)
+  (use ECS)
+  (use Coordinator)
+
+  (sig trigger! (Fn [(Ref GameWorld) (Ref Coordinator) (Ref (Vector3 Double)) Double Double Double Double Double Bool] ()))
+  (defn trigger! [world coord pos radius pressure-force heat charge light-intensity crater?]
+    (do
+      ;; 1. Dispatch Crater Event if terrain carving is requested
+      (when crater?
+        (let [crater-data (CraterSpawnData.init @pos radius 0.0)
+              ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+          (Coordinator.dispatch! coord ev)))
+
+      ;; 2. Spawn the ECS Entity carrying the FieldInstance component
+      ;; This handles radial temperature, light, pressure, and electric charge fields
+      (let [exp-ent (GameWorld.create-entity! world)
+            rb (RigidBody.static @pos (Quaternion.identity) 0.0 0.0)
+            color (Color.init (Vector3.init 1.0 0.5 0.1)) ; Volumetric orange explosion visual glow
+            ;; shape-type 1 = Sphere. csg-index = -2 (Invisible Spark type)
+            fi (FieldInstance.init 1 
+                                   (Vector4.init 0.1 0.0 0.0 0.0) 
+                                   radius 
+                                   -2 
+                                   heat 
+                                   light-intensity 
+                                   0.0 
+                                   pressure-force 
+                                   0.0 
+                                   -999.0 
+                                   1.0 
+                                   (Vector3.init 0.0 0.0 0.0) 
+                                   1.0 
+                                   0.5 
+                                   charge 
+                                   0.0 
+                                   (Vector3.init 0.0 0.0 0.0))]
+        (do
+          (ECS.add-component! world &exp-ent rb)
+          (ECS.add-component! world &exp-ent color)
+          (ECS.add-component! world &exp-ent fi)
+          (ECS.add-component! world &exp-ent (Lifetime.init 0.5))))))
+)

@@ -212,6 +212,7 @@
             (Prefab.spawn-rubble! world db &rubble-pos &vel scale final-mat)))
         (Engine.set-grid-dirty! e true))))
 
+
   (defn merge-rubble-to-static! [e pos rot vol material-id]
     (let [world (Engine.world e)]
       (ECS.query world [parent-ent (swt StaticWorldTag) (col Collidable)]
@@ -753,7 +754,8 @@
                                         (if (= final-csg-idx -6) 4.0
                                           (if (= final-csg-idx -7) 5.0
                                             (if (= final-csg-idx -8) 6.0
-                                              (if (<= final-csg-idx -99) 3.0 0.0))))))
+                                              (if (= final-csg-idx -2) 99.0
+                                                (if (<= final-csg-idx -99) 3.0 0.0)))))))
                       _ (when (or (or (or (= instance-type 2.0) (= instance-type 4.0)) (= instance-type 5.0)) (= instance-type 6.0))
                           (IO.println &(str* "Active Liquid Bullet Packed: id=" (Int.str id) " type=" (Double.str instance-type) " pos=" (Vector3.str pos) " scale=" (Double.str rad-scale))))
                       base (+ (/ WGPURenderer.header-size 4) (* id 28))]
