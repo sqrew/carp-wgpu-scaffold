@@ -29,12 +29,13 @@
   (def humidity-slot 2)
   (def pressure-slot 3)
   (def stress-slot 4)
-  (def gravity-slot 5)
+  (def ph-slot 5)
   (def density-slot 6)
   (def lifetime-slot 7)
   (def charge-slot 8)
   (def potential-slot 9)
   (def magnetic-slot 10)
+  (def time-dilation-slot 11)
 
   (deftemplate voidptr->db-ref (Fn [(Ptr ())] (Ref FieldDatabase))
     "FieldDatabase* $NAME(void* p)"
@@ -140,7 +141,7 @@
                           weight (* (- 1.0 (/ dist scale-i)) influence)
                           v (Array.unsafe-nth fields-arr i)
                           val @(Vector4.x v)]
-                      (when (not (and (= slot gravity-slot) (= val -999.0)))
+                      (when (not (and (= slot ph-slot) (= val -999.0)))
                         (do
                           (set! accumulated-val (+ accumulated-val (* val weight)))
                           (set! total-weight (+ total-weight weight)))))))))))

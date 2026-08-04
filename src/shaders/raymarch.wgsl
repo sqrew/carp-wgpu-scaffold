@@ -64,6 +64,7 @@ struct PointInstance {
       @group(0) @binding(10) var water_texture: texture_3d<f32>;
       @group(0) @binding(11) var gas_texture: texture_3d<f32>;
       @group(0) @binding(12) var em_texture: texture_3d<f32>;
+      @group(0) @binding(13) var gravity_texture: texture_3d<f32>;
 
       var<private> fractal_trap: f32 = 0.0;
 
@@ -1681,7 +1682,8 @@ struct PointInstance {
 
        @fragment
         fn fs_main(frag_in: VertexOutput) -> @location(0) vec4<f32> {
-            let aspect = u.width / u.height;
+            let dummy_grav = textureLoad(gravity_texture, vec3<i32>(0), 0);
+            let aspect = u.width / u.height + dummy_grav.x * 0.0;
             let uv = frag_in.uv * vec2<f32>(aspect, 1.0);
             let ro = u.cam_pos.xyz;
             var rd = normalize(uv.x * u.cam_right.xyz + uv.y * u.cam_up.xyz + u.cam_dir.xyz * 1.7320508);

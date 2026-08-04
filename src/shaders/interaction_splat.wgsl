@@ -6,6 +6,7 @@ struct PointInstance {
     interaction_fields: vec4<f32>,
     em_fields: vec4<f32>,
     shape_info: vec4<f32>,
+    gravity_field: vec4<f32>,
 }
 
 struct SunData {
@@ -34,7 +35,7 @@ struct Uniforms {
     cloud_params2: vec4<f32>,
     misc_params: vec4<f32>,
     suns: array<SunData, 8>,
-    instances: array<PointInstance, 512>,
+    instances: array<PointInstance, {{LIMIT}}>,
 }
 
 @group(0) @binding(0) var<storage, read_write> interaction_gpu_buffer: array<vec4<f32>>;

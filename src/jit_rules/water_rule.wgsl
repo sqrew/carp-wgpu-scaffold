@@ -45,6 +45,32 @@ if (self_voxel.x <= solid_thresh) {
         water.w = mix(water.w, upstream_fluid.w, push_speed);
     }
 
+    // --- Gravity Field Advection Push ---
+    let grav_vector = get_gravity(local_x, local_y, local_z);
+    let local_time_dilation = grav_vector.w;
+    let g_len = length(grav_vector.xyz);
+    if (g_len > 0.1) {
+        let g_dir = grav_vector.xyz / g_len;
+        let is_custom_g = g_dir.y > -0.9 || g_len < 5.0 || g_len > 15.0;
+        if (is_custom_g) {
+            let dx = g_dir.x;
+            let dy = g_dir.y;
+            let dz = g_dir.z;
+            
+            let sx = local_x - i32(round(dx));
+            let sy = local_y - i32(round(dy));
+            let sz = local_z - i32(round(dz));
+            
+            let push_speed = clamp(g_len * 0.15 * dt * local_time_dilation, 0.0, 0.95);
+            let upstream_fluid = get_fluid(sx, sy, sz);
+            
+            water.x = mix(water.x, upstream_fluid.x, push_speed);
+            water.y = mix(water.y, upstream_fluid.y, push_speed);
+            water.z = mix(water.z, upstream_fluid.z, push_speed);
+            water.w = mix(water.w, upstream_fluid.w, push_speed);
+        }
+    }
+
     var near_ceiling = false;
     var cold_ceiling = false;
     let gas_here = get_gas(local_x, local_y, local_z);
@@ -98,23 +124,28 @@ if (self_voxel.x <= solid_thresh) {
     let sol_back  = get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh;
     let sol_front = get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh;
     
-    let flow_speed = u.misc_params.y;
+    let flow_speed = u.misc_params.y * local_time_dilation;
+    var g_dir: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
+    if (g_len > 0.01) {
+        g_dir = grav_vector.xyz / g_len;
+    }
+    let g_pull_below = clamp(-g_dir.y, 0.0, 1.0);
 
     // --- 1. Water Flow Loop (gravity & spreading) ---
     var new_water = water.x;
     var w_flow_down_below = 0.0;
     if (!sol_below && !sol_below2) {
-        w_flow_down_below = min(w_below_v.x, (1.0 - w_below2_v.x) * flow_speed);
+        w_flow_down_below = min(w_below_v.x, (1.0 - w_below2_v.x) * flow_speed * g_pull_below);
     }
     var w_flow_down = 0.0;
     if (!sol_below) {
-        w_flow_down = min(new_water, (1.0 - w_below_v.x + w_flow_down_below) * flow_speed);
+        w_flow_down = min(new_water, (1.0 - w_below_v.x + w_flow_down_below) * flow_speed * g_pull_below);
     }
     var w_flow_from_above = 0.0;
     if (!sol_above) {
         var w_flow_self_below = 0.0;
         if (!sol_below) {
-            w_flow_self_below = min(new_water, (1.0 - w_below_v.x) * flow_speed);
+            w_flow_self_below = min(new_water, (1.0 - w_below_v.x) * flow_speed * g_pull_below);
         }
         w_flow_from_above = min(w_above_v.x, (1.0 - new_water + w_flow_self_below) * flow_speed);
     }
@@ -173,7 +204,7 @@ if (self_voxel.x <= solid_thresh) {
     let lava_flow_speed = flow_speed * select(0.08, 0.015, select(false, get_voxel(local_x, local_y - 1, local_z).y == 13.0, local_y > 0)); // slow viscous flow, unless sitting on hot lava rock
     var l_flow_down = 0.0;
     if (!sol_below) {
-        l_flow_down = min(new_lava, (1.0 - w_below_v.y) * lava_flow_speed);
+        l_flow_down = min(new_lava, (1.0 - w_below_v.y) * lava_flow_speed * g_pull_below);
     }
     var l_flow_from_above = 0.0;
     if (!sol_above) {
@@ -234,7 +265,7 @@ if (self_voxel.x <= solid_thresh) {
     let acid_flow_speed = flow_speed * 0.65;
     var a_flow_down = 0.0;
     if (!sol_below) {
-        a_flow_down = min(new_acid, (1.0 - w_below_v.z) * acid_flow_speed);
+        a_flow_down = min(new_acid, (1.0 - w_below_v.z) * acid_flow_speed * g_pull_below);
     }
     var a_flow_from_above = 0.0;
     if (!sol_above) {
@@ -295,7 +326,7 @@ if (self_voxel.x <= solid_thresh) {
     let oil_flow_speed = flow_speed * 0.35;
     var o_flow_down = 0.0;
     if (!sol_below) {
-        o_flow_down = min(new_oil, (1.0 - w_below_v.w) * oil_flow_speed);
+        o_flow_down = min(new_oil, (1.0 - w_below_v.w) * oil_flow_speed * g_pull_below);
     }
     var o_flow_from_above = 0.0;
     if (!sol_above) {

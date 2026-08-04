@@ -141,11 +141,11 @@
 
 (deftemplate create-voxel-render-bind-group-chunked-em (Fn [(Ptr WGPUContext) (Ptr WGPURenderPipelineWrapper)
                                                             WGPUBuffer WGPUBuffer (Ptr WGPUUniformBufferWrapper)
-                                                            (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) WGPUSampler WGPUBuffer
+                                                            (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) WGPUSampler WGPUBuffer
                                                             (Ptr WGPURenderTexture) WGPUSampler] WGPUBindGroup)
-  "WGPUBindGroup $NAME(WGPUContext* ctx, WGPURenderPipelineWrapper* pipe, WGPUBuffer storage_buf1, WGPUBuffer storage_buf2, WGPUUniformBufferWrapper* ub, WGPURenderTexture* voxel_tex, WGPURenderTexture* fields_tex, WGPURenderTexture* interaction_tex, WGPURenderTexture* water_tex, WGPURenderTexture* gas_tex, WGPURenderTexture* em_tex, WGPUSampler voxel_sampler, WGPUBuffer chunk_lookup_buf, WGPURenderTexture* noise_tex, WGPUSampler noise_sampler)"
+  "WGPUBindGroup $NAME(WGPUContext* ctx, WGPURenderPipelineWrapper* pipe, WGPUBuffer storage_buf1, WGPUBuffer storage_buf2, WGPUUniformBufferWrapper* ub, WGPURenderTexture* voxel_tex, WGPURenderTexture* fields_tex, WGPURenderTexture* interaction_tex, WGPURenderTexture* water_tex, WGPURenderTexture* gas_tex, WGPURenderTexture* em_tex, WGPURenderTexture* gravity_tex, WGPUSampler voxel_sampler, WGPUBuffer chunk_lookup_buf, WGPURenderTexture* noise_tex, WGPUSampler noise_sampler)"
   "$DECL {
-    if (!ctx || !pipe || !ub || !voxel_tex || !fields_tex || !interaction_tex || !water_tex || !gas_tex || !em_tex || !voxel_sampler || !chunk_lookup_buf || !noise_tex || !noise_sampler) {
+    if (!ctx || !pipe || !ub || !voxel_tex || !fields_tex || !interaction_tex || !water_tex || !gas_tex || !em_tex || !gravity_tex || !voxel_sampler || !chunk_lookup_buf || !noise_tex || !noise_sampler) {
         return NULL;
     }
 
@@ -154,7 +154,7 @@
         return NULL;
     }
 
-    WGPUBindGroupEntry entries[13] = {
+    WGPUBindGroupEntry entries[14] = {
         { .binding = 0, .buffer = storage_buf1, .offset = 0, .size = WGPU_WHOLE_SIZE },
         { .binding = 1, .buffer = ub->buffer, .offset = 0, .size = ub->size },
         { .binding = 2, .buffer = storage_buf2, .offset = 0, .size = WGPU_WHOLE_SIZE },
@@ -167,12 +167,13 @@
         { .binding = 9, .textureView = interaction_tex->view },
         { .binding = 10, .textureView = water_tex->view },
         { .binding = 11, .textureView = gas_tex->view },
-        { .binding = 12, .textureView = em_tex->view }
+        { .binding = 12, .textureView = em_tex->view },
+        { .binding = 13, .textureView = gravity_tex->view }
     };
 
     WGPUBindGroupDescriptor desc = {
         .layout = layout,
-        .entryCount = 13,
+        .entryCount = 14,
         .entries = entries,
     };
 
@@ -181,16 +182,16 @@
     return bg;
   }")
 
-(defn create-voxel-render-bind-group-chunked-em-result [ctx pipeline storage-buf1 storage-buf2 ub voxel-tex fields-tex interaction-tex water-tex gas-tex em-tex voxel-sampler chunk-lookup-buf noise-tex noise-sampler]
-  (let [bg (create-voxel-render-bind-group-chunked-em ctx pipeline storage-buf1 storage-buf2 ub voxel-tex fields-tex interaction-tex water-tex gas-tex em-tex voxel-sampler chunk-lookup-buf noise-tex noise-sampler)]
+(defn create-voxel-render-bind-group-chunked-em-result [ctx pipeline storage-buf1 storage-buf2 ub voxel-tex fields-tex interaction-tex water-tex gas-tex em-tex gravity-tex voxel-sampler chunk-lookup-buf noise-tex noise-sampler]
+  (let [bg (create-voxel-render-bind-group-chunked-em ctx pipeline storage-buf1 storage-buf2 ub voxel-tex fields-tex interaction-tex water-tex gas-tex em-tex gravity-tex voxel-sampler chunk-lookup-buf noise-tex noise-sampler)]
     (if (WGPURender.bindgroup-null?- bg)
       (Result.Error @"EM Bind group creation failed")
       (Result.Success bg))))
 
-(deftemplate create-jit-bind-group-em (Fn [(Ptr WGPUContext) WGPUComputePipeline WGPUBuffer WGPUBuffer WGPUBuffer WGPUBuffer WGPUBuffer (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture)] WGPUBindGroup)
-  "WGPUBindGroup $NAME(WGPUContext* ctx, WGPUComputePipeline pipeline, WGPUBuffer input_buf, WGPUBuffer output_buf, WGPUBuffer uniform_buf, WGPUBuffer chunk_info_buf, WGPUBuffer chunk_lookup_buf, WGPURenderTexture* voxel_tex, WGPURenderTexture* water_tex, WGPURenderTexture* gas_tex, WGPURenderTexture* em_tex)"
+(deftemplate create-jit-bind-group-em (Fn [(Ptr WGPUContext) WGPUComputePipeline WGPUBuffer WGPUBuffer WGPUBuffer WGPUBuffer WGPUBuffer (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture) (Ptr WGPURenderTexture)] WGPUBindGroup)
+  "WGPUBindGroup $NAME(WGPUContext* ctx, WGPUComputePipeline pipeline, WGPUBuffer input_buf, WGPUBuffer output_buf, WGPUBuffer uniform_buf, WGPUBuffer chunk_info_buf, WGPUBuffer chunk_lookup_buf, WGPURenderTexture* voxel_tex, WGPURenderTexture* water_tex, WGPURenderTexture* gas_tex, WGPURenderTexture* em_tex, WGPURenderTexture* gravity_tex)"
   "$DECL {
-    if (!ctx || !pipeline || !input_buf || !output_buf || !uniform_buf || !chunk_info_buf || !chunk_lookup_buf || !voxel_tex || !water_tex || !gas_tex || !em_tex) {
+    if (!ctx || !pipeline || !input_buf || !output_buf || !uniform_buf || !chunk_info_buf || !chunk_lookup_buf || !voxel_tex || !water_tex || !gas_tex || !em_tex || !gravity_tex) {
         return NULL;
     }
 
@@ -199,7 +200,7 @@
         return NULL;
     }
 
-    WGPUBindGroupEntry entries[9] = {
+    WGPUBindGroupEntry entries[10] = {
         { .binding = 0, .buffer = input_buf, .offset = 0, .size = wgpuBufferGetSize(input_buf) },
         { .binding = 1, .buffer = output_buf, .offset = 0, .size = wgpuBufferGetSize(output_buf) },
         { .binding = 2, .buffer = uniform_buf, .offset = 0, .size = wgpuBufferGetSize(uniform_buf) },
@@ -208,13 +209,14 @@
         { .binding = 5, .textureView = voxel_tex->view },
         { .binding = 6, .textureView = water_tex->view },
         { .binding = 7, .textureView = gas_tex->view },
-        { .binding = 8, .textureView = em_tex->view }
+        { .binding = 8, .textureView = em_tex->view },
+        { .binding = 9, .textureView = gravity_tex->view }
     };
 
     WGPUBindGroupDescriptor desc = {
         .layout = layout,
         .entries = entries,
-        .entryCount = 9,
+        .entryCount = 10,
     };
 
     WGPUBindGroup bg = wgpuDeviceCreateBindGroup(ctx->device, &desc);
@@ -222,8 +224,8 @@
     return bg;
   }")
 
-(defn create-jit-bind-group-em-result [ctx pipeline input-buf output-buf uniform-buf chunk-info-buf chunk-lookup-buf voxel-tex water-tex gas-tex em-tex]
-  (let [bg (create-jit-bind-group-em ctx pipeline input-buf output-buf uniform-buf chunk-info-buf chunk-lookup-buf voxel-tex water-tex gas-tex em-tex)]
+(defn create-jit-bind-group-em-result [ctx pipeline input-buf output-buf uniform-buf chunk-info-buf chunk-lookup-buf voxel-tex water-tex gas-tex em-tex gravity-tex]
+  (let [bg (create-jit-bind-group-em ctx pipeline input-buf output-buf uniform-buf chunk-info-buf chunk-lookup-buf voxel-tex water-tex gas-tex em-tex gravity-tex)]
     (if (WGPURender.bindgroup-null?- bg)
       (Result.Error @"JIT EM Bind group creation failed")
       (Result.Success bg))))
@@ -296,6 +298,7 @@
   volumetric-texture (Ptr WGPURenderTexture)
   composite-pipeline (Ptr WGPURenderPipelineWrapper)
   composite-bind-group WGPUBindGroup
+  gravity-texture (Ptr WGPURenderTexture)
 ])
 
 (defmodule VoxelBaker
@@ -321,10 +324,10 @@
 )
 
 (defmodule WGPURenderer
-  (def max-spheres 512)
+  (def max-spheres 256)
   (def max-ids-per-cell 64)
   (def header-size 624)
-  (def sphere-data-size 112)
+  (def sphere-data-size 128)
   (def max-csg-nodes 1024)
   (def csg-node-size 64)
 
@@ -529,13 +532,13 @@
                                               (WGPURenderer.initialize-noise-texture! ctx noise-tex)
                                               (match (WGPURender.create-pipeline ctx &shader "vs_main" "fs_main" &@"rgba16float")
                                                 (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pipeline failed: " e)))
-                                                (Result.Success pipe)
-                                                  (match (create-voxel-render-bind-group-chunked-em-result ctx pipe sb csg-b ub voxel-tex light-tex interaction-tex water-tex gas-tex em-tex voxel-samp raw-lookup-buf noise-tex noise-samp)
-                                                    (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
-                                                    (Result.Success bg)
-                                                      (match (WGPURender.create-depth-texture ctx width height)
-                                                        (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
-                                                        (Result.Success dt)
+                                                 (Result.Success pipe)
+                                                   (match (create-voxel-render-bind-group-chunked-em-result ctx pipe sb csg-b ub voxel-tex light-tex interaction-tex water-tex gas-tex em-tex em-tex voxel-samp raw-lookup-buf noise-tex noise-samp)
+                                                     (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Bind group failed: " e)))
+                                                     (Result.Success bg)
+                                                       (match (WGPURender.create-depth-texture ctx width height)
+                                                         (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Depth failed: " e)))
+                                                         (Result.Success dt)
                                                           (match (LinePass.create ctx @&format 10000)
                                                             (Result.Error e) (do (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "LinePass failed: " e)))
                                                             (Result.Success lp)
@@ -584,7 +587,7 @@
                                                                                                                         (match (WGPU.create-pipeline ctx &p-shader-src "main")
                                                                                                                           (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Pack pipeline failed: " e)))
                                                                                                                           (Result.Success p-pipe)
-                                                                                                                            (let [fs-shader-src (Shaders.light-splat-shader voxel-res)]
+                                                                                                                            (let [fs-shader-src (Shaders.light-splat-shader WGPURenderer.max-spheres voxel-res)]
                                                                                                                               (match (WGPU.create-pipeline ctx &fs-shader-src "main")
                                                                                                                                 (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (Result.Error (str* "Light splat pipeline failed: " e)))
                                                                                                                                 (Result.Success l-splat-pipe)
@@ -601,7 +604,7 @@
                                                                                                                                                 (match (WGPU.create-buffer ctx 48)
                                                                                                                                                   (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Interaction params buffer failed: " e)))
                                                                                                                                                   (Result.Success i-params-b)
-                                                                                                                                                    (let [is-shader-src (Shaders.interaction-splat-shader voxel-res)]
+                                                                                                                                                    (let [is-shader-src (Shaders.interaction-splat-shader WGPURenderer.max-spheres voxel-res)]
                                                                                                                                                       (match (WGPU.create-pipeline ctx &is-shader-src "main")
                                                                                                                                                         (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Interaction splat pipeline failed: " e)))
                                                                                                                                                         (Result.Success i-splat-pipe)
@@ -614,7 +617,7 @@
                                                                                                                                                                   (match (WGPU.create-buffer ctx 48)
                                                                                                                                                                     (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer w-half-b) (WGPU.free-buffer w-scratch-b) (WGPU.free-pipeline i-splat-pipe) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Water params buffer failed: " e)))
                                                                                                                                                                     (Result.Success w-params-b)
-                                                                                                                                                                      (let [ws-shader-src (Shaders.water-splat-shader voxel-res)]
+                                                                                                                                                                      (let [ws-shader-src (Shaders.water-splat-shader WGPURenderer.max-spheres voxel-res)]
                                                                                                                                                                         (match (WGPU.create-pipeline ctx &ws-shader-src "main")
                                                                                                                                                                           (Result.Error e) (do (WGPURender.free-sampler font-samp) (WGPURender.free-render-texture font-tex) (WGPURender.free-sampler noise-samp) (WGPURender.free-render-texture noise-tex) (WGPU.free-pipeline l-splat-pipe) (WGPU.free-pipeline p-pipe) (WGPU.free-buffer jit-info-b) (WGPU.free-buffer l-params-b) (WGPU.free-buffer l-half-b) (WGPU.free-buffer l-scratch-b) (WGPU.free-pipeline c-pipe) (WGPU.free-buffer c-params-b) (WGPU.free-buffer v-half-b) (WGPU.free-buffer v-gpu-b) (WGPURender.free-depth-texture dt) (WGPURender.free-bind-group bg) (WGPURender.free-pipeline pipe) (WGPU.free-buffer chunk-lookup-b) (WGPU.free-buffer csg-b) (WGPU.free-buffer sb) (WGPURender.free-uniform-buffer ub) (WGPURender.free-sampler voxel-samp) (WGPURender.free-render-texture gas-tex) (WGPURender.free-render-texture water-tex) (WGPURender.free-render-texture interaction-tex) (WGPURender.free-render-texture light-tex) (WGPURender.free-render-texture voxel-tex) (WGPU.free-buffer w-params-b) (WGPU.free-buffer w-half-b) (WGPU.free-buffer w-scratch-b) (WGPU.free-pipeline i-splat-pipe) (WGPU.free-buffer i-params-b) (WGPU.free-buffer i-half-b) (WGPU.free-buffer i-scratch-b) (Result.Error (str* "Water splat pipeline failed: " e)))
                                                                                                                                                                           (Result.Success w-splat-pipe)
@@ -643,7 +646,7 @@
                                                                                                                                                                                                       (match (WGPU.create-buffer ctx 48)
                                                                                                                                                                                                         (Result.Error e) (do (WGPU.free-buffer gas-scratch-b) (WGPU.free-buffer gas-half-b) (Result.Error (str* "Gas params buffer failed: " e)))
                                                                                                                                                                                                         (Result.Success gas-params-b)
-                                                                                                                                                                                                          (let [gs-shader-src (Shaders.water-splat-shader voxel-res)]
+                                                                                                                                                                                                          (let [gs-shader-src (Shaders.water-splat-shader WGPURenderer.max-spheres voxel-res)]
                                                                                                                                                                                                             (match (WGPU.create-pipeline ctx &gs-shader-src "main")
                                                                                                                                                                                                               (Result.Error e) (do (WGPU.free-buffer gas-scratch-b) (WGPU.free-buffer gas-half-b) (WGPU.free-buffer gas-params-b) (Result.Error (str* "Gas splat pipeline failed: " e)))
                                                                                                                                                                                                               (Result.Success gas-splat-pipe)
@@ -664,13 +667,22 @@
                                                                                                                                          (match (WGPURender.create-composite-bind-group ctx comp-pipe terrain-color-tex dt volumetric-tex noise-samp)
                                                                                                                                            (Result.Error e) (do (WGPURender.free-pipeline comp-pipe) (WGPURender.free-render-texture volumetric-tex) (WGPURender.free-render-texture terrain-color-tex) (WGPU.free-pipeline gas-splat-pipe) (WGPU.free-buffer gas-scratch-b) (WGPU.free-buffer gas-half-b) (WGPU.free-buffer gas-params-b) (Result.Error (str* "Composite bind group failed: " e)))
                                                                                                                                            (Result.Success comp-bg)
-                                                                                                                                             (do
-                                                                                                                                               (WGPURender.wgpu-clear-3d-texture-atlas ctx light-tex w-half-b voxel-res)
-                                                                                                                                               (WGPURender.wgpu-clear-3d-texture-atlas ctx interaction-tex w-half-b voxel-res)
-                                                                                                                                               (WGPURender.wgpu-clear-3d-texture-atlas ctx water-tex w-half-b voxel-res)
-                                                                                                                                               (WGPURender.wgpu-clear-3d-texture-atlas ctx gas-tex w-half-b voxel-res)
-                                                                                                                                               (WGPURender.wgpu-clear-3d-texture-atlas ctx em-tex w-half-b voxel-res)
-                                                                                                                                               (Result.Success (WGPURenderer.init pipe ub sb csg-b bg dt lp [] u-data s-data csg-data voxel-tex light-tex interaction-tex voxel-samp [] true c-pipe p-pipe l-splat-pipe v-gpu-b v-half-b c-params-b l-scratch-b l-half-b l-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) (replicate 1728 &0) jit-info-b @&format gui-pipe gui-ubo gui-bg font-tex font-samp i-scratch-b i-half-b i-params-b i-splat-pipe water-tex w-scratch-b w-half-b w-params-b w-splat-pipe gas-tex gas-scratch-b gas-half-b gas-params-b gas-splat-pipe em-tex unpack-pipe w-pack-bg gas-pack-bg l-pack-bg i-pack-bg @"" (null-bind-group) @"" (null-bind-group) terrain-color-tex volumetric-tex comp-pipe comp-bg))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
+                                                                                                                                              (match (WGPURender.create-3d-texture ctx 384 384 384 "rgba16float")
+                                                                                                                                                (Result.Error e) (do (WGPURender.free-bind-group comp-bg) (WGPURender.free-pipeline comp-pipe) (WGPURender.free-render-texture volumetric-tex) (WGPURender.free-render-texture terrain-color-tex) (WGPU.free-pipeline gas-splat-pipe) (WGPU.free-buffer gas-scratch-b) (WGPU.free-buffer gas-half-b) (WGPU.free-buffer gas-params-b) (Result.Error (str* "Gravity Texture failed: " e)))
+                                                                                                                                                (Result.Success gravity-tex)
+                                                                                                                                                  (do
+                                                                                                                                                    (WGPURender.free-bind-group bg)
+                                                                                                                                                    (match (create-voxel-render-bind-group-chunked-em-result ctx pipe sb csg-b ub voxel-tex light-tex interaction-tex water-tex gas-tex em-tex gravity-tex voxel-samp raw-lookup-buf noise-tex noise-samp)
+                                                                                                                                                      (Result.Error e) (do (WGPURender.free-render-texture gravity-tex) (WGPURender.free-bind-group comp-bg) (WGPURender.free-pipeline comp-pipe) (WGPURender.free-render-texture volumetric-tex) (WGPURender.free-render-texture terrain-color-tex) (WGPU.free-pipeline gas-splat-pipe) (WGPU.free-buffer gas-scratch-b) (WGPU.free-buffer gas-half-b) (WGPU.free-buffer gas-params-b) (Result.Error (str* "Final Bind Group failed: " e)))
+                                                                                                                                                      (Result.Success real-bg)
+                                                                                                                                                        (do
+                                                                                                                                                          (WGPURender.wgpu-clear-3d-texture-atlas ctx light-tex w-half-b voxel-res)
+                                                                                                                                                          (WGPURender.wgpu-clear-3d-texture-atlas ctx interaction-tex w-half-b voxel-res)
+                                                                                                                                                          (WGPURender.wgpu-clear-3d-texture-atlas ctx water-tex w-half-b voxel-res)
+                                                                                                                                                          (WGPURender.wgpu-clear-3d-texture-atlas ctx gas-tex w-half-b voxel-res)
+                                                                                                                                                          (WGPURender.wgpu-clear-3d-texture-atlas ctx em-tex w-half-b voxel-res)
+                                                                                                                                                          (WGPURender.wgpu-clear-3d-texture-atlas ctx gravity-tex w-half-b voxel-res)
+                                                                                                                                                          (Result.Success (WGPURenderer.init pipe ub sb csg-b real-bg dt lp [] u-data s-data csg-data voxel-tex light-tex interaction-tex voxel-samp [] true c-pipe p-pipe l-splat-pipe v-gpu-b v-half-b c-params-b l-scratch-b l-half-b l-params-b chunk-lookup-b noise-tex noise-samp p-bg (replicate 1728 &false) (replicate 1728 &0) jit-info-b @&format gui-pipe gui-ubo gui-bg font-tex font-samp i-scratch-b i-half-b i-params-b i-splat-pipe water-tex w-scratch-b w-half-b w-params-b w-splat-pipe gas-tex gas-scratch-b gas-half-b gas-params-b gas-splat-pipe em-tex unpack-pipe w-pack-bg gas-pack-bg l-pack-bg i-pack-bg @"" (null-bind-group) @"" (null-bind-group) terrain-color-tex volumetric-tex comp-pipe comp-bg gravity-tex)))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))))
 
 
   (defn clear! [ren]

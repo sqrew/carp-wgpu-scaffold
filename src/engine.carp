@@ -38,7 +38,9 @@
           light-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 1) FieldKernelStorage.sample FieldKernelStorage.update)
           hum-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 2) FieldKernelStorage.sample FieldKernelStorage.update)
           stress-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 4) FieldKernelStorage.sample FieldKernelStorage.update)
-          grav-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)
+          ph-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 5) FieldKernelStorage.sample FieldKernelStorage.update)
+          grav-field (Field.init (GravityFieldStorage.init db-ptr (null-ptr) (null-ptr)) GravityFieldStorage.sample GravityFieldStorage.update)
+          time-dilation-field (Field.init (FieldKernelStorage.init db-ptr (null-ptr) (null-ptr) 11) FieldKernelStorage.sample FieldKernelStorage.update)
           diag (Diagnostics.new @"/home/sqrew/Desktop/carp-wgpu-scaffold/diagnostics.log")]
       (do
         (Diagnostics.log! &diag (LogLevel.Info) "=== Engine Started / Diagnostics Initialized ===")
@@ -75,7 +77,9 @@
             light-field
             hum-field
             stress-field
+            ph-field
             grav-field
+            time-dilation-field
             r-db
             @(Settings.volumetric-sdf &cfg)
             @(Settings.chunk-loading-enabled &cfg)
@@ -164,29 +168,37 @@
           light-field (Engine.light-field e)
           hum-field (Engine.humidity-field e)
           stress-field (Engine.stress-field e)
-          grav-field (Engine.gravity-field e)]
-      (do
-        (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage pres-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage pres-field) grid-ptr)
-        (FieldKernelStorageVector.set-db-ptr! (Field.storage vel-field) db-ptr)
-        (FieldKernelStorageVector.set-entity-db-ptr! (Field.storage vel-field) entity-db-ptr)
-        (FieldKernelStorageVector.set-grid-ptr! (Field.storage vel-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage temp-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage temp-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage temp-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage light-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage light-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage light-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage hum-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage hum-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage stress-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage stress-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage stress-field) grid-ptr)
-        (FieldKernelStorage.set-db-ptr! (Field.storage grav-field) db-ptr)
-        (FieldKernelStorage.set-entity-db-ptr! (Field.storage grav-field) entity-db-ptr)
-        (FieldKernelStorage.set-grid-ptr! (Field.storage grav-field) grid-ptr))))
+           ph-field (Engine.ph-field e)
+           grav-field (Engine.gravity-field e)
+           td-field (Engine.time-dilation-field e)]
+       (do
+         (FieldKernelStorage.set-db-ptr! (Field.storage pres-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage pres-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage pres-field) grid-ptr)
+         (FieldKernelStorageVector.set-db-ptr! (Field.storage vel-field) db-ptr)
+         (FieldKernelStorageVector.set-entity-db-ptr! (Field.storage vel-field) entity-db-ptr)
+         (FieldKernelStorageVector.set-grid-ptr! (Field.storage vel-field) grid-ptr)
+         (FieldKernelStorage.set-db-ptr! (Field.storage temp-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage temp-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage temp-field) grid-ptr)
+         (FieldKernelStorage.set-db-ptr! (Field.storage light-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage light-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage light-field) grid-ptr)
+         (FieldKernelStorage.set-db-ptr! (Field.storage hum-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage hum-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage hum-field) grid-ptr)
+         (FieldKernelStorage.set-db-ptr! (Field.storage stress-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage stress-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage stress-field) grid-ptr)
+         (FieldKernelStorage.set-db-ptr! (Field.storage ph-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage ph-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage ph-field) grid-ptr)
+         (GravityFieldStorage.set-db-ptr! (Field.storage grav-field) db-ptr)
+         (GravityFieldStorage.set-entity-db-ptr! (Field.storage grav-field) entity-db-ptr)
+         (GravityFieldStorage.set-grid-ptr! (Field.storage grav-field) grid-ptr)
+         (FieldKernelStorage.set-db-ptr! (Field.storage td-field) db-ptr)
+         (FieldKernelStorage.set-entity-db-ptr! (Field.storage td-field) entity-db-ptr)
+         (FieldKernelStorage.set-grid-ptr! (Field.storage td-field) grid-ptr))))
 
   (defn spawn-crater-rubble! [e pos rad]
     (let [world (Engine.world e)
@@ -541,7 +553,7 @@
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.humidity-slot new-idx @(FieldInstance.humidity fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.pressure-slot new-idx @(FieldInstance.pressure fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.stress-slot new-idx @(FieldInstance.stress fi))
-                          (FieldDatabase.set-scalar-field! edb FieldDatabase.gravity-slot new-idx @(FieldInstance.gravity fi))
+                          (FieldDatabase.set-scalar-field! edb FieldDatabase.ph-slot new-idx @(FieldInstance.ph fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.density-slot new-idx @(FieldInstance.density fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.lifetime-slot new-idx @(FieldInstance.lifetime fi))
                           (FieldDatabase.set-scalar-field! edb FieldDatabase.charge-slot new-idx @(FieldInstance.charge fi))
@@ -586,7 +598,7 @@
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.humidity-slot idx @(FieldInstance.humidity fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.pressure-slot idx @(FieldInstance.pressure fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.stress-slot idx @(FieldInstance.stress fi))
-                  (FieldDatabase.set-scalar-field! edb FieldDatabase.gravity-slot idx @(FieldInstance.gravity fi))
+                  (FieldDatabase.set-scalar-field! edb FieldDatabase.ph-slot idx @(FieldInstance.ph fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.density-slot idx @(FieldInstance.density fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.lifetime-slot idx @(FieldInstance.lifetime fi))
                   (FieldDatabase.set-scalar-field! edb FieldDatabase.charge-slot idx @(FieldInstance.charge fi))
@@ -740,7 +752,7 @@
         (let [active-arr (EntityDatabase.active edb)
               len (Array.length active-arr)]
           (do
-            (for [id 0 len]
+            (for [id 0 (if (< len WGPURenderer.max-spheres) len WGPURenderer.max-spheres)]
               (if @(Array.unsafe-nth active-arr id)
                 (let [pos (Array.unsafe-nth (EntityDatabase.positions edb) id)
                       rot (Array.unsafe-nth (EntityDatabase.rotations edb) id)
@@ -758,7 +770,7 @@
                                                 (if (<= final-csg-idx -99) 3.0 0.0)))))))
                       _ (when (or (or (or (= instance-type 2.0) (= instance-type 4.0)) (= instance-type 5.0)) (= instance-type 6.0))
                           (IO.println &(str* "Active Liquid Bullet Packed: id=" (Int.str id) " type=" (Double.str instance-type) " pos=" (Vector3.str pos) " scale=" (Double.str rad-scale))))
-                      base (+ (/ WGPURenderer.header-size 4) (* id 28))]
+                      base (+ (/ WGPURenderer.header-size 4) (* id 32))]
                   (do
                     (set! max-active-id (+ id 1))
                     (Array.aset! u-data base (Double.to-float @(Vector3.x pos)))
@@ -778,14 +790,14 @@
                     (Array.aset! u-data (+ base 14) (Double.to-float @(Vector4.z &light-val)))
                     (Array.aset! u-data (+ base 15) (Double.to-float @(Vector4.w &light-val)))
                     (let [temp (FieldDatabase.get-entity-scalar edb FieldDatabase.temp-slot id)
-                          density (FieldDatabase.get-entity-scalar edb FieldDatabase.density-slot id)
+                          ph (FieldDatabase.get-entity-scalar edb FieldDatabase.ph-slot id)
                           pressure (FieldDatabase.get-entity-scalar edb FieldDatabase.pressure-slot id)
                           mat-id (Double.from-int shape-type)
                           charge (FieldDatabase.get-entity-scalar edb FieldDatabase.charge-slot id)
                           mag (FieldDatabase.get-field-vector edb FieldDatabase.magnetic-slot id)]
                       (do
                         (Array.aset! u-data (+ base 16) (Double.to-float temp))
-                        (Array.aset! u-data (+ base 17) (Double.to-float density))
+                        (Array.aset! u-data (+ base 17) (Double.to-float ph))
                         (Array.aset! u-data (+ base 18) (Double.to-float pressure))
                         (Array.aset! u-data (+ base 19) (Double.to-float mat-id))
                         (Array.aset! u-data (+ base 20) (Double.to-float @(Vector4.x &mag)))
@@ -797,9 +809,16 @@
                     (Array.aset! u-data (+ base 26) (Double.to-float (Double.from-int final-csg-idx)))
                     (let [vel-arr (Array.unsafe-nth (EntityDatabase.vector-fields edb) 0)
                           vel-ref (Array.unsafe-nth vel-arr id)
-                          speed (Vector3.mag vel-ref)]
-                      (Array.aset! u-data (+ base 27) (Double.to-float speed)))))
-              (let [base (+ (/ WGPURenderer.header-size 4) (* id 28))]
+                          speed (Vector3.mag vel-ref)
+                          grav (Array.unsafe-nth (EntityDatabase.gravities edb) id)
+                          td (FieldDatabase.get-entity-scalar edb FieldDatabase.time-dilation-slot id)]
+                      (do
+                        (Array.aset! u-data (+ base 27) (Double.to-float speed))
+                        (Array.aset! u-data (+ base 28) (Double.to-float @(Vector3.x grav)))
+                        (Array.aset! u-data (+ base 29) (Double.to-float @(Vector3.y grav)))
+                        (Array.aset! u-data (+ base 30) (Double.to-float @(Vector3.z grav)))
+                        (Array.aset! u-data (+ base 31) (Double.to-float td))))))
+              (let [base (+ (/ WGPURenderer.header-size 4) (* id 32))]
                 (do
                   (Array.aset! u-data base 0.0f)
                   (Array.aset! u-data (+ base 1) 0.0f)
@@ -1407,6 +1426,7 @@
                                             @(WGPURenderer.water-texture ren) 
                                             @(WGPURenderer.gas-texture ren) 
                                             @(WGPURenderer.em-texture ren) 
+                                            @(WGPURenderer.gravity-texture ren) 
                                             @(WGPURenderer.voxel-sampler ren) 
                                             @(WGPURenderer.chunk-lookup-buffer ren) 
                                             @(WGPURenderer.noise-texture ren) 

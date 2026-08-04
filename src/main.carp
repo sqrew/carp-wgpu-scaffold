@@ -599,13 +599,13 @@
                                   (Maybe.Nothing) ()))
                                 (Context.tooltip gui-ctx-ref "Change volumetric sphere radius or box bounds scale.")
                                 
-                                (let [curr-grav-val (Double.to-float (/ (+ @(FieldInstance.gravity &target-fi) 5.0) 10.0))]
-                                  (match (Context.slider gui-ctx-ref "grav_slider" curr-grav-val 0.0f 1.0f (copy "Gravity"))
+                                (let [curr-grav-val (Double.to-float (/ (+ @(Vector3.y (FieldInstance.gravity &target-fi)) 5.0) 10.0))]
+                                  (match (Context.slider gui-ctx-ref "grav_slider" curr-grav-val 0.0f 1.0f (copy "Gravity Y"))
                                     (Maybe.Just nv)
                                       (let [d-nv (Double.from-float nv)
                                             grav-val (- (* d-nv 10.0) 5.0)]
                                         (do
-                                          (FieldInstance.set-gravity! &target-fi grav-val)
+                                          (FieldInstance.set-gravity! &target-fi (Vector3.init 0.0 grav-val 0.0))
                                           (ECS.query world [ent3 (gs GravitySource)]
                                             (when (= (ECS.Entity.id &ent3) (handle-id &target-handle))
                                               (GravitySource.set-strength! gs grav-val)))
@@ -645,7 +645,29 @@
                                           (Engine.set-grid-dirty! eng-ref true)
                                           (Engine.set-voxel-dirty! eng-ref true)))
                                     (Maybe.Nothing) ()))
-                                (Context.tooltip gui-ctx-ref "Physical decay radius modifier of force/collision calculations.")))))))
+                                (Context.tooltip gui-ctx-ref "Physical decay radius modifier of force/collision calculations.")
+
+                                (let [curr-ph-val (Double.to-float (/ @(FieldInstance.ph &target-fi) 14.0))]
+                                  (match (Context.slider gui-ctx-ref "ph_slider" curr-ph-val 0.0f 1.0f (copy "pH Chemistry"))
+                                    (Maybe.Just nv)
+                                      (let [d-nv (Double.from-float nv)]
+                                        (do
+                                          (FieldInstance.set-ph! &target-fi (* d-nv 14.0))
+                                          (Engine.set-grid-dirty! eng-ref true)
+                                          (Engine.set-voxel-dirty! eng-ref true)))
+                                    (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "pH value (0-14) representing acidity/alkalinity for chemistry reactions.")
+
+                                (let [curr-td-val (Double.to-float (/ @(FieldInstance.time-dilation &target-fi) 5.0))]
+                                  (match (Context.slider gui-ctx-ref "td_slider" curr-td-val 0.0f 1.0f (copy "Time Dilation"))
+                                    (Maybe.Just nv)
+                                      (let [d-nv (Double.from-float nv)]
+                                        (do
+                                          (FieldInstance.set-time-dilation! &target-fi (* d-nv 5.0))
+                                          (Engine.set-grid-dirty! eng-ref true)
+                                          (Engine.set-voxel-dirty! eng-ref true)))
+                                    (Maybe.Nothing) ()))
+                                (Context.tooltip gui-ctx-ref "Local flow rate of time (e.g. 0.2x for slow-mo, 2.0x for fast-mo).")))))))
             ()
             )))
 

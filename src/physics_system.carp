@@ -103,8 +103,7 @@
 
   (defn apply-atmospheric-forces! [e world db edb grid vel-field gravity-field]
     (let [coeff -30.0
-          drag-coeff 0.15
-          gravity (Settings.gravity (Engine.settings e))]
+          drag-coeff 0.15]
       (ECS.query world [ent (rb RigidBody)]
         (let [pos (RigidBody.position rb)
               vel (Body.velocity (RigidBody.body rb))
@@ -114,8 +113,7 @@
               ind-vel (Field.sample vel-field pos)
               rel-vel (Vector3.sub &ind-vel vel)
               drag-force (Vector3.mul &rel-vel drag-coeff)
-              g-scale (Field.sample gravity-field pos)
-              local-gravity (Vector3.mul gravity g-scale)
+              local-gravity (Field.sample gravity-field pos)
               temp-sum (Vector3.add &local-gravity &p-force)
               total-force (let [tf (Vector3.add &temp-sum &drag-force)]
                             (PhysicsSystem.clamp-vector3 &tf 1000.0))]
@@ -145,8 +143,12 @@
         
         ;; 1. Step Bodies (Integrate forces and advance state)
         (Diagnostics.start-zone! diag "Phys: Forces & Integrator")
-        (ECS.query world [ent (rb RigidBody)]
-          (RigidBody.step-custom! rb fixed-dt fixed-dt))
+        (let [td-field (Engine.time-dilation-field e)]
+          (ECS.query world [ent (rb RigidBody)]
+            (let [pos (RigidBody.position rb)
+                  time-mult (Field.sample td-field pos)
+                  local-dt (* fixed-dt time-mult)]
+              (RigidBody.step-custom! rb local-dt local-dt))))
         (Diagnostics.end-zone! diag "Phys: Forces & Integrator")
  
         ;; 2. Rebuild Spatial Grid

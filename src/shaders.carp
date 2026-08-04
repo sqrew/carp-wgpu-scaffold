@@ -62,40 +62,46 @@
             (IO.println &(str* "Error reading carve.wgsl: " &err))
             @""))))
 
-  (defn light-splat-shader [voxel-res]
+  (defn light-splat-shader [limit voxel-res]
     (let [res-str (Int.str voxel-res)
+          limit-str (Int.str limit)
           total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
       (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/light_splat.wgsl")
         (Result.Success src)
           (let [s1 (replace-all &src "\\{\\{VOXEL_RES\\}\\}" &res-str)
-                s2 (replace-all &s1 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
-            s2)
+                s2 (replace-all &s1 "\\{\\{LIMIT\\}\\}" &limit-str)
+                s3 (replace-all &s2 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
+            s3)
         (Result.Error err)
           (do
             (IO.println &(str* "Error reading light_splat.wgsl: " &err))
             @""))))
 
-  (defn interaction-splat-shader [voxel-res]
+  (defn interaction-splat-shader [limit voxel-res]
     (let [res-str (Int.str voxel-res)
+          limit-str (Int.str limit)
           total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
       (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/interaction_splat.wgsl")
         (Result.Success src)
           (let [s1 (replace-all &src "\\{\\{VOXEL_RES\\}\\}" &res-str)
-                s2 (replace-all &s1 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
-            s2)
+                s2 (replace-all &s1 "\\{\\{LIMIT\\}\\}" &limit-str)
+                s3 (replace-all &s2 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
+            s3)
         (Result.Error err)
           (do
             (IO.println &(str* "Error reading interaction_splat.wgsl: " &err))
             @""))))
 
-  (defn water-splat-shader [voxel-res]
+  (defn water-splat-shader [limit voxel-res]
     (let [res-str (Int.str voxel-res)
+          limit-str (Int.str limit)
           total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
       (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/water_splat.wgsl")
         (Result.Success src)
           (let [s1 (replace-all &src "\\{\\{VOXEL_RES\\}\\}" &res-str)
-                s2 (replace-all &s1 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
-            s2)
+                s2 (replace-all &s1 "\\{\\{LIMIT\\}\\}" &limit-str)
+                s3 (replace-all &s2 "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)]
+            s3)
         (Result.Error err)
           (do
             (IO.println &(str* "Error reading water_splat.wgsl: " &err))

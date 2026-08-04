@@ -285,3 +285,75 @@
   (defn update [storage dt]
     ())
 )
+
+;; 6. Field Instance Kernel Vector Gravity Field Storage
+(deftype GravityFieldStorage [
+  db-ptr (Ptr ())
+  entity-db-ptr (Ptr ())
+  grid-ptr (Ptr (SpatialGrid Uint32))
+])
+
+(defmodule GravityFieldStorage
+  (use SpatialGrid)
+
+  (defn sample [storage pos]
+    (let [edb (EntityDatabase.voidptr->db-ref @(GravityFieldStorage.entity-db-ptr storage))
+          grid-p @(GravityFieldStorage.grid-ptr storage)
+          active (EntityDatabase.active edb)
+          positions (EntityDatabase.positions edb)
+          scales (EntityDatabase.scales edb)
+          gravities (EntityDatabase.gravities edb)
+          influences (EntityDatabase.influences edb)
+          h-to-idx (EntityDatabase.handle-to-index edb)
+          
+          sum-grav (Vector3.init 0.0 0.0 0.0)
+          sum-W 0.0
+          epsilon 0.01]
+      (do
+        (if (null? grid-p)
+          (let [len (Array.length active)]
+            (for [i 0 len]
+              (when @(Array.unsafe-nth active i)
+                (let [inst-pos (Array.unsafe-nth positions i)
+                      scale @(Array.unsafe-nth scales i)
+                      grav (Array.unsafe-nth gravities i)
+                      to-pos (Vector3.sub pos inst-pos)
+                      dist (Vector3.mag &to-pos)]
+                  (let [d (- dist scale)
+                        w-denom (+ (* d d) epsilon)
+                        influence @(Array.unsafe-nth influences i)
+                        w (/ influence w-denom)]
+                    (do
+                      (set! sum-grav (Vector3.add &sum-grav &(Vector3.mul grav w)))
+                      (set! sum-W (+ sum-W w))))))))
+          (let [grid (ptr->ref grid-p)
+                aabb (AABB.init (Vector3.sub pos &(Vector3.init 0.01 0.01 0.01))
+                                (Vector3.add pos &(Vector3.init 0.01 0.01 0.01)))
+                candidates (SpatialGrid.query-unique grid &aabb)
+                cand-len (Array.length &candidates)]
+            (for [c 0 cand-len]
+              (let [h-idx (the Int (Long.to-int (Uint32.to-long @(Array.unsafe-nth &candidates c))))
+                    i (if (< h-idx (Array.length h-to-idx))
+                          @(Array.unsafe-nth h-to-idx h-idx)
+                          -1)]
+                (when (>= i 0)
+                  (when @(Array.unsafe-nth active i)
+                    (let [inst-pos (Array.unsafe-nth positions i)
+                          scale @(Array.unsafe-nth scales i)
+                          grav (Array.unsafe-nth gravities i)
+                          to-pos (Vector3.sub pos inst-pos)
+                          dist (Vector3.mag &to-pos)]
+                      (let [d (- dist scale)
+                            w-denom (+ (* d d) epsilon)
+                            influence @(Array.unsafe-nth influences i)
+                            w (/ influence w-denom)]
+                        (do
+                          (set! sum-grav (Vector3.add &sum-grav &(Vector3.mul grav w)))
+                          (set! sum-W (+ sum-W w)))))))))))
+        (if (> sum-W 0.00001)
+          (Vector3.mul &sum-grav (/ 1.0 sum-W))
+          (Vector3.init 0.0 -9.81 0.0)))))
+
+  (defn update [storage dt]
+    ())
+)

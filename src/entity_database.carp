@@ -59,6 +59,7 @@
   spatial-grid (SpatialGrid Int)
   entity-fields (Array (Array Vector4))
   influences (Array Double)
+  gravities (Array (Vector3 Double))
 ])
 
 (defmodule EntityDatabase
@@ -82,6 +83,7 @@
   (sig set-position! (Fn [(Ref EntityDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
   (sig set-rotation! (Fn [(Ref EntityDatabase) (Ref (Handle ())) Quaternion] ()))
   (sig set-root-csg-index! (Fn [(Ref EntityDatabase) (Ref (Handle ())) Int] ()))
+  (sig set-gravity! (Fn [(Ref EntityDatabase) (Ref (Handle ())) (Vector3 Double)] ()))
   (sig rebuild-spatial-grid! (Fn [(Ref EntityDatabase)] ()))
 
   (defn ensure-capacity! [arr size default-val]
@@ -114,8 +116,9 @@
                (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
                (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))
                (the (Array Vector4) (replicate n &(Vector4.init 0.0 0.0 0.0 0.0)))]
-          inf (the (Array Double) (replicate n &1.0))]
-      (EntityDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 grid esc inf)))
+          inf (the (Array Double) (replicate n &1.0))
+          grav (the (Array (Vector3 Double)) (replicate n &(Vector3.init 0.0 -9.81 0.0)))]
+      (EntityDatabase.init act hnd st pm pos rot sc csg col vec-fields sdfs h-to-idx 4.0 (the (Array FieldEvent) []) 512 grid esc inf grav)))
 
   (defn get-index-by-handle [db handle]
     (let [h-idx (the Int (Long.to-int (Uint64.to-long (Handle.index handle))))]
@@ -160,6 +163,7 @@
             (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 9) (Vector4.init 0.0 0.0 0.0 0.0))
             (Array.push-back! (Array.unsafe-nth (EntityDatabase.entity-fields db) 10) (Vector4.init 0.0 0.0 0.0 0.0))
             (Array.push-back! (EntityDatabase.influences db) 1.0)
+            (Array.push-back! (EntityDatabase.gravities db) (Vector3.init 0.0 -9.81 0.0))
             (set! found-idx len)))
         (Array.aset! active-arr found-idx true)
         (Array.aset! handles-arr found-idx @handle)
@@ -192,6 +196,7 @@
             (for [f 0 (Array.length (EntityDatabase.vector-fields db))]
               (let [arr (Array.unsafe-nth (EntityDatabase.vector-fields db) f)]
                 (Array.aset! arr id (Vector3.init 0.0 0.0 0.0))))
+            (Array.aset! (EntityDatabase.gravities db) id (Vector3.init 0.0 -9.81 0.0))
             (Array.aset! (EntityDatabase.sdfs db) id (Maybe.Nothing))
             (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 0) id (Vector4.init 0.0 0.0 0.0 0.0))
             (Array.aset! (Array.unsafe-nth (EntityDatabase.entity-fields db) 1) id (Vector4.init 0.0 0.0 0.0 0.0))
@@ -228,6 +233,13 @@
       (when (>= id 0)
         (do
           (Array.aset! (Array.unsafe-nth (EntityDatabase.vector-fields db) 0) id val)
+          ()))))
+
+  (defn set-gravity! [db handle val]
+    (let [id (get-index-by-handle db handle)]
+      (when (>= id 0)
+        (do
+          (Array.aset! (EntityDatabase.gravities db) id val)
           ()))))
 
   (defn set-position! [db handle val]

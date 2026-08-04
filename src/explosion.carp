@@ -44,7 +44,9 @@
                                    0.5 
                                    charge 
                                    0.0 
-                                   (Vector3.init 0.0 0.0 0.0))]
+                                   (Vector3.init 0.0 0.0 0.0)
+                                   (Vector3.init 0.0 -9.81 0.0)
+                                   1.0)]
         (do
           (ECS.add-component! world &exp-ent rb)
           (ECS.add-component! world &exp-ent color)

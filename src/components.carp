@@ -80,7 +80,7 @@
   humidity Double
   pressure Double
   stress Double
-  gravity Double
+  ph Double
   influence Double
   velocity (Vector3 Double)
   density Double
@@ -88,9 +88,11 @@
   charge Double
   potential Double
   magnetic (Vector3 Double)
+  gravity (Vector3 Double)
+  time-dilation Double
 ])
 (defmodule FieldInstance
-  (defn zero [] (FieldInstance.init 0 (Vector4.init-zero) 1.0 -1 0.0 0.0 0.0 0.0 0.0 -999.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0)))
+  (defn zero [] (FieldInstance.init 0 (Vector4.init-zero) 1.0 -1 0.0 0.0 0.0 0.0 0.0 7.0 1.0 (Vector3.init 0.0 0.0 0.0) 1.0 1.0 0.0 0.0 (Vector3.init 0.0 0.0 0.0) (Vector3.init 0.0 -9.81 0.0) 1.0))
   (implements zero FieldInstance.zero)
 )
 (defprotocol (GPUFieldNode a)
