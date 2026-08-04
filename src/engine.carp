@@ -779,14 +779,14 @@
                     (Array.aset! u-data (+ base 15) (Double.to-float @(Vector4.w &light-val)))
                     (let [temp (FieldDatabase.get-entity-scalar edb FieldDatabase.temp-slot id)
                           density (FieldDatabase.get-entity-scalar edb FieldDatabase.density-slot id)
-                          stress (FieldDatabase.get-entity-scalar edb FieldDatabase.stress-slot id)
+                          pressure (FieldDatabase.get-entity-scalar edb FieldDatabase.pressure-slot id)
                           mat-id (Double.from-int shape-type)
                           charge (FieldDatabase.get-entity-scalar edb FieldDatabase.charge-slot id)
                           mag (FieldDatabase.get-field-vector edb FieldDatabase.magnetic-slot id)]
                       (do
                         (Array.aset! u-data (+ base 16) (Double.to-float temp))
                         (Array.aset! u-data (+ base 17) (Double.to-float density))
-                        (Array.aset! u-data (+ base 18) (Double.to-float stress))
+                        (Array.aset! u-data (+ base 18) (Double.to-float pressure))
                         (Array.aset! u-data (+ base 19) (Double.to-float mat-id))
                         (Array.aset! u-data (+ base 20) (Double.to-float @(Vector4.x &mag)))
                         (Array.aset! u-data (+ base 21) (Double.to-float @(Vector4.y &mag)))

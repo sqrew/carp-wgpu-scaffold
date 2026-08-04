@@ -214,12 +214,10 @@
                               (Volume.Ball sphere) (set! r @(Sphere.radius sphere))
                               _ ()))
                           r))
-                rad (* p-rad 1.2)
-                crater-data (CraterSpawnData.init @hit-p rad 0.0)
-                ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+                rad (* p-rad 1.2)]
             (do
               (IO.println &(str* "Laser hit at " &(Vector3.str hit-p) ", spawning crater of radius " &(Double.str rad)))
-              (Coordinator.dispatch! (Engine.coordinator e) ev)))
+              (Explosion.trigger! world (Engine.coordinator e) hit-p rad 150.0 50.0 0.0 1.2 true)))
           (IO.println "Laser missed!"))))
 
   (defn build-laser! [e]
@@ -267,12 +265,10 @@
                               (Volume.Ball sphere) (set! r @(Sphere.radius sphere))
                               _ ()))
                           r))
-                rad (* p-rad 1.5)
-                crater-data (CraterSpawnData.init @hit-p rad 2.0)
-                ev (EventKind.Game (GameEvent.SpawnCrater crater-data))]
+                rad (* p-rad 1.5)]
             (do
               (IO.println &(str* "Implosion hit at " &(Vector3.str hit-p) ", spawning implosion of radius " &(Double.str rad)))
-              (Coordinator.dispatch! (Engine.coordinator e) ev)))
+              (Explosion.trigger! world (Engine.coordinator e) hit-p rad -250.0 -100.0 0.0 1.5 true)))
           (IO.println "Implosion missed!"))))
   (defn spawn-water-bullet! [e]
     (let [current-time (Clock.total (Engine.clock e))]

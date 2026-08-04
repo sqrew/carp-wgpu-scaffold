@@ -44,6 +44,26 @@ if (voxel.x <= solid_thresh) {
         let flash = clamp(abs(potential) * 2.5, 0.0, 3.0);
         emitter = max(emitter, vec4<f32>(0.3 * flash, 0.75 * flash, 1.3 * flash, 1.0));
     }
+
+    // Inject analytical light emitters from active entities (explosions, bullets, sparks)
+    var analytical_light = vec4<f32>(0.0);
+    let max_inst = u32(round(u.suns[0].params.y));
+    for (var i = 0u; i < max_inst; i = i + 1u) {
+        let inst = u.instances[i];
+        let radius = inst.pos_scale.w;
+        if (radius <= 0.0) { continue; }
+        
+        let dist = length(voxel_pos - inst.pos_scale.xyz);
+        if (dist < radius) {
+            let weight = 1.0 - (dist / radius);
+            let intensity = inst.light_fields.x; // true analytical light intensity field
+            if (intensity > 0.05) {
+                let col = inst.color_csg.xyz;
+                analytical_light = max(analytical_light, vec4<f32>(col * intensity * weight * flicker, 1.0));
+            }
+        }
+    }
+    emitter = max(emitter, analytical_light);
     
     // 2. Light Propagation (Average or max of neighbors in the light grid)
     let l_left  = get_fluid(local_x - 1, local_y, local_z);
