@@ -866,7 +866,7 @@
                           dist-x (Int.abs (- cqx cam-qx))
                           dist-y (Int.abs (- cqy cam-qy))
                           dist-z (Int.abs (- cqz cam-qz))]
-                      (if (and (<= dist-x 16) (and (<= dist-y 24) (<= dist-z 16)))
+                      (if (and (<= dist-x 2) (and (<= dist-y 2) (<= dist-z 2)))
                           (Array.push-back! &keep @chunk)
                           (do
                             (when @(Chunk.modified chunk)
@@ -941,108 +941,90 @@
                   
                   ;; If no chunk is baking, check if we need to load a new missing chunk
                   (when @(Engine.need-chunk-scan e)
-                    (let [lookup-grid (the (Array Bool) (replicate 53361 &false))]
+                    (let [lookup-grid (the (Array Bool) (replicate 125 &false))]
                       (do
                         (for [i 0 num-chunks]
                           (let [c (Array.unsafe-nth chunks i)
-                                dx (+ @(Chunk.coord-x c) (- 16 cam-qx))
-                                dy (+ @(Chunk.coord-y c) (- 24 cam-qy))
-                                dz (+ @(Chunk.coord-z c) (- 16 cam-qz))]
-                            (when (and (and (>= dx 0) (< dx 33))
-                                       (and (and (>= dy 0) (< dy 49))
-                                             (and (>= dz 0) (< dz 33))))
-                              (Array.aset! &lookup-grid (+ dx (+ (* dy 33) (* (* dz 33) 49))) true))))
-                        (let [r 0]
+                                dx (+ @(Chunk.coord-x c) (- 2 cam-qx))
+                                dy (+ @(Chunk.coord-y c) (- 2 cam-qy))
+                                dz (+ @(Chunk.coord-z c) (- 2 cam-qz))]
+                            (when (and (and (>= dx 0) (< dx 5))
+                                       (and (and (>= dy 0) (< dy 5))
+                                            (and (>= dz 0) (< dz 5))))
+                              (Array.aset! &lookup-grid (+ dx (+ (* dy 5) (* dz 25))) true))))
+                        (let [loaded-any false]
                           (do
                             (Diagnostics.start-zone! (Engine.diagnostics e) "Chunks: Scan and Load")
-                        (while (and (< r 15) (not loaded-any))
-                          (let [limit-r (if (> r 8) 0 (if (> r 3) 1 3))
-                                offsets (if (= limit-r 0)
-                                            [0]
-                                            (if (= limit-r 1)
-                                                [0, 1, -1]
-                                                [0, 1, 2, 3, -1, -2, -3]))
-                                len-offsets (Array.length &offsets)
-                                dz (- 0 r)]
-                            (do
-                              (while (and (<= dz r) (not loaded-any))
-                                (let [dx (- 0 r)]
-                                  (do
-                                    (while (and (<= dx r) (not loaded-any))
-                                      (let [qx (+ cam-qx dx)
-                                            qz (+ cam-qz dz)
-                                            surface-qy (WGPURenderer.get-surface-qy qx qz)
-                                            i-dy 0]
-                                        (do
-                                          (while (and (< i-dy len-offsets) (not loaded-any))
-                                            (let [dy @(Array.unsafe-nth &offsets i-dy)
-                                                  yq (if (> r 3) (+ surface-qy dy) (+ cam-qy dy))
-                                                  chk-dx (+ qx (- 16 cam-qx))
-                                                  chk-dy (+ yq (- 24 cam-qy))
-                                                  chk-dz (+ qz (- 16 cam-qz))
-                                                  has-c (if (and (and (>= chk-dx 0) (< chk-dx 33))
-                                                                 (and (and (>= chk-dy 0) (< chk-dy 49))
-                                                                      (and (>= chk-dz 0) (< chk-dz 33))))
-                                                            @(Array.unsafe-nth &lookup-grid (+ chk-dx (+ (* chk-dy 33) (* (* chk-dz 33) 49))))
-                                                            false)]
-                                              (do
-                                                (when (and (and (and (>= chk-dx 0) (< chk-dx 33))
-                                                                (and (and (>= chk-dy 0) (< chk-dy 49))
-                                                                     (and (>= chk-dz 0) (< chk-dz 33))))
-                                                           (and (or (= (Int.abs dx) r)
-                                                                    (or (= (Int.abs dy) r)
-                                                                        (= (Int.abs dz) r)))
-                                                                (not has-c)))
-                                                  (let [slot (World.find-unused-atlas-slot world-data)]
-                                                    (do
-                                                      (when (< slot 0)
-                                                        (let [furthest-idx -1
-                                                              max-dist -1]
-                                                          (do
-                                                            (for [j 0 (Array.length (World.chunks world-data))]
-                                                              (let [chunk (Array.unsafe-nth (World.chunks world-data) j)
-                                                                    cqx @(Chunk.coord-x chunk)
-                                                                    cqy @(Chunk.coord-y chunk)
-                                                                    cqz @(Chunk.coord-z chunk)
-                                                                    dx (Int.abs (- cqx cam-qx))
-                                                                    dy (Int.abs (- cqy cam-qy))
-                                                                    dz (Int.abs (- cqz cam-qz))
-                                                                    dist (+ dx (+ dy dz))]
-                                                                (when (> dist max-dist)
-                                                                  (do
-                                                                    (set! max-dist dist)
-                                                                    (set! furthest-idx j)))))
-                                                            (when (/= furthest-idx -1)
-                                                              (let [evict-chunk (Array.unsafe-nth (World.chunks world-data) furthest-idx)
-                                                                    evict-slot @(Chunk.atlas-slot evict-chunk)]
+                            (for [r 0 3]
+                              (when (not loaded-any)
+                                (for [dz (- 0 r) (inc r)]
+                                  (for [dy (- 0 r) (inc r)]
+                                    (for [dx (- 0 r) (inc r)]
+                                      (when (and (not loaded-any)
+                                                 (or (= (Int.abs dx) r)
+                                                     (or (= (Int.abs dy) r)
+                                                         (= (Int.abs dz) r))))
+                                        (let [qx (+ cam-qx dx)
+                                              qy (+ cam-qy dy)
+                                              qz (+ cam-qz dz)
+                                              chk-dx (+ dx 2)
+                                              chk-dy (+ dy 2)
+                                              chk-dz (+ dz 2)]
+                                          (when (and (and (>= chk-dx 0) (< chk-dx 5))
+                                                     (and (and (>= chk-dy 0) (< chk-dy 5))
+                                                          (and (>= chk-dz 0) (< chk-dz 5))))
+                                            (let [has-c @(Array.unsafe-nth &lookup-grid (+ chk-dx (+ (* chk-dy 5) (* chk-dz 25))))]
+                                              (when (not has-c)
+                                                (let [slot (World.find-unused-atlas-slot world-data)]
+                                                  (do
+                                                    (when (< slot 0)
+                                                      (let [furthest-idx -1
+                                                            max-dist -1]
+                                                        (do
+                                                          (for [j 0 (Array.length (World.chunks world-data))]
+                                                            (let [chunk (Array.unsafe-nth (World.chunks world-data) j)
+                                                                  cqx @(Chunk.coord-x chunk)
+                                                                  cqy @(Chunk.coord-y chunk)
+                                                                  cqz @(Chunk.coord-z chunk)
+                                                                  dist-x (Int.abs (- cqx cam-qx))
+                                                                  dist-y (Int.abs (- cqy cam-qy))
+                                                                  dist-z (Int.abs (- cqz cam-qz))
+                                                                  dist (+ dist-x (+ dist-y dist-z))]
+                                                              (when (> dist max-dist)
                                                                 (do
-                                                                  (let [buf @(Chunk.gpu-buffer evict-chunk)]
-                                                                    (when (not (WGPU.buffer-null?- buf))
-                                                                      (WGPU.free-buffer buf)))
-                                                                  (let [bg @(Chunk.jit-bind-group evict-chunk)]
-                                                                    (when (not (WGPU.bindgroup-null?- bg))
-                                                                      (WGPU.free-bind-group bg)))
-                                                                  (let [pbg @(Chunk.pack-bind-group evict-chunk)]
-                                                                    (when (not (WGPU.bindgroup-null?- pbg))
-                                                                      (WGPU.free-bind-group pbg)))
-                                                                  (World.set-chunks! world-data (Array.remove-nth furthest-idx @(World.chunks world-data)))
-                                                                  (set! slot evict-slot)))))))
-                                                      (when (>= slot 0)
-                                                        (let [saved-list (World.modified-chunks world-data)
+                                                                  (set! max-dist dist)
+                                                                  (set! furthest-idx j)))))
+                                                          (when (/= furthest-idx -1)
+                                                            (let [evict-chunk (Array.unsafe-nth (World.chunks world-data) furthest-idx)
+                                                                  evict-slot @(Chunk.atlas-slot evict-chunk)]
+                                                              (do
+                                                                (let [buf @(Chunk.gpu-buffer evict-chunk)]
+                                                                  (when (not (WGPU.buffer-null?- buf))
+                                                                    (WGPU.free-buffer buf)))
+                                                                (let [bg @(Chunk.jit-bind-group evict-chunk)]
+                                                                  (when (not (WGPU.bindgroup-null?- bg))
+                                                                    (WGPU.free-bind-group bg)))
+                                                                (let [pbg @(Chunk.pack-bind-group evict-chunk)]
+                                                                  (when (not (WGPU.bindgroup-null?- pbg))
+                                                                    (WGPU.free-bind-group pbg)))
+                                                                (World.set-chunks! world-data (Array.remove-nth furthest-idx @(World.chunks world-data)))
+                                                                (set! slot evict-slot)))))))
+                                                    (when (>= slot 0)
+                                                      (let [saved-list (World.modified-chunks world-data)
                                                             len (Array.length saved-list)
                                                             found-idx -1]
                                                         (do
                                                           (for [i 0 len]
                                                             (let [c (Array.unsafe-nth saved-list i)]
                                                               (when (and (= @(Chunk.coord-x c) qx)
-                                                                         (and (= @(Chunk.coord-y c) yq)
+                                                                         (and (= @(Chunk.coord-y c) qy)
                                                                               (= @(Chunk.coord-z c) qz)))
                                                                 (set! found-idx i))))
                                                           (if (= found-idx -1)
                                                               (let [res @(World.voxel-resolution world-data)
                                                                     size-floats (* res (* res (* res 4)))
                                                                     voxel-data (the (Array Float) (replicate size-floats &1000.0f))
-                                                                    chunk (Chunk.init qx yq qz voxel-data slot false 0 (null-buffer) (null-bind-group) (null-bind-group) (null-buffer))]
+                                                                    chunk (Chunk.init qx qy qz voxel-data slot false 0 (null-buffer) (null-bind-group) (null-bind-group) (null-buffer))]
                                                                 (do
                                                                   (Array.push-back! (World.chunks world-data) chunk)))
                                                               (let [saved-chunk (Array.unsafe-nth saved-list found-idx)
@@ -1053,18 +1035,14 @@
                                                                   (Result.Error err) (IO.println &(format "Error creating buffer for loaded chunk: %s" &err))
                                                                   (Result.Success b)
                                                                     (let [_ (WGPU.write-floats ctx b &voxel-data)
-                                                                          chunk (Chunk.init qx yq qz voxel-data slot true res b (null-bind-group) (null-bind-group) (null-buffer))]
+                                                                          chunk (Chunk.init qx qy qz voxel-data slot true res b (null-bind-group) (null-bind-group) (null-buffer))]
                                                                       (do
                                                                         (VoxelBaker.pack-and-copy-chunk! ctx ren &chunk b slot res)
                                                                         (Array.push-back! (World.chunks world-data) chunk))))))
-                                                          (set! loaded-any true)))))))
-                                                (set! i-dy (inc i-dy)))))
-                                          (set! dx (inc dx)))))
-                                    (set! dz (inc dz)))))
-                              (set! r (inc r)))))
-                        (when (not loaded-any)
-                          (Engine.set-need-chunk-scan! e false))
-                        (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))))))
+                                                          (set! loaded-any true))))))))))))))))
+                            (when (not loaded-any)
+                              (Engine.set-need-chunk-scan! e false))
+                            (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Scan and Load")))))))))))))))
 
   (defn bake-voxels-if-dirty! [e ctx ren grid world world-data craters voxel-dirty]
     (when (or @(Engine.voxel-dirty e) voxel-dirty)
