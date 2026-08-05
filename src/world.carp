@@ -81,7 +81,8 @@
                 lt-idx (FieldDatabase.register-kernel! db FieldDatabase.lifetime-slot @"lifetime" 1.0 0.0 100.0 FieldDatabase.tick-lifetime!)
                 ch-idx (FieldDatabase.register-kernel! db FieldDatabase.charge-slot @"charge" 0.0 -10.0 10.0 FieldDatabase.noop-update)
                 po-idx (FieldDatabase.register-kernel! db FieldDatabase.potential-slot @"potential" 0.0 -100.0 100.0 FieldDatabase.noop-update)
-                mg-idx (FieldDatabase.register-kernel! db FieldDatabase.magnetic-slot @"magnetic" 0.0 -50.0 50.0 FieldDatabase.noop-update)]
+                mg-idx (FieldDatabase.register-kernel! db FieldDatabase.magnetic-slot @"magnetic" 0.0 -50.0 50.0 FieldDatabase.noop-update)
+                td-idx (FieldDatabase.register-kernel! db FieldDatabase.time-dilation-slot @"time-dilation" 1.0 0.0 10.0 FieldDatabase.noop-update)]
             world)))))
 
   (defn init-gpu-buffers! [ctx world-data]

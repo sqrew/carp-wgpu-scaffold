@@ -561,6 +561,8 @@
                           (let [m-val @(FieldInstance.magnetic fi)
                                 m-vec (Vector4.init @(Vector3.x &m-val) @(Vector3.y &m-val) @(Vector3.z &m-val) 0.0)]
                             (FieldDatabase.set-field-vector! edb FieldDatabase.magnetic-slot new-idx &m-vec))
+                          (EntityDatabase.set-gravity! edb h @(FieldInstance.gravity fi))
+                          (FieldDatabase.set-scalar-field! edb FieldDatabase.time-dilation-slot new-idx @(FieldInstance.time-dilation fi))
                           ())))))
               ;; Update
               (let [idx db-idx]
@@ -606,6 +608,8 @@
                   (let [m-val @(FieldInstance.magnetic fi)
                         m-vec (Vector4.init @(Vector3.x &m-val) @(Vector3.y &m-val) @(Vector3.z &m-val) 0.0)]
                     (FieldDatabase.set-field-vector! edb FieldDatabase.magnetic-slot idx &m-vec))
+                  (EntityDatabase.set-gravity! edb h @(FieldInstance.gravity fi))
+                  (FieldDatabase.set-scalar-field! edb FieldDatabase.time-dilation-slot idx @(FieldInstance.time-dilation fi))
                   (Array.aset! (EntityDatabase.influences edb) idx @(FieldInstance.influence fi))
                   (EntityDatabase.set-root-csg-index! edb h @(FieldInstance.csg-index fi)))))))))
 
