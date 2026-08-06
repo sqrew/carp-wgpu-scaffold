@@ -637,7 +637,7 @@ cell.x = cell.x + dummy_gas.x * 1e-10;
     
 }
 {
-  let instance = instances[5];
+  let instance = instances[2];
 
       let to_node = instance.pos_scale.xyz - voxel_pos;
       let dist = length(to_node);

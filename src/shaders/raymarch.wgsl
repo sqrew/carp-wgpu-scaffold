@@ -2424,8 +2424,8 @@ struct PointInstance {
                 color = mix(color, oil_col, clamp(max_oil_sampled * 2.8, 0.0, 0.96));
             }
             if (max_water_sampled > 0.001) {
-                let water_col = mix(vec3<f32>(0.01, 0.20, 0.50), vec3<f32>(0.05, 0.60, 0.85), clamp(max_water_sampled, 0.0, 1.0));
-                color = mix(color, water_col, clamp(max_water_sampled * 2.5, 0.0, 0.85));
+                let water_col = mix(vec3<f32>(0.01, 0.20, 0.50), vec3<f32>(0.05, 0.60, 0.85), clamp(pow(max_water_sampled, 0.4), 0.0, 1.0));
+                color = mix(color, water_col, clamp(pow(max_water_sampled, 0.5) * 1.8, 0.0, 0.85));
             }
             let dither_noise = fract(sin(dot(frag_in.uv + vec2<f32>(u.time), vec2<f32>(12.9898, 78.233))) * 43758.5453) - 0.5;
             color += vec3<f32>(dither_noise) * (1.0 / 255.0);
