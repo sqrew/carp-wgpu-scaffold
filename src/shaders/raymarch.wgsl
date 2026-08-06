@@ -65,6 +65,7 @@ struct PointInstance {
       @group(0) @binding(11) var gas_texture: texture_3d<f32>;
       @group(0) @binding(12) var em_texture: texture_3d<f32>;
       @group(0) @binding(13) var gravity_texture: texture_3d<f32>;
+      @group(0) @binding(15) var voxel_baked_values_texture: texture_3d<f32>;
 
       var<private> fractal_trap: f32 = 0.0;
 
@@ -2427,6 +2428,7 @@ struct PointInstance {
                                                          textureDimensions(interaction_texture) +
                                                          textureDimensions(water_texture) +
                                                          textureDimensions(gas_texture) +
-                                                         textureDimensions(em_texture)).x) * 0.0f);
+                                                         textureDimensions(em_texture) +
+                                                         textureDimensions(voxel_baked_values_texture)).x) * 0.0f);
       }
     
