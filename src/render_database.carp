@@ -17,6 +17,7 @@
 
 (deftype RenderDatabase [
   u-data (Array Float)
+  instances-data (Array Float)
   s-data (Array Float)
   csg-data (Array Float)
   lookup-data (Array Int)
@@ -31,22 +32,24 @@
   (use Array)
 
   (defn create [grid-ref max-ids]
-    (let [max-spheres 256
+    (let [max-spheres 1024
           header-size 624
           sphere-data-size 128
           max-csg-nodes 1024
           csg-node-size 64
-          u-size (+ header-size (* max-spheres sphere-data-size))
+          u-size header-size
+          instances-size (* max-spheres sphere-data-size)
           cols @(SpatialGrid.cols grid-ref)
           rows @(SpatialGrid.rows grid-ref)
           layers @(SpatialGrid.layers grid-ref)
           s-size (* (* cols (* rows layers)) (+ max-ids 4))
           csg-size (* max-csg-nodes csg-node-size)
           u-arr (the (Array Float) (replicate (/ u-size 4) &0.0f))
+          instances-arr (the (Array Float) (replicate (/ instances-size 4) &0.0f))
           s-arr (the (Array Float) (replicate s-size &0.0f))
           csg-arr (the (Array Float) (replicate (/ csg-size 4) &0.0f))
           lookup-arr (the (Array Int) (replicate 33284 &0))
           geom-map-arr (the (Array Int) (replicate 2048 &-1))
           line-cmds (the (Array RenderCommand) [])]
-      (RenderDatabase.init u-arr s-arr csg-arr lookup-arr geom-map-arr line-cmds true true true)))
+      (RenderDatabase.init u-arr instances-arr s-arr csg-arr lookup-arr geom-map-arr line-cmds true true true)))
 )

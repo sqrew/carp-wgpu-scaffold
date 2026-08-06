@@ -37,9 +37,9 @@ struct PointInstance {
           cloud_params1: vec4<f32>,
           cloud_params2: vec4<f32>,
           misc_params: vec4<f32>,
-          suns: array<SunData, 8>,
-          instances: array<PointInstance, {{LIMIT}}>
+          suns: array<SunData, 8>
       }
+      @group(0) @binding(14) var<storage, read> instances: array<PointInstance>;
       struct CsgNode {
           info: vec4<f32>,
           pos: vec4<f32>,
@@ -872,7 +872,7 @@ struct PointInstance {
                 for(var i = 0; i < count; i = i + 1) {
                     let s_idx = i32(round(cell.ids[i]));
                     if (s_idx >= 0 && s_idx < 1024) {
-                      let s_data = u.instances[s_idx];
+                      let s_data = instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
                         let csg_root_idx = i32(round(s_data.color_csg.w));
@@ -947,7 +947,7 @@ struct PointInstance {
                 for(var i = 0; i < count; i = i + 1) {
                     let s_idx = i32(round(cell.ids[i]));
                     if (s_idx >= 0 && s_idx < 1024) {
-                      let s_data = u.instances[s_idx];
+                      let s_data = instances[s_idx];
                       let raw_w = s_data.pos_scale.w;
                       if (raw_w != 0.0) {
                         if (s_data.light_fields.x > 0.0) { continue; } // Ignore explosion colors in default fog/fluid
@@ -1261,7 +1261,7 @@ struct PointInstance {
       }
 
         fn getInstanceDist(p: vec3<f32>, s_idx: i32) -> f32 {
-            let s_data = u.instances[s_idx];
+            let s_data = instances[s_idx];
             let raw_w = s_data.pos_scale.w;
             let local_p = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
            let inst_type = i32(round(s_data.shape_info.y));
@@ -1348,7 +1348,7 @@ struct PointInstance {
                   for(var i = 0; i < count; i = i + 1) {
                       let s_idx = i32(round(cell.ids[i]));
                       if (s_idx >= 0 && s_idx < 1024) {
-                        let s_data = u.instances[s_idx];
+                        let s_data = instances[s_idx];
                         let raw_w = s_data.pos_scale.w;
                         if (raw_w != 0.0 && s_data.light_fields.w != 0.0) {
                           let dist_to_center = length(p - s_data.pos_scale.xyz);
@@ -1368,7 +1368,7 @@ struct PointInstance {
                   for(var i = 0; i < count; i = i + 1) {
                       let s_idx = i32(round(cell.ids[i]));
                       if (s_idx >= 0 && s_idx < 1024) {
-                        let s_data = u.instances[s_idx];
+                        let s_data = instances[s_idx];
                         let raw_w = s_data.pos_scale.w;
                         if (raw_w != 0.0) {
                           var local_dist = 10000.0;
@@ -1691,7 +1691,7 @@ struct PointInstance {
             // Apply gravitational lensing from black hole
             let max_instances = u32(round(u.suns[0].params.y));
             for(var i = 0u; i < max_instances; i = i + 1u) {
-                let s_data = u.instances[i];
+                let s_data = instances[i];
                 if (s_data.pos_scale.w != 0.0 && i32(round(s_data.shape_info.y)) == 1) {
                     let to_singularity = s_data.pos_scale.xyz - ro;
                     let projection = dot(to_singularity, rd);
@@ -1791,7 +1791,7 @@ struct PointInstance {
                 var exp_n_col = 0.0;
                 if (hitId != -1.0) {
                     let s_idx = i32(hitId);
-                    let s_data = u.instances[s_idx];
+                    let s_data = instances[s_idx];
                     let raw_w = s_data.pos_scale.w;
                     let shape_type = u32(round(s_data.shape_info.x));
                     let inst_type = i32(round(s_data.shape_info.y));
@@ -1803,7 +1803,7 @@ struct PointInstance {
 
                 if (is_sphere) {
                      let s_idx = i32(hitId);
-                     let s_data = u.instances[s_idx];
+                     let s_data = instances[s_idx];
                      normal = normalize(p - s_data.pos_scale.xyz);
                  } else if (hitId != -1.0) {
                      let s_idx = i32(hitId);
@@ -2103,7 +2103,7 @@ struct PointInstance {
 
                 if (hitId != -1.0) {
                     let s_idx = i32(hitId);
-                    let s_data = u.instances[s_idx];
+                    let s_data = instances[s_idx];
                     let inst_type = i32(round(s_data.shape_info.y));
                     let lp = toLocalSpace(p, s_data.pos_scale.xyz, s_data.rot);
                     if (inst_type == 2) {

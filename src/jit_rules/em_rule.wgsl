@@ -25,7 +25,7 @@ var local_current = vec3<f32>(0.0);
 var grounded = false;
 
 for (var i = 0u; i < 512u; i = i + 1u) {
-    let inst = u.instances[i];
+    let inst = instances[i];
     var radius = inst.pos_scale.w;
     if (radius <= 0.0) { continue; }
     

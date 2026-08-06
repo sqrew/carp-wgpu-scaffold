@@ -49,7 +49,7 @@ if (voxel.x <= solid_thresh) {
     var analytical_light = vec4<f32>(0.0);
     let max_inst = u32(round(u.suns[0].params.y));
     for (var i = 0u; i < max_inst; i = i + 1u) {
-        let inst = u.instances[i];
+        let inst = instances[i];
         let radius = inst.pos_scale.w;
         if (radius <= 0.0) { continue; }
         

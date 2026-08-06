@@ -15,32 +15,10 @@ struct SunData {
     params: vec4<f32>,
 }
 
-struct Uniforms {
-    time: f32,
-    width: f32,
-    height: f32,
-    cell_size: f32,
-    cam_pos: vec4<f32>,
-    cam_dir: vec4<f32>,
-    cam_right: vec4<f32>,
-    cam_up: vec4<f32>,
-    bg_color: vec4<f32>,
-    grid_dims: vec4<f32>,
-    grid_origin: vec4<f32>,
-    shadow_ao_quality: vec4<f32>,
-    terrain_params1: vec4<f32>,
-    terrain_params2: vec4<f32>,
-    terrain_params3: vec4<f32>,
-    cloud_params1: vec4<f32>,
-    cloud_params2: vec4<f32>,
-    misc_params: vec4<f32>,
-    suns: array<SunData, 8>,
-    instances: array<PointInstance, {{LIMIT}}>,
-}
+@group(0) @binding(2) var<storage, read> instances: array<PointInstance>;
 
 @group(0) @binding(0) var<storage, read_write> interaction_gpu_buffer: array<vec4<f32>>;
-@group(0) @binding(1) var<uniform>             u: Uniforms;
-@group(0) @binding(2) var<storage, read>       params: array<f32>;
+@group(0) @binding(1) var<storage, read>       params: array<f32>;
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -67,7 +45,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     var total_weight = 0.0;
 
     for (var i = 0u; i < num_instances; i = i + 1u) {
-        let inst = u.instances[i];
+        let inst = instances[i];
         let radius = inst.pos_scale.w;
         if (radius <= 0.0) { continue; }
 

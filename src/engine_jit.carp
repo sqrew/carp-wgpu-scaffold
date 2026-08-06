@@ -136,8 +136,7 @@
                 cloud_params1: vec4<f32>,
                 cloud_params2: vec4<f32>,
                 misc_params: vec4<f32>,
-                suns: array<SunData, 8>,
-                instances: array<PointInstance, " (Int.str WGPURenderer.max-spheres) ">,
+                suns: array<SunData, 8>
             }
 
             struct ChunkLookup {
@@ -156,6 +155,7 @@
             @group(0) @binding(3) var<storage, read> chunk_info: ChunkInfo;
             @group(0) @binding(4) var<storage, read> chunk_lookup: ChunkLookup;
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
+            @group(0) @binding(10) var<storage, read> instances: array<PointInstance>;
             @group(0) @binding(6) var water_texture: texture_3d<f32>;
             @group(0) @binding(7) var gas_texture: texture_3d<f32>;
             @group(0) @binding(8) var em_texture: texture_3d<f32>;
@@ -206,7 +206,7 @@
                 let epsilon = 0.01;
                 
                 for (var i = 0u; i < " (Int.str WGPURenderer.max-spheres) "u; i = i + 1u) {
-                    let inst = u.instances[i];
+                    let inst = instances[i];
                     let rad = inst.pos_scale.w;
                     if (rad > 0.0) {
                         let inst_pos = inst.pos_scale.xyz;
@@ -341,7 +341,7 @@
         (ECS.query world [ent (gs GravitySource)]
           (let [inst-idx (EntityDatabase.get-index-by-handle (Engine.entity-db e) (ECS.Entity.handle &ent))]
             (when (>= inst-idx 0)
-              (set! injection-accum (str* injection-accum "\n{\n  let instance = u.instances[" (Int.str inst-idx) "];\n" (GravitySource.wgsl-interaction-snippet) "\n}")))))
+              (set! injection-accum (str* injection-accum "\n{\n  let instance = instances[" (Int.str inst-idx) "];\n" (GravitySource.wgsl-interaction-snippet) "\n}")))))
         (if (String.empty? &injection-accum)
             @""
             (str* (read-materials-shader) header-block injection-accum footer-block)))))
@@ -398,8 +398,7 @@
                 cloud_params1: vec4<f32>,
                 cloud_params2: vec4<f32>,
                 misc_params: vec4<f32>,
-                suns: array<SunData, 8>,
-                instances: array<PointInstance, " (Int.str WGPURenderer.max-spheres) ">,
+                suns: array<SunData, 8>
             }
 
             struct ChunkLookup {
@@ -418,6 +417,7 @@
             @group(0) @binding(3) var<storage, read> chunk_info: ChunkInfo;
             @group(0) @binding(4) var<storage, read> chunk_lookup: ChunkLookup;
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
+            @group(0) @binding(10) var<storage, read> instances: array<PointInstance>;
             const GRID_RES: i32 = " @&res-str "i;
 "
             (if (or (= var-name &@"em") (or (= var-name &@"fields") (or (= var-name &@"water") (or (= var-name &@"gas") (= var-name &@"light")))))
@@ -545,7 +545,7 @@
                 "                let epsilon = 0.01;\n"
                 "                \n"
                 "                for (var i = 0u; i < " (Int.str WGPURenderer.max-spheres) "u; i = i + 1u) {\n"
-                "                    let inst = u.instances[i];\n"
+                "                    let inst = instances[i];\n"
                 "                    let rad = inst.pos_scale.w;\n"
                 "                    if (rad > 0.0) {\n"
                 "                        let inst_pos = inst.pos_scale.xyz;\n"
@@ -828,7 +828,8 @@
                                              @(WGPURenderer.voxel-sampler ren)
                                              @(WGPURenderer.chunk-lookup-buffer ren)
                                              @(WGPURenderer.noise-texture ren)
-                                             @(WGPURenderer.noise-sampler ren))]
+                                             @(WGPURenderer.noise-sampler ren)
+                                             @(WGPURenderer.instances-buffer ren))]
                             (match new-bg-res
                               (Result.Success new-bg)
                                 (do
@@ -971,7 +972,8 @@
                                                            @(WGPURenderer.water-texture ren)
                                                            @(WGPURenderer.gas-texture ren)
                                                            @(WGPURenderer.em-texture ren)
-                                                           @(WGPURenderer.gravity-texture ren))
+                                                           @(WGPURenderer.gravity-texture ren)
+                                                           @(WGPURenderer.instances-buffer ren))
                                                     (Result.Error err)
                                                       (do
                                                         (IO.println &(str* "JIT Bind Group error: " &err))
