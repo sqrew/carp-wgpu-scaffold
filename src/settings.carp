@@ -135,6 +135,6 @@
                   cfg))))
         (Result.Error _)
           (let [default-content @"width=1280\nheight=720\nshadow_quality=2\nao_quality=2\nvolumetric_sdf=false\nshow_debug_lines=true\nchunk_loading_enabled=true\nfixed_dt=0.00833\nphysics_iterations=8\ngravity_y=-9.81\nvoxel_resolution=64\nstep_density_multiplier=1.25\n"
-                _ (IO.write-file filepath &default-content)]
+                _ (IO.write-file &default-content filepath)]
             cfg))))
 )

@@ -13,6 +13,11 @@ let solid_thresh = u.terrain_params3.z;
 if (self_voxel.x <= solid_thresh) {
     gas = vec4<f32>(0.0);
 } else {
+    let baked_vals = get_baked_values(local_x, local_y, local_z);
+    let slope = baked_vals.zw;
+    let gas_bias_x = -slope.x * 0.15;
+    let gas_bias_z = -slope.y * 0.15;
+
     // --- Lightning Potential Shockwave Push ---
     let pot_self  = abs(get_em(local_x, local_y, local_z).w);
     let pot_left  = abs(get_em(local_x - 1, local_y, local_z).w);
@@ -133,10 +138,10 @@ if (self_voxel.x <= solid_thresh) {
     var s_flow_front = 0.0;
     // Extremely low horizontal spreading (reduced to 0.02) to keep the steam column concentrated
     let s_spread = min(0.20, 0.02 * flow_speed);
-    if (!sol_left)  { s_flow_left  = (gas.x - g_left_v.x)  * s_spread; }
-    if (!sol_right) { s_flow_right = (gas.x - g_right_v.x) * s_spread; }
-    if (!sol_back)  { s_flow_back  = (gas.x - g_back_v.x)  * s_spread; }
-    if (!sol_front) { s_flow_front = (gas.x - g_front_v.x) * s_spread; }
+    if (!sol_left)  { s_flow_left  = (gas.x - g_left_v.x)  * s_spread - gas_bias_x * gas.x; }
+    if (!sol_right) { s_flow_right = (gas.x - g_right_v.x) * s_spread + gas_bias_x * gas.x; }
+    if (!sol_back)  { s_flow_back  = (gas.x - g_back_v.x)  * s_spread - gas_bias_z * gas.x; }
+    if (!sol_front) { s_flow_front = (gas.x - g_front_v.x) * s_spread + gas_bias_z * gas.x; }
     new_steam -= (s_flow_left + s_flow_right + s_flow_back + s_flow_front);
     if (new_steam < 0.001) { new_steam = 0.0; }
 
@@ -158,10 +163,10 @@ if (self_voxel.x <= solid_thresh) {
     var sm_flow_back  = 0.0;
     var sm_flow_front = 0.0;
     let sm_spread = min(0.20, 0.18 * flow_speed); // smoke spreads wider horizontally
-    if (!sol_left)  { sm_flow_left  = (gas.y - g_left_v.y)  * sm_spread; }
-    if (!sol_right) { sm_flow_right = (gas.y - g_right_v.y) * sm_spread; }
-    if (!sol_back)  { sm_flow_back  = (gas.y - g_back_v.y)  * sm_spread; }
-    if (!sol_front) { sm_flow_front = (gas.y - g_front_v.y) * sm_spread; }
+    if (!sol_left)  { sm_flow_left  = (gas.y - g_left_v.y)  * sm_spread - gas_bias_x * gas.y; }
+    if (!sol_right) { sm_flow_right = (gas.y - g_right_v.y) * sm_spread + gas_bias_x * gas.y; }
+    if (!sol_back)  { sm_flow_back  = (gas.y - g_back_v.y)  * sm_spread - gas_bias_z * gas.y; }
+    if (!sol_front) { sm_flow_front = (gas.y - g_front_v.y) * sm_spread + gas_bias_z * gas.y; }
     new_smoke -= (sm_flow_left + sm_flow_right + sm_flow_back + sm_flow_front);
     if (new_smoke < 0.001) { new_smoke = 0.0; }
 
@@ -183,10 +188,10 @@ if (self_voxel.x <= solid_thresh) {
     var f_flow_back  = 0.0;
     var f_flow_front = 0.0;
     let f_spread = min(0.20, 0.10 * flow_speed);
-    if (!sol_left)  { f_flow_left  = (gas.z - g_left_v.z)  * f_spread; }
-    if (!sol_right) { f_flow_right = (gas.z - g_right_v.z) * f_spread; }
-    if (!sol_back)  { f_flow_back  = (gas.z - g_back_v.z)  * f_spread; }
-    if (!sol_front) { f_flow_front = (gas.z - g_front_v.z) * f_spread; }
+    if (!sol_left)  { f_flow_left  = (gas.z - g_left_v.z)  * f_spread - gas_bias_x * gas.z; }
+    if (!sol_right) { f_flow_right = (gas.z - g_right_v.z) * f_spread + gas_bias_x * gas.z; }
+    if (!sol_back)  { f_flow_back  = (gas.z - g_back_v.z)  * f_spread - gas_bias_z * gas.z; }
+    if (!sol_front) { f_flow_front = (gas.z - g_front_v.z) * f_spread + gas_bias_z * gas.z; }
     new_fog -= (f_flow_left + f_flow_right + f_flow_back + f_flow_front);
     if (new_fog < 0.001) { new_fog = 0.0; }
 

@@ -12,7 +12,7 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let dest_idx = x + y * 64u + z * 2048u;
 
     let val = voxel_gpu_buffer[idx];
-    let p1 = pack2x16float(val.xy);
+    let p1 = pack4x8unorm(val);
 
     voxel_half_buffer[dest_idx] = p1;
 }

@@ -237,7 +237,12 @@ struct PointInstance {
               let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
               
               let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
-              return textureLoad(voxel_texture, atlas_coord, 0);
+              let val = textureLoad(voxel_texture, atlas_coord, 0);
+              if (only_dist) {
+                  return vec4<f32>(val.xy, 1.0, 1.0);
+              }
+              let baked = textureLoad(voxel_baked_values_texture, atlas_coord, 0);
+              return vec4<f32>(val.xy, baked.xy);
           } else {
               let px = (f32(gx) + 0.5) * u.cell_size;
               let py = (f32(gy) + 0.5) * u.cell_size;
@@ -334,6 +339,14 @@ struct PointInstance {
                 let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + closest_lx, (slot_y * {{VOXEL_RES}}i) + closest_ly, (slot_z * {{VOXEL_RES}}i) + closest_lz);
                 let raw_val = textureLoad(voxel_texture, atlas_coord, 0);
                 best_mat = raw_val.g;
+                if (!only_dist) {
+                    let baked_val = textureSampleLevel(voxel_baked_values_texture, voxel_sampler, sample_coords, 0.0);
+                    tex_val.z = baked_val.r;
+                    tex_val.w = baked_val.g;
+                } else {
+                    tex_val.z = 1.0;
+                    tex_val.w = 1.0;
+                }
             } else {
                v0 = getVoxelAt(c0.x,     c0.y,     c0.z,     only_dist);
                v1 = getVoxelAt(c0.x + 1, c0.y,     c0.z,     only_dist);

@@ -324,12 +324,13 @@
                         (Array.aset! voxel-data (+ idx 2) 0.0f)
                         (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))))
 
-  (deftemplate compute-chunk-lighting-c! (Fn [(Ref (Array Float)) Int] ())
-    "void $NAME(Array* voxel_data, int res)"
+  (deftemplate compute-chunk-lighting-c! (Fn [(Ref (Array Float)) (Ref (Array Int)) Int] ())
+    "void $NAME(Array* voxel_data, Array* baked_data, int res)"
     "$DECL {
-        if (!voxel_data || !voxel_data->data) return;
+        if (!voxel_data || !voxel_data->data || !baked_data || !baked_data->data) return;
         int res_sq = res * res;
         float* data = voxel_data->data;
+        int* baked = (int*)baked_data->data;
         for (int z = 0; z < res; z++) {
             int z_offset = z * res_sq;
             for (int y = 0; y < res; y++) {
@@ -360,21 +361,61 @@
                     
                     float shadow_val = solid_u ? 0.2f : 1.0f;
                     
-                    data[idx + 2] = shadow_val;
-                    data[idx + 3] = ao_val;
+                    // Horizontal slope calculation from SDF gradient
+                    float sdf_l = (x - 1 >= 0)   ? data[((x - 1) + zy_offset) * 4] : d;
+                    float sdf_r = (x + 1 < res)  ? data[((x + 1) + zy_offset) * 4] : d;
+                    float sdf_b = (z - 1 >= 0)   ? data[(x + y_offset + (z - 1) * res_sq) * 4] : d;
+                    float sdf_f = (z + 1 < res)  ? data[(x + y_offset + (z + 1) * res_sq) * 4] : d;
+                    
+                    float dx = sdf_r - sdf_l;
+                    float dz = sdf_f - sdf_b;
+                    float len = sqrtf(dx * dx + dz * dz);
+                    float slope_x = 0.0f;
+                    float slope_z = 0.0f;
+                    if (len > 0.0001f) {
+                        slope_x = dx / len;
+                        slope_z = dz / len;
+                    }
+                    
+                    float norm_slope_x = slope_x * 0.5f + 0.5f;
+                    float norm_slope_z = slope_z * 0.5f + 0.5f;
+                    
+                    // Pack [shadow, AO, slope_x, slope_z] into 4x u8 bytes
+                    unsigned char r_val = (unsigned char)(shadow_val * 255.0f);
+                    unsigned char g_val = (unsigned char)(ao_val * 255.0f);
+                    unsigned char b_val = (unsigned char)(norm_slope_x * 255.0f);
+                    unsigned char a_val = (unsigned char)(norm_slope_z * 255.0f);
+                    
+                    int packed = r_val | (g_val << 8) | (b_val << 16) | (a_val << 24);
+                    baked[x + zy_offset] = packed;
+                    
+                    // Clear channels z and w for the main voxel SDF / material ID texture
+                    data[idx + 2] = 0.0f;
+                    data[idx + 3] = 0.0f;
                 }
             }
         }
     }")
 
-  (defn compute-chunk-lighting! [chunk res]
-    (compute-chunk-lighting-c! (Chunk.voxel-data chunk) res))
+  (defn compute-chunk-lighting! [chunk baked-values res]
+    (compute-chunk-lighting-c! (Chunk.voxel-data chunk) baked-values res))
 
   (defn bake-chunk! [ctx ren chunk world-data static-world-sdf]
-    (let [res @(World.voxel-resolution world-data)]
+    (let [res @(World.voxel-resolution world-data)
+          baked-values (the (Array Int) (replicate (* res (* res res)) &0))
+          slot @(Chunk.atlas-slot chunk)
+          slots-per-dim (/ 384 res)
+          slots-per-dim-sq (* slots-per-dim slots-per-dim)
+          slot-x (Int.mod slot slots-per-dim)
+          slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+          slot-z (/ slot slots-per-dim-sq)
+          ox (* slot-x res)
+          oy (* slot-y res)
+          oz (* slot-z res)]
       (do
         (bake-chunk-slices! ctx ren chunk world-data 0 res static-world-sdf)
-        (compute-chunk-lighting! chunk res)
+        (compute-chunk-lighting! chunk &baked-values res)
+        (WGPURenderer.wgpu-write-texture-3d ctx @(WGPURenderer.voxel-baked-values-texture ren) ox oy oz res res res (ints-array->ptr &baked-values) 4)
         (let [b @(Chunk.gpu-buffer chunk)]
           (if (WGPU.buffer-null?- b)
             (match (WGPU.create-buffer ctx (* res (* res (* res 16))))
@@ -383,10 +424,10 @@
                 (do
                   (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk))
                   (Chunk.set-gpu-buffer! chunk new-b)
-                  (pack-and-copy-chunk! ctx ren chunk new-b @(Chunk.atlas-slot chunk) res)))
+                  (pack-and-copy-chunk! ctx ren chunk new-b slot res)))
             (do
               (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
-              (pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res)))))))
+              (pack-and-copy-chunk! ctx ren chunk b slot res)))))))
 
   (defn bake-voxel-grid! [ctx ren grid ecs-world world-data]
     (let [chunks (World.chunks world-data)
@@ -573,7 +614,7 @@
                         origin-data [qx-f qy-f qz-f slot-f]]
                     (do
                       (WGPU.write-floats ctx jit-info-b &origin-data)
-                      (with-bind-group (create-jit-bind-group-em-result ctx field-pipe l-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex @(WGPURenderer.water-texture ren) @(WGPURenderer.gas-texture ren) @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren)) field-bg
+                      (with-bind-group (create-jit-bind-group-em-result ctx field-pipe l-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex @(WGPURenderer.voxel-baked-values-texture ren) @(WGPURenderer.water-texture ren) @(WGPURenderer.gas-texture ren) @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren)) field-bg
                         (WGPU.dispatch ctx field-pipe field-bg dispatch-cnt)
                         (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b l-scratch-b (* res (* res (* res 16)))))))
                 _ ())))
@@ -659,7 +700,7 @@
                         origin-data [qx-f qy-f qz-f slot-f]]
                     (do
                       (WGPU.write-floats ctx jit-info-b &origin-data)
-                      (with-bind-group (create-jit-bind-group-em-result ctx interaction-pipe i-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex @(WGPURenderer.water-texture ren) @(WGPURenderer.gas-texture ren) @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren)) interaction-bg
+                      (with-bind-group (create-jit-bind-group-em-result ctx interaction-pipe i-scratch-b voxel-gpu-b raw-u-b jit-info-b chunk-lookup-b voxel-tex @(WGPURenderer.voxel-baked-values-texture ren) @(WGPURenderer.water-texture ren) @(WGPURenderer.gas-texture ren) @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren)) interaction-bg
                         (WGPU.dispatch ctx interaction-pipe interaction-bg dispatch-cnt)
                         (WGPURender.copy-buffer-to-buffer ctx voxel-gpu-b i-scratch-b (* res (* res (* res 16)))))))
                 _ ())))
@@ -667,7 +708,7 @@
 
   (defn pack-and-copy-water-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.water-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-unorm8-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -758,7 +799,7 @@
                     (do
                       (WGPU.write-floats ctx info-b-actual &origin-data)
                       (let [water-tex @(WGPURenderer.water-texture ren)
-                            new-bg-res (create-jit-bind-group-em-result ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex water-tex @(WGPURenderer.gas-texture ren) @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren))]
+                            new-bg-res (create-jit-bind-group-em-result ctx water-pipe w-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex @(WGPURenderer.voxel-baked-values-texture ren) water-tex @(WGPURenderer.gas-texture ren) @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren))]
                         (match new-bg-res
                           (Result.Success water-bg)
                             (do
@@ -773,7 +814,7 @@
 
   (defn pack-and-copy-gas-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.gas-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-unorm8-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -850,7 +891,7 @@
                     (WGPU.write-floats ctx info-b-actual &origin-data)
                     (let [water-tex @(WGPURenderer.water-texture ren)
                           gas-tex @(WGPURenderer.gas-texture ren)
-                          new-bg-res (create-jit-bind-group-em-result ctx gas-pipe gas-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex water-tex gas-tex @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren))]
+                          new-bg-res (create-jit-bind-group-em-result ctx gas-pipe gas-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex @(WGPURenderer.voxel-baked-values-texture ren) water-tex gas-tex @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren))]
                       (match new-bg-res
                         (Result.Success gas-bg)
                           (do
@@ -874,10 +915,12 @@
           ox (* slot-x res)
           oy (* slot-y res)
           oz (* slot-z res)
-          bg @(WGPURenderer.gas-pack-bind-group ren)
+          gas-scratch-b @(WGPURenderer.gas-scratch-buffer ren)
+          pack-bufs [gas-scratch-b w-half-b]
           dispatch-cnt (/ (* res (* res res)) 64)]
       (do
-        (WGPU.dispatch ctx pipe bg dispatch-cnt)
+        (with-bind-group (WGPU.create-bind-group ctx pipe &pack-bufs) bg
+          (WGPU.dispatch ctx pipe bg dispatch-cnt))
         (WGPURender.copy-buffer-to-3d-texture-offset 
           ctx 
           w-half-b 
@@ -942,7 +985,7 @@
                     (WGPU.write-floats ctx info-b-actual &origin-data)
                     (let [water-tex @(WGPURenderer.water-texture ren)
                           gas-tex @(WGPURenderer.gas-texture ren)
-                          new-bg-res (create-jit-bind-group-em-result ctx em-pipe gas-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex water-tex gas-tex @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren))]
+                          new-bg-res (create-jit-bind-group-em-result ctx em-pipe gas-scratch-b voxel-gpu-b raw-u-b info-b-actual chunk-lookup-b voxel-tex @(WGPURenderer.voxel-baked-values-texture ren) water-tex gas-tex @(WGPURenderer.em-texture ren) @(WGPURenderer.gravity-texture ren) @(WGPURenderer.instances-buffer ren))]
                       (match new-bg-res
                         (Result.Success em-bg)
                           (do

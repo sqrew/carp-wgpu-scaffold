@@ -921,21 +921,32 @@
                       (VoxelBaker.bake-chunk-slices! ctx ren chunk-ref world-data current-prog next-prog &static-world-sdf)
                       (Chunk.set-bake-progress! chunk-ref next-prog)
                       (when (= next-prog res)
-                        (do
-                          (VoxelBaker.compute-chunk-lighting! chunk-ref res)
-                          (let [b @(Chunk.gpu-buffer chunk-ref)]
-                            (if (WGPU.buffer-null?- b)
-                                (match (WGPU.create-buffer ctx (* res (* res (* res 16))))
-                                  (Result.Error err) (IO.println &(format "Error creating buffer for baked chunk: %s" &err))
-                                  (Result.Success new-b)
-                                    (do
-                                      (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk-ref))
-                                      (Chunk.set-gpu-buffer! chunk-ref new-b)
-                                      (VoxelBaker.pack-and-copy-chunk! ctx ren chunk-ref new-b @(Chunk.atlas-slot chunk-ref) res)))
-                                (do
-                                  (WGPU.write-floats ctx b (Chunk.voxel-data chunk-ref))
-                                  (VoxelBaker.pack-and-copy-chunk! ctx ren chunk-ref b @(Chunk.atlas-slot chunk-ref) res))))
-                          (Engine.set-need-chunk-scan! e true)))
+                        (let [baked-values (the (Array Int) (replicate (* res (* res res)) &0))
+                              slot @(Chunk.atlas-slot chunk-ref)
+                              slots-per-dim (/ 384 res)
+                              slots-per-dim-sq (* slots-per-dim slots-per-dim)
+                              slot-x (Int.mod slot slots-per-dim)
+                              slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+                              slot-z (/ slot slots-per-dim-sq)
+                              ox (* slot-x res)
+                              oy (* slot-y res)
+                              oz (* slot-z res)]
+                          (do
+                            (VoxelBaker.compute-chunk-lighting! chunk-ref &baked-values res)
+                            (WGPURenderer.wgpu-write-texture-3d ctx @(WGPURenderer.voxel-baked-values-texture ren) ox oy oz res res res (ints-array->ptr &baked-values) 4)
+                            (let [b @(Chunk.gpu-buffer chunk-ref)]
+                              (if (WGPU.buffer-null?- b)
+                                  (match (WGPU.create-buffer ctx (* res (* res (* res 16))))
+                                    (Result.Error err) (IO.println &(format "Error creating buffer for baked chunk: %s" &err))
+                                    (Result.Success new-b)
+                                      (do
+                                        (WGPU.write-floats ctx new-b (Chunk.voxel-data chunk-ref))
+                                        (Chunk.set-gpu-buffer! chunk-ref new-b)
+                                        (VoxelBaker.pack-and-copy-chunk! ctx ren chunk-ref new-b @(Chunk.atlas-slot chunk-ref) res)))
+                                  (do
+                                    (WGPU.write-floats ctx b (Chunk.voxel-data chunk-ref))
+                                    (VoxelBaker.pack-and-copy-chunk! ctx ren chunk-ref b @(Chunk.atlas-slot chunk-ref) res))))
+                            (Engine.set-need-chunk-scan! e true))))
                       (set! loaded-any true)
                       (Diagnostics.end-zone! (Engine.diagnostics e) "Chunks: Slice Baking")))
                   
@@ -1097,13 +1108,24 @@
                           (Chunk.set-modified! chunk true)
                           (set! overlapped true)))))
                   (when overlapped
-                    (do
-                      (VoxelBaker.compute-chunk-lighting! chunk res)
-                      (let [b @(Chunk.gpu-buffer chunk)]
-                        (when (not (WGPU.buffer-null?- b))
-                          (do
-                            (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
-                            (VoxelBaker.pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res))))))))))
+                    (let [baked-values (the (Array Int) (replicate (* res (* res res)) &0))
+                          slot @(Chunk.atlas-slot chunk)
+                          slots-per-dim (/ 384 res)
+                          slots-per-dim-sq (* slots-per-dim slots-per-dim)
+                          slot-x (Int.mod slot slots-per-dim)
+                          slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+                          slot-z (/ slot slots-per-dim-sq)
+                          ox (* slot-x res)
+                          oy (* slot-y res)
+                          oz (* slot-z res)]
+                      (do
+                        (VoxelBaker.compute-chunk-lighting! chunk &baked-values res)
+                        (WGPURenderer.wgpu-write-texture-3d ctx @(WGPURenderer.voxel-baked-values-texture ren) ox oy oz res res res (ints-array->ptr &baked-values) 4)
+                        (let [b @(Chunk.gpu-buffer chunk)]
+                          (when (not (WGPU.buffer-null?- b))
+                            (do
+                              (WGPU.write-floats ctx b (Chunk.voxel-data chunk))
+                              (VoxelBaker.pack-and-copy-chunk! ctx ren chunk b @(Chunk.atlas-slot chunk) res)))))))))))
         (Engine.set-voxel-dirty! e false)))))
 
   (def field-bake-frame-counter 0)
