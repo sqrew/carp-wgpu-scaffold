@@ -1,0 +1,11 @@
+(system-include "/home/sqrew/Desktop/carp-wgpu-scaffold/src/gpu_batcher.h")
+
+(register-type WGPUCommandEncoder)
+
+(defmodule GPUBatcher
+  (register begin-batch (Fn [(Ptr WGPUContext)] WGPUCommandEncoder) "gpu_batch_begin")
+  (register batch-dispatch (Fn [WGPUCommandEncoder WGPUComputePipeline WGPUBindGroup Int] ()) "gpu_batch_dispatch")
+  (register batch-copy-buffer (Fn [WGPUCommandEncoder WGPUBuffer WGPUBuffer Long] ()) "gpu_batch_copy_buffer_to_buffer")
+  (register batch-copy-texture (Fn [WGPUCommandEncoder WGPUBuffer Long (Ptr WGPURenderTexture) Int Int Int Int Int Int] ()) "gpu_batch_copy_buffer_to_3d_texture")
+  (register end-batch (Fn [(Ptr WGPUContext) WGPUCommandEncoder] ()) "gpu_batch_end")
+)

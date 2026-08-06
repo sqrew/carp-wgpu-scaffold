@@ -933,76 +933,86 @@
             (match pipe-maybe
               (Maybe.Just pipe)
                 (let [u-b (WGPURender.uniform-buffer-get-buffer @(WGPURenderer.u-buffer ren))
-                      has-global-rules (check-global-jit-rules?)]
-                  (for [i 0 num-chunks]
-                    (let [chunk (Array.unsafe-nth chunks i)
-                          v-gpu-b @(Chunk.gpu-buffer chunk)]
-                      (if (WGPU.buffer-null?- v-gpu-b)
-                          ()
-                          (when (chunk-affected-by-jit? world chunk has-global-rules)
-                            (let [qx-f (Double.to-float (* (Double.from-int @(Chunk.coord-x chunk)) 32.0))
-                                  qy-f (Double.to-float (* (Double.from-int @(Chunk.coord-y chunk)) 32.0))
-                                  qz-f (Double.to-float (* (Double.from-int @(Chunk.coord-z chunk)) 32.0))
-                                  slot-f (Float.from-int @(Chunk.atlas-slot chunk))
-                                  origin-data [qx-f qy-f qz-f slot-f]]
-                              (do
-                                (let [info-b @(Chunk.jit-info-buffer chunk)
-                                      info-b-actual (if (WGPU.buffer-null?- info-b)
-                                                        (match (WGPU.create-buffer ctx 16)
-                                                          (Result.Success new-info-b)
-                                                            (do
-                                                              (Chunk.set-jit-info-buffer! chunk new-info-b)
-                                                              new-info-b)
-                                                          (Result.Error err-val)
-                                                            (do
-                                                              (IO.println &(format "Error creating JIT info buffer: %s" &err-val))
-                                                              (null-buffer)))
-                                                        info-b)]
-                                  (do
-                                    (WGPU.write-floats ctx info-b-actual &origin-data)
-                                    (let [cached-bg @(Chunk.jit-bind-group chunk)
-                                          bg (if (WGPU.bindgroup-null?- cached-bg)
-                                                  (match (create-jit-bind-group-em-result
-                                                           ctx
-                                                           pipe
-                                                           v-gpu-b
-                                                           @(WGPURenderer.voxel-gpu-buffer ren)
-                                                           u-b
-                                                           info-b-actual
-                                                           @(WGPURenderer.chunk-lookup-buffer ren)
-                                                           @(WGPURenderer.voxel-texture ren)
-                                                           @(WGPURenderer.water-texture ren)
-                                                           @(WGPURenderer.gas-texture ren)
-                                                           @(WGPURenderer.em-texture ren)
-                                                           @(WGPURenderer.gravity-texture ren)
-                                                           @(WGPURenderer.instances-buffer ren))
-                                                    (Result.Error err)
-                                                      (do
-                                                        (IO.println &(str* "JIT Bind Group error: " &err))
-                                                        (null-bind-group))
-                                                    (Result.Success new-bg)
-                                                      (do
-                                                        (Chunk.set-jit-bind-group! chunk new-bg)
-                                                        new-bg))
-                                                 cached-bg)]
-                                  (when (not (WGPU.bindgroup-null?- bg))
+                      has-global-rules (check-global-jit-rules?)
+                      batch (GPUBatcher.begin-batch ctx)
+                      chunk-to-read -1]
+                  (do
+                    (for [i 0 num-chunks]
+                      (let [chunk (Array.unsafe-nth chunks i)
+                            v-gpu-b @(Chunk.gpu-buffer chunk)]
+                        (if (WGPU.buffer-null?- v-gpu-b)
+                            ()
+                            (when (chunk-affected-by-jit? world chunk has-global-rules)
+                              (let [qx-f (Double.to-float (* (Double.from-int @(Chunk.coord-x chunk)) 32.0))
+                                    qy-f (Double.to-float (* (Double.from-int @(Chunk.coord-y chunk)) 32.0))
+                                    qz-f (Double.to-float (* (Double.from-int @(Chunk.coord-z chunk)) 32.0))
+                                    slot-f (Float.from-int @(Chunk.atlas-slot chunk))
+                                    origin-data [qx-f qy-f qz-f slot-f]]
+                                (do
+                                  (let [info-b @(Chunk.jit-info-buffer chunk)
+                                        info-b-actual (if (WGPU.buffer-null?- info-b)
+                                                          (match (WGPU.create-buffer ctx 16)
+                                                            (Result.Success new-info-b)
+                                                              (do
+                                                                (Chunk.set-jit-info-buffer! chunk new-info-b)
+                                                                new-info-b)
+                                                            (Result.Error err-val)
+                                                              (do
+                                                                (IO.println &(format "Error creating JIT info buffer: %s" &err-val))
+                                                                (null-buffer)))
+                                                          info-b)]
                                     (do
-                                      (WGPU.dispatch ctx pipe bg dispatch-cnt)
-                                      (WGPURender.copy-buffer-to-buffer ctx @(WGPURenderer.voxel-gpu-buffer ren) v-gpu-b (* res (* res (* res 16))))
-                                      (VoxelBaker.pack-and-copy-chunk! ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
-                                      ;; --- Sync to CPU for Player/Physics Collision ---
-                                      (let [cam-pos (Camera.pos (Engine.camera e))
-                                            p-qx (World.camera-chunk-qx cam-pos)
-                                            p-qy (World.camera-chunk-qy cam-pos)
-                                            p-qz (World.camera-chunk-qz cam-pos)
-                                            c-qx @(Chunk.coord-x chunk)
-                                            c-qy @(Chunk.coord-y chunk)
-                                            c-qz @(Chunk.coord-z chunk)]
-                                        (when (and (= p-qx c-qx)
-                                                   (and (= p-qy c-qy)
-                                                        (and (= p-qz c-qz)
-                                                             (= readback-frame-counter 0))))
-                                          (let [n-floats (* res (* res (* res 4)))
-                                                read-back (WGPU.read-floats ctx v-gpu-b n-floats)]
-                                            (Chunk.set-voxel-data! chunk read-back))))))))))))))))
+                                      (WGPU.write-floats ctx info-b-actual &origin-data)
+                                      (let [cached-bg @(Chunk.jit-bind-group chunk)
+                                            bg (if (WGPU.bindgroup-null?- cached-bg)
+                                                    (match (create-jit-bind-group-em-result
+                                                             ctx
+                                                             pipe
+                                                             v-gpu-b
+                                                             @(WGPURenderer.voxel-gpu-buffer ren)
+                                                             u-b
+                                                             info-b-actual
+                                                             @(WGPURenderer.chunk-lookup-buffer ren)
+                                                             @(WGPURenderer.voxel-texture ren)
+                                                             @(WGPURenderer.water-texture ren)
+                                                             @(WGPURenderer.gas-texture ren)
+                                                             @(WGPURenderer.em-texture ren)
+                                                             @(WGPURenderer.gravity-texture ren)
+                                                             @(WGPURenderer.instances-buffer ren))
+                                                      (Result.Error err)
+                                                        (do
+                                                          (IO.println &(str* "JIT Bind Group error: " &err))
+                                                          (null-bind-group))
+                                                      (Result.Success new-bg)
+                                                        (do
+                                                          (Chunk.set-jit-bind-group! chunk new-bg)
+                                                          new-bg))
+                                                   cached-bg)]
+                                    (when (not (WGPU.bindgroup-null?- bg))
+                                      (do
+                                        (GPUBatcher.batch-dispatch batch pipe bg dispatch-cnt)
+                                        (GPUBatcher.batch-copy-buffer batch @(WGPURenderer.voxel-gpu-buffer ren) v-gpu-b (Long.from-int (* res (* res (* res 16)))))
+                                        (VoxelBaker.pack-and-copy-chunk-batched! batch ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
+                                        ;; --- Sync to CPU for Player/Physics Collision ---
+                                        (let [cam-pos (Camera.pos (Engine.camera e))
+                                              p-qx (World.camera-chunk-qx cam-pos)
+                                              p-qy (World.camera-chunk-qy cam-pos)
+                                              p-qz (World.camera-chunk-qz cam-pos)
+                                              c-qx @(Chunk.coord-x chunk)
+                                              c-qy @(Chunk.coord-y chunk)
+                                              c-qz @(Chunk.coord-z chunk)]
+                                          (when (and (= p-qx c-qx)
+                                                     (and (= p-qy c-qy)
+                                                          (and (= p-qz c-qz)
+                                                               (= readback-frame-counter 0))))
+                                            (set! chunk-to-read i))))))))))))))
+                    (GPUBatcher.end-batch ctx batch)
+                    (when (>= chunk-to-read 0)
+                      (let [c (Array.unsafe-nth chunks chunk-to-read)
+                            v-gpu-b @(Chunk.gpu-buffer c)
+                            n-floats (* res (* res (* res 4)))
+                            read-back (WGPU.read-floats ctx v-gpu-b n-floats)]
+                        (Chunk.set-voxel-data! c read-back)))
+                    )
+                  )
               _ ())))))))

@@ -62,6 +62,38 @@
             @(WGPURenderer.voxel-texture ren) 
             ox oy oz res res res)))))
 
+  (defn pack-and-copy-chunk-batched! [batch ctx ren chunk v-gpu-b slot res]
+    (let [v-half-b @(WGPURenderer.voxel-half-buffer ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
+          slots-per-dim (/ 384 res)
+          slots-per-dim-sq (* slots-per-dim slots-per-dim)
+          slot-x (Int.mod slot slots-per-dim)
+          slot-y (Int.mod (/ slot slots-per-dim) slots-per-dim)
+          slot-z (/ slot slots-per-dim-sq)
+          ox (* slot-x res)
+          oy (* slot-y res)
+          oz (* slot-z res)
+          dispatch-cnt (/ (* res (* res res)) 64)
+          cached-bg @(Chunk.pack-bind-group chunk)
+          bg (if (WGPU.bindgroup-null?- cached-bg)
+                 (let [pack-bufs [v-gpu-b v-half-b]]
+                   (match (WGPU.create-bind-group ctx pipe &pack-bufs)
+                     (Result.Error e) (do (IO.println &(format "Pack Bind Group error: %s" &e)) (null-bind-group))
+                     (Result.Success new-bg)
+                       (do
+                         (Chunk.set-pack-bind-group! chunk new-bg)
+                         new-bg)))
+                 cached-bg)]
+      (when (not (WGPU.bindgroup-null?- bg))
+        (do
+          (GPUBatcher.batch-dispatch batch pipe bg dispatch-cnt)
+          (GPUBatcher.batch-copy-texture 
+            batch 
+            v-half-b 
+            0l
+            @(WGPURenderer.voxel-texture ren) 
+            ox oy oz res res res)))))
+
   (defn chunk-overlaps-sphere? [chunk center radius]
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)

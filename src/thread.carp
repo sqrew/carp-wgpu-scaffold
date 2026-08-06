@@ -1,0 +1,68 @@
+(system-include "/home/sqrew/Desktop/carp-wgpu-scaffold/src/thread_types.h")
+(system-include "pthread.h")
+(system-include "sched.h")
+(system-include "string.h")
+
+(defmodule Thread
+  (register-type ThreadT "pthread_t")
+  (register-type Mutex "pthread_mutex_t")
+  (register-type Cond "pthread_cond_t")
+  (register-type ThreadFunc "ThreadFunc")
+
+  (deftemplate default (Fn [] Thread.ThreadT)
+    "pthread_t $NAME()"
+    "$DECL {
+       pthread_t t;
+       memset(&t, 0, sizeof(pthread_t));
+       return t;
+     }")
+  
+  (deftemplate create-mutex (Fn [] Thread.Mutex)
+    "pthread_mutex_t $NAME()"
+    "$DECL {
+       pthread_mutex_t m;
+       pthread_mutex_init(&m, NULL);
+       return m;
+     }")
+     
+  (deftemplate destroy-mutex (Fn [(Ptr Thread.Mutex)] ())
+    "void $NAME(pthread_mutex_t *m)"
+    "$DECL {
+       pthread_mutex_destroy(m);
+     }")
+     
+  (deftemplate create-cond (Fn [] Thread.Cond)
+    "pthread_cond_t $NAME()"
+    "$DECL {
+       pthread_cond_t c;
+       pthread_cond_init(&c, NULL);
+       return c;
+     }")
+     
+  (deftemplate destroy-cond (Fn [(Ptr Thread.Cond)] ())
+    "void $NAME(pthread_cond_t *c)"
+    "$DECL {
+       pthread_cond_destroy(c);
+     }")
+
+  (register lock (Fn [(Ptr Thread.Mutex)] Int) "pthread_mutex_lock")
+  (register unlock (Fn [(Ptr Thread.Mutex)] Int) "pthread_mutex_unlock")
+  
+  (register wait (Fn [(Ptr Thread.Cond) (Ptr Thread.Mutex)] Int) "pthread_cond_wait")
+  (register signal (Fn [(Ptr Thread.Cond)] Int) "pthread_cond_signal")
+  (register broadcast (Fn [(Ptr Thread.Cond)] Int) "pthread_cond_broadcast")
+
+  (deftemplate get-func-ptr (Fn [(Fn [(Ptr ())] (Ptr ()))] Thread.ThreadFunc)
+    "ThreadFunc $NAME(Lambda l)"
+    "$DECL {
+       return (ThreadFunc)l.callback;
+     }")
+
+  (deftemplate spawn (Fn [(Ptr Thread.ThreadT) Thread.ThreadFunc (Ptr ())] Int)
+    "int $NAME(pthread_t *thread, ThreadFunc func, void *arg)"
+    "$DECL {
+       return pthread_create(thread, NULL, func, arg);
+     }")
+     
+  (register join (Fn [Thread.ThreadT (Ptr (Ptr ()))] Int) "pthread_join")
+)

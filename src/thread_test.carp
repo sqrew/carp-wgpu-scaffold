@@ -1,0 +1,16 @@
+(load "src/thread.carp")
+
+(defn my-thread-func [arg]
+  (do
+    (IO.println "Hello from background thread!")
+    (Pointer.from-long 0l)))
+
+(defn main []
+  (let [t (Thread.default)
+        func-ptr (Thread.get-func-ptr my-thread-func)]
+    (do
+      (IO.println "Spawning thread...")
+      (ignore (Thread.spawn (Pointer.address &t) func-ptr (Pointer.from-long 0l)))
+      (IO.println "Joining thread...")
+      (ignore (Thread.join t (Pointer.from-long 0l)))
+      (IO.println "Thread joined! Done."))))
