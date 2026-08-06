@@ -205,7 +205,8 @@
                 var sum_W = 0.0;
                 let epsilon = 0.01;
                 
-                for (var i = 0u; i < " (Int.str WGPURenderer.max-spheres) "u; i = i + 1u) {
+                let max_instances = u32(round(u.suns[0].params.y));
+                for (var i = 0u; i < max_instances; i = i + 1u) {
                     let inst = instances[i];
                     let rad = inst.pos_scale.w;
                     if (rad > 0.0) {
@@ -544,7 +545,8 @@
                 "                var sum_W = 0.0;\n"
                 "                let epsilon = 0.01;\n"
                 "                \n"
-                "                for (var i = 0u; i < " (Int.str WGPURenderer.max-spheres) "u; i = i + 1u) {\n"
+                "                let max_instances = u32(round(u.suns[0].params.y));\n"
+                "                for (var i = 0u; i < max_instances; i = i + 1u) {\n"
                 "                    let inst = instances[i];\n"
                 "                    let rad = inst.pos_scale.w;\n"
                 "                    if (rad > 0.0) {\n"
