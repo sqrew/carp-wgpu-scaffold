@@ -4,7 +4,7 @@
 let self_voxel = get_voxel(local_x, local_y, local_z);
 
 // If the voxel is solid (Material ID >= 0.9), it cannot contain liquid
-if (self_voxel.y >= 0.9) {
+if (self_voxel.x >= 0.9) {
     water = vec4<f32>(0.0);
 } else {
     // Early-out Sleep state check
@@ -31,12 +31,12 @@ if (self_voxel.y >= 0.9) {
         let slope_bias_z = -slope.y * 0.15;
 
         // Check voxel solidity for neighbors (Material ID >= 0.9 is solid)
-        let sol_below  = get_voxel(local_x, local_y - 1, local_z).y >= 0.9;
-        let sol_above  = get_voxel(local_x, local_y + 1, local_z).y >= 0.9;
-        let sol_left   = get_voxel(local_x - 1, local_y, local_z).y >= 0.9;
-        let sol_right  = get_voxel(local_x + 1, local_y, local_z).y >= 0.9;
-        let sol_back   = get_voxel(local_x, local_y, local_z - 1).y >= 0.9;
-        let sol_front  = get_voxel(local_x, local_y, local_z + 1).y >= 0.9;
+        let sol_below  = get_voxel(local_x, local_y - 1, local_z).x >= 0.9;
+        let sol_above  = get_voxel(local_x, local_y + 1, local_z).x >= 0.9;
+        let sol_left   = get_voxel(local_x - 1, local_y, local_z).x >= 0.9;
+        let sol_right  = get_voxel(local_x + 1, local_y, local_z).x >= 0.9;
+        let sol_back   = get_voxel(local_x, local_y, local_z - 1).x >= 0.9;
+        let sol_front  = get_voxel(local_x, local_y, local_z + 1).x >= 0.9;
 
         // Fetch neighbor liquids
         let w_below_v = get_fluid(local_x, local_y - 1, local_z);
@@ -305,9 +305,9 @@ if (self_voxel.y >= 0.9) {
         var cold_ceiling = false;
         for (var dy = 1; dy <= 7; dy = dy + 1) {
             let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
-            if (ceiling_v.y >= 0.9) {
+            if (ceiling_v.x >= 0.9) {
                 near_ceiling = true;
-                let ceil_mat = round(abs(ceiling_v.y));
+                let ceil_mat = round(abs(ceiling_v.x));
                 if (ceil_mat == 6.0) {
                     cold_ceiling = true;
                 }

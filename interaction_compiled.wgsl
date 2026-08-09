@@ -357,7 +357,7 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                  
                  let local_q = q - chunk_lookup.origin.xyz;
                  if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                     return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                  }
                  
                  let mx = u32(local_q.x) >> 2u;
@@ -366,13 +366,13 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                  let skip_idx = mx + (my << 3u) + (mz << 6u);
                  let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
                  if (skip_val == 0) {
-                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                     return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                  }
                  
                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
                  let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
                  if (slot < 0) {
-                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                     return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                  }
                  
                  let slot_x = slot % 12i;
@@ -416,14 +416,14 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
 
 let voxel_self = get_voxel(local_x, local_y, local_z);
 
-if (voxel_self.x >= 0.0) {
+if (voxel_self.y >= 0.0) {
     // Air has no stress or shear/fatigue
     fields.y = 0.0;
     fields.z = 0.0;
     fields.w = 0.0;
 } else {
     // Solid terrain
-    let mat_id = round(abs(voxel_self.y));
+    let mat_id = round(abs(voxel_self.x));
     let props = get_material_properties(mat_id);
     let ix = local_x;
     let iy = local_y;
@@ -437,7 +437,7 @@ if (voxel_self.x >= 0.0) {
     if (above_y < 32) {
         let above_idx = u32(ix + above_y * 32 + iz * 1024);
         let above_voxel = get_voxel(ix, above_y, iz);
-        if (above_voxel.x < 0.0) {
+        if (above_voxel.y < 0.0) {
             stress = stress + input_fields[above_idx].z;
         }
     }
@@ -454,27 +454,27 @@ if (voxel_self.x >= 0.0) {
         let nz = iz + horiz_dirs[i].z;
         if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32) {
             let n_voxel = get_voxel(nx, iy, nz);
-            if (n_voxel.x < 0.0) {
+            if (n_voxel.y < 0.0) {
                 let n_below_voxel = get_voxel(nx, iy - 1, nz);
-                if (n_below_voxel.x >= 0.0) {
+                if (n_below_voxel.y >= 0.0) {
                     var solid_count = 0.0;
                     for (var j = 0; j < 4; j = j + 1) {
                         let nnx = nx + horiz_dirs[j].x;
                         let nnz = nz + horiz_dirs[j].z;
                         if (nnx >= 0 && nnx < 32 && nnz >= 0 && nnz < 32) {
                             let nn_voxel = get_voxel(nnx, iy, nnz);
-                            if (nn_voxel.x < 0.0) {
+                            if (nn_voxel.y < 0.0) {
                                 solid_count = solid_count + 1.0;
                             }
                         }
                     }
                     if (solid_count > 0.0) {
                         let n_idx = u32(nx + iy * 32 + nz * 1024);
-                        var neighbor_load = get_material_properties(round(abs(n_voxel.y))).density;
+                        var neighbor_load = get_material_properties(round(abs(n_voxel.x))).density;
                         if (above_y < 32) {
                             let n_above_idx = u32(nx + above_y * 32 + nz * 1024);
                             let n_above_voxel = get_voxel(nx, above_y, nz);
-                            if (n_above_voxel.x < 0.0) {
+                            if (n_above_voxel.y < 0.0) {
                                 neighbor_load = neighbor_load + input_fields[n_above_idx].z;
                             }
                         }
@@ -489,14 +489,14 @@ if (voxel_self.x >= 0.0) {
     // 2. CA-Based Shear Stress Propagation (Bending Moment)
     var shear_stress = 0.0;
     let below_voxel = get_voxel(ix, iy - 1, iz);
-    if (below_voxel.x >= 0.0) {
+    if (below_voxel.y >= 0.0) {
         var max_neighbor_shear = 0.0;
         for (var i = 0; i < 4; i = i + 1) {
             let nx = ix + horiz_dirs[i].x;
             let nz = iz + horiz_dirs[i].z;
             if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32) {
                 let n_voxel = get_voxel(nx, iy, nz);
-                if (n_voxel.x < 0.0) {
+                if (n_voxel.y < 0.0) {
                     let n_idx = u32(nx + iy * 32 + nz * 1024);
                     max_neighbor_shear = max(max_neighbor_shear, input_fields[n_idx].y);
                 }
@@ -521,7 +521,7 @@ if (voxel_self.x >= 0.0) {
         let nz = iz + horiz_dirs[i].z;
         if (nx >= 0 && nx < 32 && nz >= 0 && nz < 32) {
             let n_voxel = get_voxel(nx, iy, nz);
-            if (n_voxel.x < 0.0) {
+            if (n_voxel.y < 0.0) {
                 let n_idx = u32(nx + iy * 32 + nz * 1024);
                 temp_grad = temp_grad + abs(input_fields[n_idx].x - fields.x);
                 temp_count = temp_count + 1.0;

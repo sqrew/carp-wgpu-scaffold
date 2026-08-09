@@ -3,8 +3,8 @@
 // Query if this cell is solid terrain
 let voxel = get_voxel(local_x, local_y, local_z);
 let solid_thresh = u.terrain_params3.z;
-if (voxel.x <= solid_thresh) {
-    let mat_id = round(abs(voxel.y));
+if (voxel.y <= solid_thresh) {
+    let mat_id = round(abs(voxel.x));
     var emitter = vec4<f32>(0.0);
     let seed = dot(voxel_pos, vec3<f32>(12.9898, 78.233, 37.719));
     let flicker = 1.0 + 0.10 * sin(u.time * 8.0 + seed);

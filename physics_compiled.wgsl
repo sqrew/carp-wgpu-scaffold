@@ -286,7 +286,7 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 
                 let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
                 if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                    return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                 }
                 
                 let mx = u32(local_q.x) >> 2u;
@@ -295,13 +295,13 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 let skip_idx = mx + (my << 3u) + (mz << 6u);
                 let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
                 if (skip_val == 0) {
-                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                    return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                 }
                 
                 let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
                 let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
                 if (slot < 0) {
-                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                    return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                 }
                 
                 let slot_x = slot % 12i;
@@ -364,12 +364,12 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
 
 let solid_thresh = u.terrain_params3.z;
 
-if (cell.x <= solid_thresh) {
+if (cell.y <= solid_thresh) {
     var gravity_load = 1.0;
     for (var dy = 1; dy <= 12; dy = dy + 1) {
         let voxel = get_voxel(local_x, local_y + dy, local_z);
-        if (voxel.x <= solid_thresh) { // Solid
-            let top_mat = round(abs(voxel.y));
+        if (voxel.y <= solid_thresh) { // Solid
+            let top_mat = round(abs(voxel.x));
             let top_props = get_material_properties(top_mat);
             gravity_load = gravity_load + top_props.density;
         } else {
@@ -381,19 +381,19 @@ if (cell.x <= solid_thresh) {
     let below_voxel = get_voxel(local_x, local_y - 1, local_z);
     var shear_load = 0.0;
     
-    // Treat unloaded chunk bounds (returning 1.5, 1.0) as solid support to prevent boundary false-collapses
-    let is_below_unloaded = (below_voxel.x <= solid_thresh && below_voxel.y == 1.5);
+    // Treat unloaded chunk bounds (returning 1.0, 1.5) as solid support to prevent boundary false-collapses
+    let is_below_unloaded = (below_voxel.x == 1.0);
     
-    if (below_voxel.x > solid_thresh && !is_below_unloaded) { // Air below us (overhang!)
+    if (below_voxel.y > solid_thresh && !is_below_unloaded) { // Air below us (overhang!)
         var min_dist = 999.0;
         // Scan Left (-X)
         for (var dx = 1; dx <= 6; dx = dx + 1) {
             let voxel_here = get_voxel(local_x - dx, local_y, local_z);
-            let here_unloaded = (voxel_here.x <= solid_thresh && voxel_here.y == 1.5);
-            if (voxel_here.x <= solid_thresh || here_unloaded) {
+            let here_unloaded = (voxel_here.x == 1.0);
+            if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x - dx, local_y - 1, local_z);
-                let below_unloaded = (voxel_below.x <= solid_thresh && voxel_below.y == 1.5);
-                if (voxel_below.x <= solid_thresh || below_unloaded) {
+                let below_unloaded = (voxel_below.x == 1.0);
+                if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dx));
                     break;
                 }
@@ -404,11 +404,11 @@ if (cell.x <= solid_thresh) {
         // Scan Right (+X)
         for (var dx = 1; dx <= 6; dx = dx + 1) {
             let voxel_here = get_voxel(local_x + dx, local_y, local_z);
-            let here_unloaded = (voxel_here.x <= solid_thresh && voxel_here.y == 1.5);
-            if (voxel_here.x <= solid_thresh || here_unloaded) {
+            let here_unloaded = (voxel_here.x == 1.0);
+            if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x + dx, local_y - 1, local_z);
-                let below_unloaded = (voxel_below.x <= solid_thresh && voxel_below.y == 1.5);
-                if (voxel_below.x <= solid_thresh || below_unloaded) {
+                let below_unloaded = (voxel_below.x == 1.0);
+                if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dx));
                     break;
                 }
@@ -419,11 +419,11 @@ if (cell.x <= solid_thresh) {
         // Scan Forward (+Z)
         for (var dz = 1; dz <= 6; dz = dz + 1) {
             let voxel_here = get_voxel(local_x, local_y, local_z + dz);
-            let here_unloaded = (voxel_here.x <= solid_thresh && voxel_here.y == 1.5);
-            if (voxel_here.x <= solid_thresh || here_unloaded) {
+            let here_unloaded = (voxel_here.x == 1.0);
+            if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x, local_y - 1, local_z + dz);
-                let below_unloaded = (voxel_below.x <= solid_thresh && voxel_below.y == 1.5);
-                if (voxel_below.x <= solid_thresh || below_unloaded) {
+                let below_unloaded = (voxel_below.x == 1.0);
+                if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dz));
                     break;
                 }
@@ -434,11 +434,11 @@ if (cell.x <= solid_thresh) {
         // Scan Backward (-Z)
         for (var dz = 1; dz <= 6; dz = dz + 1) {
             let voxel_here = get_voxel(local_x, local_y, local_z - dz);
-            let here_unloaded = (voxel_here.x <= solid_thresh && voxel_here.y == 1.5);
-            if (voxel_here.x <= solid_thresh || here_unloaded) {
+            let here_unloaded = (voxel_here.x == 1.0);
+            if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x, local_y - 1, local_z - dz);
-                let below_unloaded = (voxel_below.x <= solid_thresh && voxel_below.y == 1.5);
-                if (voxel_below.x <= solid_thresh || below_unloaded) {
+                let below_unloaded = (voxel_below.x == 1.0);
+                if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dz));
                     break;
                 }
@@ -456,17 +456,17 @@ if (cell.x <= solid_thresh) {
     // Reduced coefficients (gravity * 0.4, shear * 1.2) to allow natural terrain overhangs
     // and arches to stand stable, while still slumping under heavy structural loads.
     let total_stress = (gravity_load - 1.0) * 0.4 + shear_load * 1.2;
-    let mat = round(abs(cell.y));
+    let mat = round(abs(cell.x));
     let props = get_material_properties(mat);
     let limit = props.strength;
 
-    if (cell.y < 0.0) {
+    if (cell.x < 0.0) {
         let below = get_voxel(local_x, local_y - 1, local_z);
         let solid_thresh_check = u.terrain_params3.z;
-        if (below.x > solid_thresh_check && below.y != 1.5) {
+        if (below.y > solid_thresh_check && below.x != 1.0) {
             // Fall straight down
-            cell.y = 0.0; // Air ID
-            cell.x = 0.5; // open density
+            cell.x = 0.0; // Air ID
+            cell.y = 0.5; // open density
         } else {
             // Try sliding diagonally below in 4 directions
             let below_r = get_voxel(local_x + 1, local_y - 1, local_z);
@@ -474,20 +474,20 @@ if (cell.x <= solid_thresh) {
             let below_b = get_voxel(local_x, local_y - 1, local_z - 1);
             let below_f = get_voxel(local_x, local_y - 1, local_z + 1);
             
-            if (below_r.x > solid_thresh_check && below_r.y != 1.5) {
-                cell.y = 0.0;
-                cell.x = 0.5;
-            } else if (below_l.x > solid_thresh_check && below_l.y != 1.5) {
-                cell.y = 0.0;
-                cell.x = 0.5;
-            } else if (below_b.x > solid_thresh_check && below_b.y != 1.5) {
-                cell.y = 0.0;
-                cell.x = 0.5;
-            } else if (below_f.x > solid_thresh_check && below_f.y != 1.5) {
-                cell.y = 0.0;
-                cell.x = 0.5;
+            if (below_r.y > solid_thresh_check && below_r.x != 1.0) {
+                cell.x = 0.0;
+                cell.y = 0.5;
+            } else if (below_l.y > solid_thresh_check && below_l.x != 1.0) {
+                cell.x = 0.0;
+                cell.y = 0.5;
+            } else if (below_b.y > solid_thresh_check && below_b.x != 1.0) {
+                cell.x = 0.0;
+                cell.y = 0.5;
+            } else if (below_f.y > solid_thresh_check && below_f.x != 1.0) {
+                cell.x = 0.0;
+                cell.y = 0.5;
             } else {
-                cell.y = abs(cell.y); // stabilize and land!
+                cell.x = abs(cell.x); // stabilize and land!
             }
         }
     } else {
@@ -497,7 +497,7 @@ if (cell.x <= solid_thresh) {
                 -6.0,
                 cos(voxel_pos.z * 20.0) * 1.5
             ) * dt * 20.0;
-            cell.y = -abs(cell.y); // start crumbling!
+            cell.x = -abs(cell.x); // start crumbling!
         }
 
         // --- Water Erosion ---
@@ -518,17 +518,17 @@ if (cell.x <= solid_thresh) {
             let erosion_rate = props.erosion_rate;
             let stress_factor = 1.0 + clamp((total_stress - limit) / limit, 0.0, 2.0);
             let actual_erosion = erosion_rate * stress_factor;
-            cell.x = cell.x + dt * water_vol * actual_erosion * 2.5 * u.misc_params.z;
+            cell.y = cell.y + dt * water_vol * actual_erosion * 2.5 * u.misc_params.z;
             
-            if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
-                cell.y = 10.0; // clay
+            if (cell.y > -0.2 && cell.y < 0.0 && mat != 10.0) {
+                cell.x = 10.0; // clay
             }
         }
     }
 }
 
 // --- Lava Solidification & Falling Material (Runs in air cells) ---
-if (cell.x > solid_thresh) {
+if (cell.y > solid_thresh) {
     let water_here = get_water(local_x, local_y, local_z);
     
     // If we are Lava and contact Water neighbor, or if we are Water and contact Lava neighbor
@@ -546,8 +546,8 @@ if (cell.x > solid_thresh) {
     }
     
     if (is_lava && has_water_neighbor) {
-        cell.x = -0.6; // turn to solid!
-        cell.y = 7.0;  // Volcanic Obsidian
+        cell.y = -0.6; // turn to solid!
+        cell.x = 7.0;  // Volcanic Obsidian
     } else {
         // Receive falling material
         var incoming_cell = vec4<f32>(0.0);
@@ -555,35 +555,35 @@ if (cell.x > solid_thresh) {
         
         // 1. Check directly above
         let above = get_voxel(local_x, local_y + 1, local_z);
-        if (above.x <= solid_thresh && above.y < 0.0) {
+        if (above.y <= solid_thresh && above.x < 0.0) {
             incoming_cell = above;
             has_incoming = true;
         } else {
             // 2. Check left-above (slides into us because its directly-below is solid)
             let la = get_voxel(local_x - 1, local_y + 1, local_z);
             let la_below = get_voxel(local_x - 1, local_y, local_z);
-            if (la.x <= solid_thresh && la.y < 0.0 && la_below.x <= solid_thresh) {
+            if (la.y <= solid_thresh && la.x < 0.0 && la_below.y <= solid_thresh) {
                 incoming_cell = la;
                 has_incoming = true;
             } else {
                 // 3. Check right-above (slides into us because its directly-below is solid)
                 let ra = get_voxel(local_x + 1, local_y + 1, local_z);
                 let ra_below = get_voxel(local_x + 1, local_y, local_z);
-                if (ra.x <= solid_thresh && ra.y < 0.0 && ra_below.x <= solid_thresh) {
+                if (ra.y <= solid_thresh && ra.x < 0.0 && ra_below.y <= solid_thresh) {
                     incoming_cell = ra;
                     has_incoming = true;
                 } else {
                     // 4. Check back-above (slides into us because its directly-below is solid)
                     let ba = get_voxel(local_x, local_y + 1, local_z - 1);
                     let ba_below = get_voxel(local_x, local_y, local_z - 1);
-                    if (ba.x <= solid_thresh && ba.y < 0.0 && ba_below.x <= solid_thresh) {
+                    if (ba.y <= solid_thresh && ba.x < 0.0 && ba_below.y <= solid_thresh) {
                         incoming_cell = ba;
                         has_incoming = true;
                     } else {
                         // 5. Check front-above (slides into us because its directly-below is solid)
                         let fa = get_voxel(local_x, local_y + 1, local_z + 1);
                         let fa_below = get_voxel(local_x, local_y, local_z + 1);
-                        if (fa.x <= solid_thresh && fa.y < 0.0 && fa_below.x <= solid_thresh) {
+                        if (fa.y <= solid_thresh && fa.x < 0.0 && fa_below.y <= solid_thresh) {
                             incoming_cell = fa;
                             has_incoming = true;
                         }
@@ -594,7 +594,7 @@ if (cell.x > solid_thresh) {
         
         if (has_incoming) {
             let below = get_voxel(local_x, local_y - 1, local_z);
-            if (below.x > solid_thresh && below.y != 1.5) {
+            if (below.y > solid_thresh && below.x != 1.0) {
                 // Keep falling down
                 cell.x = incoming_cell.x;
                 cell.y = incoming_cell.y;
@@ -607,8 +607,8 @@ if (cell.x > solid_thresh) {
     }
 }
 
-if (cell.x <= solid_thresh) {
-    let mat = round(abs(cell.y));
+if (cell.y <= solid_thresh) {
+    let mat = round(abs(cell.x));
     let props = get_material_properties(mat);
     
     // Acid eating walls
@@ -628,7 +628,7 @@ if (cell.x <= solid_thresh) {
     if (acid_vol > 0.05) {
         // Acid corrosion speed scaled by material vulnerability
         let corrosion_speed = 15.0 * (1.0 - props.acid_resist);
-        cell.x = cell.x + dt * acid_vol * corrosion_speed;
+        cell.y = cell.y + dt * acid_vol * corrosion_speed;
     }
 
     // Lava melting walls
@@ -646,7 +646,7 @@ if (cell.x <= solid_thresh) {
     
     let lava_vol = max(l_above, max(l_left, max(l_right, max(l_front, l_back))));
     if (lava_vol > 0.05 && props.melt_speed > 0.0) {
-        cell.x = cell.x + dt * lava_vol * props.melt_speed;
+        cell.y = cell.y + dt * lava_vol * props.melt_speed;
     }
 }
 

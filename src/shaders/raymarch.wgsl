@@ -239,10 +239,10 @@ struct PointInstance {
               let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + lx, (slot_y * {{VOXEL_RES}}i) + ly, (slot_z * {{VOXEL_RES}}i) + lz);
               let val = textureLoad(voxel_texture, atlas_coord, 0);
               if (only_dist) {
-                  return vec4<f32>(val.xy, 1.0, 1.0);
+                  return vec4<f32>(val.yx, 1.0, 1.0);
               }
               let baked = textureLoad(voxel_baked_values_texture, atlas_coord, 0);
-              return vec4<f32>(val.xy, baked.xy);
+              return vec4<f32>(val.yx, baked.xy);
           } else {
               let px = (f32(gx) + 0.5) * u.cell_size;
               let py = (f32(gy) + 0.5) * u.cell_size;
@@ -331,14 +331,15 @@ struct PointInstance {
                 let slot_z = slot / {{SLOTS_PER_DIM_SQ}};
                 let base_uv3d = vec3<f32>(f32(slot_x * {{VOXEL_RES}}i), f32(slot_y * {{VOXEL_RES}}i), f32(slot_z * {{VOXEL_RES}}i));
                 let sample_coords = (base_uv3d + local_pos + vec3<f32>(0.5)) / 384.0;
-                tex_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
-                tex_val.r = min(tex_val.r, 1.5);
+                let sample_val = textureSampleLevel(voxel_texture, voxel_sampler, sample_coords, 0.0);
+                tex_val.r = min(sample_val.g, 1.5);
+                tex_val.g = sample_val.r;
                 let closest_lx = i32(round(local_pos.x));
                 let closest_ly = i32(round(local_pos.y));
                 let closest_lz = i32(round(local_pos.z));
                 let atlas_coord = vec3<i32>((slot_x * {{VOXEL_RES}}i) + closest_lx, (slot_y * {{VOXEL_RES}}i) + closest_ly, (slot_z * {{VOXEL_RES}}i) + closest_lz);
                 let raw_val = textureLoad(voxel_texture, atlas_coord, 0);
-                best_mat = raw_val.g;
+                best_mat = raw_val.r;
                 if (!only_dist) {
                     let baked_val = textureSampleLevel(voxel_baked_values_texture, voxel_sampler, sample_coords, 0.0);
                     tex_val.z = baked_val.r;

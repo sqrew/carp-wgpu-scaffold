@@ -357,7 +357,7 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                  
                  let local_q = q - chunk_lookup.origin.xyz;
                  if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                     return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                  }
                  
                  let mx = u32(local_q.x) >> 2u;
@@ -366,13 +366,13 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                  let skip_idx = mx + (my << 3u) + (mz << 6u);
                  let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
                  if (skip_val == 0) {
-                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                     return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                  }
                  
                  let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
                  let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
                  if (slot < 0) {
-                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                     return vec4<f32>(1.0, 1.5, 1.0, 1.0);
                  }
                  
                  let slot_x = slot % 12i;
@@ -405,8 +405,8 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
 // Query if this cell is solid terrain
 let voxel = get_voxel(local_x, local_y, local_z);
 let solid_thresh = u.terrain_params3.z;
-if (voxel.x <= solid_thresh) {
-    let mat_id = round(abs(voxel.y));
+if (voxel.y <= solid_thresh) {
+    let mat_id = round(abs(voxel.x));
     var emitter = vec4<f32>(0.0);
     let seed = dot(voxel_pos, vec3<f32>(12.9898, 78.233, 37.719));
     let flicker = 1.0 + 0.10 * sin(u.time * 8.0 + seed);
