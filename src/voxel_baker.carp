@@ -319,8 +319,8 @@
                           mat-id-clean (if (< min-d-clean 0.0) mat-id 0.0f)
                           idx (* (+ x (+ (* y w-dim) (* (* z w-dim) h-dim))) 4)]
                       (do
-                        (Array.aset! voxel-data idx (Double.to-float min-d-clean))
-                        (Array.aset! voxel-data (+ idx 1) mat-id-clean)
+                        (Array.aset! voxel-data idx mat-id-clean)
+                        (Array.aset! voxel-data (+ idx 1) (Double.to-float min-d-clean))
                         (Array.aset! voxel-data (+ idx 2) 0.0f)
                         (Array.aset! voxel-data (+ idx 3) 0.0f))))))))))))
 
@@ -338,14 +338,14 @@
                 int zy_offset = z_offset + y_offset;
                 for (int x = 0; x < res; x++) {
                     int idx = (x + zy_offset) * 4;
-                    float d = data[idx];
+                    float d = data[idx + 1];
                     
-                    bool solid_l = (x - 1 >= 0)   ? (data[((x - 1) + zy_offset) * 4] < 0.0f) : (d < 0.0f);
-                    bool solid_r = (x + 1 < res)  ? (data[((x + 1) + zy_offset) * 4] < 0.0f) : (d < 0.0f);
-                    bool solid_d = (y - 1 >= 0)   ? (data[(x + z_offset + (y - 1) * res) * 4] < 0.0f) : (d < 0.0f);
-                    bool solid_u = (y + 1 < res)  ? (data[(x + z_offset + (y + 1) * res) * 4] < 0.0f) : (d < 0.0f);
-                    bool solid_b = (z - 1 >= 0)   ? (data[(x + y_offset + (z - 1) * res_sq) * 4] < 0.0f) : (d < 0.0f);
-                    bool solid_f = (z + 1 < res)  ? (data[(x + y_offset + (z + 1) * res_sq) * 4] < 0.0f) : (d < 0.0f);
+                    bool solid_l = (x - 1 >= 0)   ? (data[((x - 1) + zy_offset) * 4 + 1] < 0.0f) : (d < 0.0f);
+                    bool solid_r = (x + 1 < res)  ? (data[((x + 1) + zy_offset) * 4 + 1] < 0.0f) : (d < 0.0f);
+                    bool solid_d = (y - 1 >= 0)   ? (data[(x + z_offset + (y - 1) * res) * 4 + 1] < 0.0f) : (d < 0.0f);
+                    bool solid_u = (y + 1 < res)  ? (data[(x + z_offset + (y + 1) * res) * 4 + 1] < 0.0f) : (d < 0.0f);
+                    bool solid_b = (z - 1 >= 0)   ? (data[(x + y_offset + (z - 1) * res_sq) * 4 + 1] < 0.0f) : (d < 0.0f);
+                    bool solid_f = (z + 1 < res)  ? (data[(x + y_offset + (z + 1) * res_sq) * 4 + 1] < 0.0f) : (d < 0.0f);
                     
                     int num_solid = 0;
                     if (solid_l) num_solid++;
@@ -362,10 +362,10 @@
                     float shadow_val = solid_u ? 0.2f : 1.0f;
                     
                     // Horizontal slope calculation from SDF gradient
-                    float sdf_l = (x - 1 >= 0)   ? data[((x - 1) + zy_offset) * 4] : d;
-                    float sdf_r = (x + 1 < res)  ? data[((x + 1) + zy_offset) * 4] : d;
-                    float sdf_b = (z - 1 >= 0)   ? data[(x + y_offset + (z - 1) * res_sq) * 4] : d;
-                    float sdf_f = (z + 1 < res)  ? data[(x + y_offset + (z + 1) * res_sq) * 4] : d;
+                    float sdf_l = (x - 1 >= 0)   ? data[((x - 1) + zy_offset) * 4 + 1] : d;
+                    float sdf_r = (x + 1 < res)  ? data[((x + 1) + zy_offset) * 4 + 1] : d;
+                    float sdf_b = (z - 1 >= 0)   ? data[(x + y_offset + (z - 1) * res_sq) * 4 + 1] : d;
+                    float sdf_f = (z + 1 < res)  ? data[(x + y_offset + (z + 1) * res_sq) * 4 + 1] : d;
                     
                     float dx = sdf_r - sdf_l;
                     float dz = sdf_f - sdf_b;
@@ -492,9 +492,9 @@
                             dx (- px cx)
                             dist-to-crater-center (Double.sqrt (+ (* dx dx) dy2_dz2))
                             crater-dist (- dist-to-crater-center radius)
-                            old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                            old-dist (Double.from-float @(Array.unsafe-nth voxel-data (+ idx-full 1)))
                             new-dist (smax old-dist (- 0.0 crater-dist) 2.5)]
-                        (Array.aset! voxel-data idx-full (Double.to-float new-dist)))))))))))))
+                        (Array.aset! voxel-data (+ idx-full 1) (Double.to-float new-dist)))))))))))))
 
   (defn build-voxel-grid-cpu! [chunk center radius res cell-size mat-id]
     (let [qx @(Chunk.coord-x chunk)
@@ -546,14 +546,14 @@
                             dx (- px cx)
                             dist-to-sphere-center (Double.sqrt (+ (* dx dx) dy2_dz2))
                             sphere-dist (- dist-to-sphere-center radius)
-                            old-dist (Double.from-float @(Array.unsafe-nth voxel-data idx-full))
+                            old-dist (Double.from-float @(Array.unsafe-nth voxel-data (+ idx-full 1)))
                             new-dist (if (< old-dist sphere-dist) old-dist sphere-dist)]
                         (do
-                          (Array.aset! voxel-data idx-full (Double.to-float new-dist))
+                          (Array.aset! voxel-data (+ idx-full 1) (Double.to-float new-dist))
                           (let [m-id (if (< sphere-dist 0.0)
                                          (Double.to-float mat-id)
-                                         @(Array.unsafe-nth voxel-data (+ idx-full 1)))]
-                            (Array.aset! voxel-data (+ idx-full 1) m-id))))))))))))))
+                                         @(Array.unsafe-nth voxel-data idx-full))]
+                            (Array.aset! voxel-data idx-full m-id))))))))))))))
 
   (defn pack-and-copy-light-chunk! [ctx ren slot res]
     (let [l-half-b @(WGPURenderer.light-half-buffer ren)

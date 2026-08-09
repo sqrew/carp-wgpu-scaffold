@@ -210,7 +210,7 @@
             1.5
             (let [chunk (Array.unsafe-nth chunks found-idx)
                   voxel-idx (* (+ lx (+ (* ly res) (* (* lz res) res))) 4)
-                  val (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) voxel-idx))]
+                  val (Double.from-float @(Array.unsafe-nth (Chunk.voxel-data chunk) (+ voxel-idx 1)))]
               (if (< val 1.5) val 1.5))))))
 
   (defn sample-voxel-grid-trilinear [world p]

@@ -20,18 +20,18 @@ if (cell.y <= solid_thresh) {
     let below_voxel = get_voxel(local_x, local_y - 1, local_z);
     var shear_load = 0.0;
     
-    // Treat unloaded chunk bounds (returning 1.5, 1.0) as solid support to prevent boundary false-collapses
-    let is_below_unloaded = (below_voxel.y <= solid_thresh && below_voxel.x == 1.5);
+    // Treat unloaded chunk bounds (returning 1.0, 1.5) as solid support to prevent boundary false-collapses
+    let is_below_unloaded = (below_voxel.x == 1.0);
     
     if (below_voxel.y > solid_thresh && !is_below_unloaded) { // Air below us (overhang!)
         var min_dist = 999.0;
         // Scan Left (-X)
         for (var dx = 1; dx <= 6; dx = dx + 1) {
             let voxel_here = get_voxel(local_x - dx, local_y, local_z);
-            let here_unloaded = (voxel_here.y <= solid_thresh && voxel_here.x == 1.5);
+            let here_unloaded = (voxel_here.x == 1.0);
             if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x - dx, local_y - 1, local_z);
-                let below_unloaded = (voxel_below.y <= solid_thresh && voxel_below.x == 1.5);
+                let below_unloaded = (voxel_below.x == 1.0);
                 if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dx));
                     break;
@@ -43,10 +43,10 @@ if (cell.y <= solid_thresh) {
         // Scan Right (+X)
         for (var dx = 1; dx <= 6; dx = dx + 1) {
             let voxel_here = get_voxel(local_x + dx, local_y, local_z);
-            let here_unloaded = (voxel_here.y <= solid_thresh && voxel_here.x == 1.5);
+            let here_unloaded = (voxel_here.x == 1.0);
             if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x + dx, local_y - 1, local_z);
-                let below_unloaded = (voxel_below.y <= solid_thresh && voxel_below.x == 1.5);
+                let below_unloaded = (voxel_below.x == 1.0);
                 if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dx));
                     break;
@@ -58,10 +58,10 @@ if (cell.y <= solid_thresh) {
         // Scan Forward (+Z)
         for (var dz = 1; dz <= 6; dz = dz + 1) {
             let voxel_here = get_voxel(local_x, local_y, local_z + dz);
-            let here_unloaded = (voxel_here.y <= solid_thresh && voxel_here.x == 1.5);
+            let here_unloaded = (voxel_here.x == 1.0);
             if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x, local_y - 1, local_z + dz);
-                let below_unloaded = (voxel_below.y <= solid_thresh && voxel_below.x == 1.5);
+                let below_unloaded = (voxel_below.x == 1.0);
                 if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dz));
                     break;
@@ -73,10 +73,10 @@ if (cell.y <= solid_thresh) {
         // Scan Backward (-Z)
         for (var dz = 1; dz <= 6; dz = dz + 1) {
             let voxel_here = get_voxel(local_x, local_y, local_z - dz);
-            let here_unloaded = (voxel_here.y <= solid_thresh && voxel_here.x == 1.5);
+            let here_unloaded = (voxel_here.x == 1.0);
             if (voxel_here.y <= solid_thresh || here_unloaded) {
                 let voxel_below = get_voxel(local_x, local_y - 1, local_z - dz);
-                let below_unloaded = (voxel_below.y <= solid_thresh && voxel_below.x == 1.5);
+                let below_unloaded = (voxel_below.x == 1.0);
                 if (voxel_below.y <= solid_thresh || below_unloaded) {
                     min_dist = min(min_dist, f32(dz));
                     break;
@@ -102,7 +102,7 @@ if (cell.y <= solid_thresh) {
     if (cell.x < 0.0) {
         let below = get_voxel(local_x, local_y - 1, local_z);
         let solid_thresh_check = u.terrain_params3.z;
-        if (below.y > solid_thresh_check && below.x != 1.5) {
+        if (below.y > solid_thresh_check && below.x != 1.0) {
             // Fall straight down
             cell.x = 0.0; // Air ID
             cell.y = 0.5; // open density
@@ -113,16 +113,16 @@ if (cell.y <= solid_thresh) {
             let below_b = get_voxel(local_x, local_y - 1, local_z - 1);
             let below_f = get_voxel(local_x, local_y - 1, local_z + 1);
             
-            if (below_r.y > solid_thresh_check && below_r.x != 1.5) {
+            if (below_r.y > solid_thresh_check && below_r.x != 1.0) {
                 cell.x = 0.0;
                 cell.y = 0.5;
-            } else if (below_l.y > solid_thresh_check && below_l.x != 1.5) {
+            } else if (below_l.y > solid_thresh_check && below_l.x != 1.0) {
                 cell.x = 0.0;
                 cell.y = 0.5;
-            } else if (below_b.y > solid_thresh_check && below_b.x != 1.5) {
+            } else if (below_b.y > solid_thresh_check && below_b.x != 1.0) {
                 cell.x = 0.0;
                 cell.y = 0.5;
-            } else if (below_f.y > solid_thresh_check && below_f.x != 1.5) {
+            } else if (below_f.y > solid_thresh_check && below_f.x != 1.0) {
                 cell.x = 0.0;
                 cell.y = 0.5;
             } else {
@@ -233,14 +233,14 @@ if (cell.y > solid_thresh) {
         
         if (has_incoming) {
             let below = get_voxel(local_x, local_y - 1, local_z);
-            if (below.y > solid_thresh && below.x != 1.5) {
+            if (below.y > solid_thresh && below.x != 1.0) {
                 // Keep falling down
                 cell.x = incoming_cell.x;
                 cell.y = incoming_cell.y;
             } else {
                 // Land and solidify!
-                cell.x = abs(incoming_cell.x);
-                cell.y = incoming_cell.y;
+                cell.x = incoming_cell.x;
+                cell.y = abs(incoming_cell.y);
             }
         }
     }
