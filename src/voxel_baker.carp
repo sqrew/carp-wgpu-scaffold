@@ -94,13 +94,13 @@
             @(WGPURenderer.voxel-texture ren) 
             ox oy oz res res res)))))
 
-  (defn chunk-overlaps-sphere? [chunk center radius]
+  (defn chunk-overlaps-sphere? [chunk origin center radius]
     (let [qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
-          c-min-x (* (Double.from-int qx) 32.0)
-          c-min-y (* (Double.from-int qy) 32.0)
-          c-min-z (* (Double.from-int qz) 32.0)
+          c-min-x (+ @(Vector3.x origin) (* (Double.from-int qx) 32.0))
+          c-min-y (+ @(Vector3.y origin) (* (Double.from-int qy) 32.0))
+          c-min-z (+ @(Vector3.z origin) (* (Double.from-int qz) 32.0))
           c-max-x (+ c-min-x 32.0)
           c-max-y (+ c-min-y 32.0)
           c-max-z (+ c-min-z 32.0)

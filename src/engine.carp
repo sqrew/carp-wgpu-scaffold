@@ -1075,16 +1075,18 @@
                           (set! target-pos @(RigidBody.position rb))
                           (set! target-scale @(FieldInstance.scale fi)))))
                     (let [chunks (World.chunks world-data)
-                          num-chunks (Array.length chunks)]
+                          num-chunks (Array.length chunks)
+                          origin (World.grid-origin world-data)]
                       (for [j 0 num-chunks]
                         (let [chunk (Array.unsafe-nth chunks j)]
-                          (when (VoxelBaker.chunk-overlaps-sphere? chunk &target-pos (+ target-scale 4.0))
+                          (when (VoxelBaker.chunk-overlaps-sphere? chunk origin &target-pos (+ target-scale 4.0))
                             (VoxelBaker.bake-chunk! ctx ren chunk world-data &static-world-sdf)))))))
               _ (World.dirty-all-chunks! world-data))
           (let [chunks (World.chunks world-data)
                 num-chunks (Array.length chunks)
                 num-craters (Array.length craters)
-                diag (Engine.diagnostics e)]
+                diag (Engine.diagnostics e)
+                origin (World.grid-origin world-data)]
             (for [j 0 num-chunks]
               (let [chunk (Array.unsafe-nth chunks j)
                     res @(World.voxel-resolution world-data)
@@ -1095,7 +1097,7 @@
                           pos (CraterSpawnData.pos crater)
                           rad @(CraterSpawnData.radius crater)
                           op @(CraterSpawnData.op-type crater)]
-                      (when (VoxelBaker.chunk-overlaps-sphere? chunk pos rad)
+                      (when (VoxelBaker.chunk-overlaps-sphere? chunk origin pos rad)
                         (do
                           (Diagnostics.with-zone diag "Bake: Carve CPU"
                             (if (= op 0.0)
@@ -1132,6 +1134,7 @@
 
   (defn bake-all-fields-gpu! [e ctx ren]
     (let [world-data (Engine.world-data e)
+          origin (World.grid-origin world-data)
           db (World.field-db world-data)
           edb (World.entity-db world-data)
           chunks (World.chunks world-data)
@@ -1160,7 +1163,7 @@
                   (let [scale @(Array.unsafe-nth (EntityDatabase.scales edb) k)]
                     (when (> scale 0.0)
                       (let [inst-pos (Array.unsafe-nth (EntityDatabase.positions edb) k)]
-                        (when (VoxelBaker.chunk-overlaps-sphere? chunk inst-pos scale)
+                        (when (VoxelBaker.chunk-overlaps-sphere? chunk origin inst-pos scale)
                           (set! overlaps true)))))))
               (if overlaps
                 (do

@@ -56,10 +56,10 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             let speed = inst.shape_info.w;
             let dist = length(p - inst.pos_scale.xyz);
             
-            // If flying fast, leave a thin, low-density trail of water.
+            // If flying fast, leave a thick, falling trail of water.
             // If stopped or impacting, make a big full-density splash.
-            var splat_radius = radius * 1.5;
-            var density_mult = 0.35; // visible, medium-density trail in the air
+            var splat_radius = radius * 2.5;
+            var density_mult = 0.85; // thick, falling trail in the air
             
             if (speed < 1.5) {
                 splat_radius = radius * 4.5; // big splash radius

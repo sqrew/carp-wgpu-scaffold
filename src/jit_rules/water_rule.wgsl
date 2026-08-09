@@ -1,11 +1,10 @@
 // water_rule.wgsl - Native GPU-Resident JIT Water cellular automata & fluid loop.
 // Layout: water is vec4<f32>(Liquid_ID, Volume, Age, Sleep)
 
-let solid_thresh = u.terrain_params3.z;
 let self_voxel = get_voxel(local_x, local_y, local_z);
 
-// If the voxel is solid (SDF <= threshold), it cannot contain liquid
-if (self_voxel.y <= solid_thresh) {
+// If the voxel is solid (Material ID >= 0.9), it cannot contain liquid
+if (self_voxel.y >= 0.9) {
     water = vec4<f32>(0.0);
 } else {
     // Early-out Sleep state check
@@ -31,13 +30,13 @@ if (self_voxel.y <= solid_thresh) {
         let slope_bias_x = -slope.x * 0.15;
         let slope_bias_z = -slope.y * 0.15;
 
-        // Check voxel solidity for neighbors (SDF <= threshold is solid)
-        let sol_below  = get_voxel(local_x, local_y - 1, local_z).y <= solid_thresh;
-        let sol_above  = get_voxel(local_x, local_y + 1, local_z).y <= solid_thresh;
-        let sol_left   = get_voxel(local_x - 1, local_y, local_z).y <= solid_thresh;
-        let sol_right  = get_voxel(local_x + 1, local_y, local_z).y <= solid_thresh;
-        let sol_back   = get_voxel(local_x, local_y, local_z - 1).y <= solid_thresh;
-        let sol_front  = get_voxel(local_x, local_y, local_z + 1).y <= solid_thresh;
+        // Check voxel solidity for neighbors (Material ID >= 0.9 is solid)
+        let sol_below  = get_voxel(local_x, local_y - 1, local_z).y >= 0.9;
+        let sol_above  = get_voxel(local_x, local_y + 1, local_z).y >= 0.9;
+        let sol_left   = get_voxel(local_x - 1, local_y, local_z).y >= 0.9;
+        let sol_right  = get_voxel(local_x + 1, local_y, local_z).y >= 0.9;
+        let sol_back   = get_voxel(local_x, local_y, local_z - 1).y >= 0.9;
+        let sol_front  = get_voxel(local_x, local_y, local_z + 1).y >= 0.9;
 
         // Fetch neighbor liquids
         let w_below_v = get_fluid(local_x, local_y - 1, local_z);
@@ -77,7 +76,7 @@ if (self_voxel.y <= solid_thresh) {
             self_evap_rate = 0.015;
         }
 
-        let global_flow_speed = u.misc_params.y * dt;
+        let global_flow_speed = u.misc_params.y * dt * 45.0;
 
         // --- 1. Downward Advection Flow ---
         if (self_id > 0.0 && self_vol > 0.005) {
@@ -306,9 +305,9 @@ if (self_voxel.y <= solid_thresh) {
         var cold_ceiling = false;
         for (var dy = 1; dy <= 7; dy = dy + 1) {
             let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
-            if (ceiling_v.y <= solid_thresh) {
+            if (ceiling_v.y >= 0.9) {
                 near_ceiling = true;
-                let ceil_mat = round(abs(ceiling_v.x));
+                let ceil_mat = round(abs(ceiling_v.y));
                 if (ceil_mat == 6.0) {
                     cold_ceiling = true;
                 }

@@ -619,7 +619,7 @@
 
   (sig bake-voxel-grid! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref (SpatialGrid Uint32)) (Ref GameWorld) (Ref World)] ()))
 
-  (sig chunk-overlaps-sphere? (Fn [(Ref Chunk) (Ref (Vector3 Double)) Double] Bool))
+  (sig chunk-overlaps-sphere? (Fn [(Ref Chunk) (Ref (Vector3 Double)) (Ref (Vector3 Double)) Double] Bool))
 
   (sig carve-voxel-grid-gpu! (Fn [(Ptr WGPUContext) (Ref WGPURenderer) (Ref Chunk) (Ref (Vector3 Double)) Double Int] ()))
 

@@ -124,11 +124,12 @@
     (and (ECS.has-component? world ent Lifetime)
          (and (not (ECS.has-component? world ent BouncyTag))
               (if (ECS.has-component? world ent FieldInstance)
-                  (let [csg-idx -1]
+                  (let [csg-idx [-1]]
                     (do
                       (ECS.with-components world @ent [e (fi FieldInstance)]
-                        (set! csg-idx @(FieldInstance.csg-index fi)))
-                      (and (< csg-idx 0) (not (and (<= csg-idx -5) (>= csg-idx -8))))))
+                        (Array.aset! &csg-idx 0 @(FieldInstance.csg-index fi)))
+                      (let [idx @(Array.unsafe-nth &csg-idx 0)]
+                        (and (< idx 0) (not (and (<= idx -5) (>= idx -8)))))))
                   true))))
 
   (defn step-ecs! [e world grid]
@@ -308,11 +309,14 @@
                           _ (let [is-bouncy (ECS.has-component? world &ent1 BouncyTag)
                                   rad (if is-bouncy 0.2 0.4)
                                   d (sample-static-world world-data pos)]
-                              (when (< d rad)
-                                 (let [depth (min 0.4 (- rad d))
-                                       normal (estimate-sdf-normal world-data pos)
-                                       contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
-                                   (Array.push-back! &contacts (Contact.init depth contact-pt normal))))))
+                              (do
+                                (when (ECS.has-component? world &ent1 FieldInstance)
+                                  (IO.println &(format "Bullet debug: %s" &(str* (Vector3.str pos) @" d=" (Double.str d)))))
+                                (when (< d rad)
+                                   (let [depth (min 0.4 (- rad d))
+                                         normal (estimate-sdf-normal world-data pos)
+                                         contact-pt (Vector3.sub pos &(Vector3.mul &normal rad))]
+                                     (Array.push-back! &contacts (Contact.init depth contact-pt normal)))))))
                       _ ())
                     (when (not (Array.empty? &contacts))
                       (let [m (ContactSet.init @(Collidable.handle col1) (get-static-world-handle world) @&contacts)
@@ -327,12 +331,12 @@
                                 (ECS.with-components world @bullet-ent [e (lt Lifetime)]
                                   (Lifetime.set-time! lt 0.0))))
                             (let [is-water-bullet (if (ECS.has-component? world &ent1 FieldInstance)
-                                                     (let [w-val false]
+                                                     (let [w-val [false]]
                                                        (do
                                                          (ECS.with-components world @&ent1 [e (fi FieldInstance)]
                                                            (let [idx @(FieldInstance.csg-index fi)]
-                                                             (set! w-val (and (<= idx -5) (>= idx -8)))))
-                                                         w-val))
+                                                             (Array.aset! &w-val 0 (and (<= idx -5) (>= idx -8)))))
+                                                         @(Array.unsafe-nth &w-val 0)))
                                                      false)]
                               (if is-water-bullet
                                   (ECS.with-components world @&ent1 [e (lt Lifetime)]
