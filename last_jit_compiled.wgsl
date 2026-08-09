@@ -119,11 +119,11 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
             }
 
             struct Uniforms {
-                time: f32, 
-                width: f32, 
-                height: f32, 
+                time: f32,
+                width: f32,
+                height: f32,
                 cell_size: f32,
-                cam_pos: vec4<f32>, 
+                cam_pos: vec4<f32>,
                 cam_dir: vec4<f32>,
                 cam_right: vec4<f32>,
                 cam_up: vec4<f32>,
@@ -150,24 +150,51 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 origin_slot: vec4<f32>,
             }
 
-            @group(0) @binding(0) var<storage, read> input_grid: array<vec4<f32>>;
-            @group(0) @binding(1) var<storage, read_write> output_grid: array<vec4<f32>>;
+            @group(0) @binding(0) var<storage, read> input_fields: array<vec4<f32>>;
+            @group(0) @binding(1) var<storage, read_write> output_fields: array<vec4<f32>>;
             @group(0) @binding(2) var<uniform> u: Uniforms;
             @group(0) @binding(3) var<storage, read> chunk_info: ChunkInfo;
             @group(0) @binding(4) var<storage, read> chunk_lookup: ChunkLookup;
             @group(0) @binding(5) var voxel_texture: texture_3d<f32>;
             @group(0) @binding(10) var<storage, read> instances: array<PointInstance>;
+            const GRID_RES: i32 = 32i;
             @group(0) @binding(6) var water_texture: texture_3d<f32>;
             @group(0) @binding(7) var gas_texture: texture_3d<f32>;
             @group(0) @binding(8) var em_texture: texture_3d<f32>;
             @group(0) @binding(9) var gravity_texture: texture_3d<f32>;
             @group(0) @binding(11) var voxel_baked_values_texture: texture_3d<f32>;
 
+            fn get_baked_values(x: i32, y: i32, z: i32) -> vec4<f32> {
+                let world_v = chunk_info.origin_slot.xyz + vec3<f32>(f32(x), f32(y), f32(z));
+                let q = vec3<i32>(floor(world_v / f32(GRID_RES)));
+                let l = vec3<i32>(world_v - vec3<f32>(q) * f32(GRID_RES));
+                let lx = l.x;
+                let ly = l.y;
+                let lz = l.z;
+                let local_q = q - chunk_lookup.origin.xyz;
+                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
+                    return vec4<f32>(0.0);
+                }
+                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                if (slot < 0) {
+                    return vec4<f32>(0.0);
+                }
+                let slot_x = slot % 12i;
+                let slot_y = (slot / 12i) % 12i;
+                let slot_z = slot / 144i;
+                let atlas_coord = vec3<i32>((slot_x * GRID_RES) + lx, (slot_y * GRID_RES) + ly, (slot_z * GRID_RES) + lz);
+                return textureLoad(voxel_baked_values_texture, atlas_coord, 0);
+            }
+
             fn get_water(x: i32, y: i32, z: i32) -> vec4<f32> {
-                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(32i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));
-                let res_f = f32(32i);
+                let world_v = chunk_info.origin_slot.xyz + vec3<f32>(f32(x), f32(y), f32(z));
+                let res_f = f32(GRID_RES);
                 let q = vec3<i32>(floor(world_v / res_f));
                 let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);
+                let lx = l.x;
+                let ly = l.y;
+                let lz = l.z;
                 
                 let local_q = q - chunk_lookup.origin.xyz;
                 if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
@@ -193,12 +220,86 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 let slot_y = (slot / 12i) % 12i;
                 let slot_z = slot / 144i;
                 
-                let atlas_coord = vec3<i32>((slot_x * 32i) + l.x, (slot_y * 32i) + l.y, (slot_z * 32i) + l.z);
+                let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
                 return textureLoad(water_texture, atlas_coord, 0);
             }
 
+            fn get_gas(x: i32, y: i32, z: i32) -> vec4<f32> {
+                let world_v = chunk_info.origin_slot.xyz + vec3<f32>(f32(x), f32(y), f32(z));
+                let res_f = f32(GRID_RES);
+                let q = vec3<i32>(floor(world_v / res_f));
+                let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);
+                let lx = l.x;
+                let ly = l.y;
+                let lz = l.z;
+                
+                let local_q = q - chunk_lookup.origin.xyz;
+                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let mx = u32(local_q.x) >> 2u;
+                let my = u32(local_q.y) >> 2u;
+                let mz = u32(local_q.z) >> 2u;
+                let skip_idx = mx + (my << 3u) + (mz << 6u);
+                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                if (skip_val == 0) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                if (slot < 0) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let slot_x = slot % 12i;
+                let slot_y = (slot / 12i) % 12i;
+                let slot_z = slot / 144i;
+                
+                let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
+                return textureLoad(gas_texture, atlas_coord, 0);
+            }
+
+            fn get_em(x: i32, y: i32, z: i32) -> vec4<f32> {
+                let world_v = chunk_info.origin_slot.xyz + vec3<f32>(f32(x), f32(y), f32(z));
+                let res_f = f32(GRID_RES);
+                let q = vec3<i32>(floor(world_v / res_f));
+                let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);
+                let lx = l.x;
+                let ly = l.y;
+                let lz = l.z;
+                
+                let local_q = q - chunk_lookup.origin.xyz;
+                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let mx = u32(local_q.x) >> 2u;
+                let my = u32(local_q.y) >> 2u;
+                let mz = u32(local_q.z) >> 2u;
+                let skip_idx = mx + (my << 3u) + (mz << 6u);
+                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                if (skip_val == 0) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                if (slot < 0) {
+                    return vec4<f32>(0.0);
+                }
+                
+                let slot_x = slot % 12i;
+                let slot_y = (slot / 12i) % 12i;
+                let slot_z = slot / 144i;
+                
+                let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
+                return textureLoad(em_texture, atlas_coord, 0);
+            }
+
             fn get_gravity(x: i32, y: i32, z: i32) -> vec4<f32> {
-                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(32i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));
+                let world_v = chunk_info.origin_slot.xyz + vec3<f32>(f32(x), f32(y), f32(z));
                 let cell_size = u.cell_size;
                 let pos = world_v * cell_size;
                 
@@ -235,111 +336,52 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 }
             }
 
-            fn get_gas(x: i32, y: i32, z: i32) -> vec4<f32> {
-                let world_v = vec3<f32>(round(chunk_info.origin_slot.xyz * (f32(32i) / 32.0))) + vec3<f32>(f32(x), f32(y), f32(z));
-                let res_f = f32(32i);
-                let q = vec3<i32>(floor(world_v / res_f));
-                let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);
-                
-                let local_q = q - chunk_lookup.origin.xyz;
-                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                    return vec4<f32>(0.0);
+            fn get_fluid(x: i32, y: i32, z: i32) -> vec4<f32> {
+                if (x >= 0 && x < 32i && y >= 0 && y < 32i && z >= 0 && z < 32i) {
+                    let idx = x + y * 32i + z * 1024i;
+                    return input_fields[idx];
+                } else {
+                    return get_water(x, y, z);
                 }
-                
-                let mx = u32(local_q.x) >> 2u;
-                let my = u32(local_q.y) >> 2u;
-                let mz = u32(local_q.z) >> 2u;
-                let skip_idx = mx + (my << 3u) + (mz << 6u);
-                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-                if (skip_val == 0) {
-                    return vec4<f32>(0.0);
-                }
-                
-                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
-                if (slot < 0) {
-                    return vec4<f32>(0.0);
-                }
-                
-                let slot_x = slot % 12i;
-                let slot_y = (slot / 12i) % 12i;
-                let slot_z = slot / 144i;
-                
-                let atlas_coord = vec3<i32>((slot_x * 32i) + l.x, (slot_y * 32i) + l.y, (slot_z * 32i) + l.z);
-                return textureLoad(gas_texture, atlas_coord, 0);
             }
 
-            fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
-                if (x >= 0 && x < 32 && y >= 0 && y < 32 && z >= 0 && z < 32) {
-                    let idx = u32(x + y * 32 + z * 1024);
-                    return input_grid[idx];
-                }
-                
-                let world_v = vec3<i32>(round(chunk_info.origin_slot.xyz * (f32(32i) / 32.0))) + vec3<i32>(x, y, z);
-                let qx = world_v.x >> 5u;
-                let qy = world_v.y >> 5u;
-                let qz = world_v.z >> 5u;
-                
-                let lx = world_v.x & 31i;
-                let ly = world_v.y & 31i;
-                let lz = world_v.z & 31i;
-                
-                let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
-                }
-                
-                let mx = u32(local_q.x) >> 2u;
-                let my = u32(local_q.y) >> 2u;
-                let mz = u32(local_q.z) >> 2u;
-                let skip_idx = mx + (my << 3u) + (mz << 6u);
-                let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
-                if (skip_val == 0) {
-                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
-                }
-                
-                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
-                if (slot < 0) {
-                    return vec4<f32>(1.5, 1.0, 1.0, 1.0);
-                }
-                
-                let slot_x = slot % 12i;
-                let slot_y = (slot / 12i) % 12i;
-                let slot_z = slot / 144i;
-                
-                let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
-                return textureLoad(voxel_texture, atlas_coord, 0);
-            }
 
-            fn get_baked_values(x: i32, y: i32, z: i32) -> vec4<f32> {
-                let world_v = vec3<i32>(round(chunk_info.origin_slot.xyz * (f32(32i) / 32.0))) + vec3<i32>(x, y, z);
-                let qx = world_v.x >> 5u;
-                let qy = world_v.y >> 5u;
-                let qz = world_v.z >> 5u;
-                
-                let lx = world_v.x & 31i;
-                let ly = world_v.y & 31i;
-                let lz = world_v.z & 31i;
-                
-                let local_q = vec3<i32>(qx, qy, qz) - chunk_lookup.origin.xyz;
-                if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
-                    return vec4<f32>(0.0);
-                }
-                
-                let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
-                let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
-                if (slot < 0) {
-                    return vec4<f32>(0.0);
-                }
-                
-                let slot_x = slot % 12i;
-                let slot_y = (slot / 12i) % 12i;
-                let slot_z = slot / 144i;
-                
-                let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
-                return textureLoad(voxel_baked_values_texture, atlas_coord, 0);
-            }
+             fn get_voxel(x: i32, y: i32, z: i32) -> vec4<f32> {
+                 let world_v = chunk_info.origin_slot.xyz + vec3<f32>(f32(x), f32(y), f32(z));
+                 let res_f = f32(GRID_RES);
+                 let q = vec3<i32>(floor(world_v / res_f));
+                 let l = vec3<i32>(world_v - vec3<f32>(q) * res_f);
+                 let lx = l.x;
+                 let ly = l.y;
+                 let lz = l.z;
+                 
+                 let local_q = q - chunk_lookup.origin.xyz;
+                 if (any(local_q < vec3<i32>(0)) || any(local_q >= vec3<i32>(32))) {
+                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                 }
+                 
+                 let mx = u32(local_q.x) >> 2u;
+                 let my = u32(local_q.y) >> 2u;
+                 let mz = u32(local_q.z) >> 2u;
+                 let skip_idx = mx + (my << 3u) + (mz << 6u);
+                 let skip_val = chunk_lookup.skip_grid[skip_idx >> 2u][skip_idx & 3];
+                 if (skip_val == 0) {
+                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                 }
+                 
+                 let idx = local_q.x + local_q.y * 32 + local_q.z * 1024;
+                 let slot = chunk_lookup.slots[u32(idx) >> 2u][idx & 3];
+                 if (slot < 0) {
+                     return vec4<f32>(1.5, 1.0, 1.0, 1.0);
+                 }
+                 
+                 let slot_x = slot % 12i;
+                 let slot_y = (slot / 12i) % 12i;
+                 let slot_z = slot / 144i;
+                 
+                 let atlas_coord = vec3<i32>((slot_x * 32i) + lx, (slot_y * 32i) + ly, (slot_z * 32i) + lz);
+                 return textureLoad(voxel_texture, atlas_coord, 0);
+             }
 
             @compute @workgroup_size(64)
             fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
@@ -350,304 +392,85 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 let local_y = i32((idx / 32u) % 32u);
                 let local_z = i32(idx / 1024u);
                 
-                var cell = input_grid[idx];
+                var em = input_fields[idx];
                 let voxel_pos = chunk_info.origin_slot.xyz + vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * 1;
-                let dt = 0.00833 * get_gravity(local_x, local_y, local_z).w;
-                let dummy_use = u.time * 0.0;
-                cell.x += dummy_use;
-                var cell_velocity = vec3<f32>(0.0);
-                // --- DYNAMIC INJECTIONS LOOP ---
+                 let dt = 0.00833 * get_gravity(local_x, local_y, local_z).w;
+                 let dummy_use = u.time * 0.0;
+                 em.x += dummy_use;
+                 // --- DYNAMIC INJECTIONS LOOP ---
 {
-// === Injected from physics_rule.wgsl ===
-// physics_rule.wgsl - Native GPU-Resident JIT Shader Injection Loop
-// Modifying this file live updates the global physical behaviors of the voxel grid.
+// === Injected from em_rule.wgsl ===
+// em_rule.wgsl - Native GPU-Resident JIT Electromagnetism solver (Jacobi Potential Relaxation)
 
-if (cell.x < 0.0) {
-    var gravity_load = 1.0;
-    for (var dy = 1; dy <= 12; dy = dy + 1) {
-        let voxel = get_voxel(local_x, local_y + dy, local_z);
-        if (voxel.x < 0.0) { // Solid
-            let top_mat = round(abs(voxel.y));
-            let top_props = get_material_properties(top_mat);
-            gravity_load = gravity_load + top_props.density;
-        } else {
-            break;
-        }
-    }
+// Average potential and magnetic vector potential from neighbors
+let V_left  = get_em(local_x - 1, local_y, local_z).w;
+let V_right = get_em(local_x + 1, local_y, local_z).w;
+let V_down  = get_em(local_x, local_y - 1, local_z).w;
+let V_up    = get_em(local_x, local_y + 1, local_z).w;
+let V_back  = get_em(local_x, local_y, local_z - 1).w;
+let V_front = get_em(local_x, local_y, local_z + 1).w;
 
-    // 2. Shear stress: scan below to see if unsupported
-    let below_voxel = get_voxel(local_x, local_y - 1, local_z);
-    var shear_load = 0.0;
+let relaxed_V = (V_left + V_right + V_down + V_up + V_back + V_front) / 6.0;
+
+let A_left  = get_em(local_x - 1, local_y, local_z).xyz;
+let A_right = get_em(local_x + 1, local_y, local_z).xyz;
+let A_down  = get_em(local_x, local_y - 1, local_z).xyz;
+let A_up    = get_em(local_x, local_y + 1, local_z).xyz;
+let A_back  = get_em(local_x, local_y, local_z - 1).xyz;
+let A_front = get_em(local_x, local_y, local_z + 1).xyz;
+
+let relaxed_A = (A_left + A_right + A_down + A_up + A_back + A_front) / 6.0;
+
+// Scan instances list to find charge sources & grounds
+var local_charge = 0.0;
+var local_current = vec3<f32>(0.0);
+var grounded = false;
+
+for (var i = 0u; i < 512u; i = i + 1u) {
+    let inst = instances[i];
+    var radius = inst.pos_scale.w;
+    if (radius <= 0.0) { continue; }
     
-    // Treat unloaded chunk bounds (returning 1.5, 1.0) as solid support to prevent boundary false-collapses
-    let is_below_unloaded = (below_voxel.x == 1.5 && below_voxel.y == 1.0);
-    
-    if (below_voxel.x >= 0.0 && !is_below_unloaded) { // Air below us (overhang!)
-        var min_dist = 999.0;
-        // Scan Left (-X)
-        for (var dx = 1; dx <= 6; dx = dx + 1) {
-            let voxel_here = get_voxel(local_x - dx, local_y, local_z);
-            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
-            if (voxel_here.x < 0.0 || here_unloaded) {
-                let voxel_below = get_voxel(local_x - dx, local_y - 1, local_z);
-                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
-                if (voxel_below.x < 0.0 || below_unloaded) {
-                    min_dist = min(min_dist, f32(dx));
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // Scan Right (+X)
-        for (var dx = 1; dx <= 6; dx = dx + 1) {
-            let voxel_here = get_voxel(local_x + dx, local_y, local_z);
-            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
-            if (voxel_here.x < 0.0 || here_unloaded) {
-                let voxel_below = get_voxel(local_x + dx, local_y - 1, local_z);
-                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
-                if (voxel_below.x < 0.0 || below_unloaded) {
-                    min_dist = min(min_dist, f32(dx));
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // Scan Forward (+Z)
-        for (var dz = 1; dz <= 6; dz = dz + 1) {
-            let voxel_here = get_voxel(local_x, local_y, local_z + dz);
-            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
-            if (voxel_here.x < 0.0 || here_unloaded) {
-                let voxel_below = get_voxel(local_x, local_y - 1, local_z + dz);
-                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
-                if (voxel_below.x < 0.0 || below_unloaded) {
-                    min_dist = min(min_dist, f32(dz));
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        // Scan Backward (-Z)
-        for (var dz = 1; dz <= 6; dz = dz + 1) {
-            let voxel_here = get_voxel(local_x, local_y, local_z - dz);
-            let here_unloaded = (voxel_here.x == 1.5 && voxel_here.y == 1.0);
-            if (voxel_here.x < 0.0 || here_unloaded) {
-                let voxel_below = get_voxel(local_x, local_y - 1, local_z - dz);
-                let below_unloaded = (voxel_below.x == 1.5 && voxel_below.y == 1.0);
-                if (voxel_below.x < 0.0 || below_unloaded) {
-                    min_dist = min(min_dist, f32(dz));
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        if (min_dist < 999.0) {
-            shear_load = min_dist;
-        } else {
-            shear_load = 6.0;
-        }
+    // Override EM charge radius to 1.0 for invisible spark entities (instance-type = 99.0)
+    let inst_type = round(inst.shape_info.y);
+    if (inst_type == 99.0) {
+        radius = 1.0;
     }
-
-    // Reduced coefficients (gravity * 0.4, shear * 1.2) to allow natural terrain overhangs
-    // and arches to stand stable, while still slumping under heavy structural loads.
-    let total_stress = (gravity_load - 1.0) * 0.4 + shear_load * 1.2;
-    let mat = round(abs(cell.y));
-    let props = get_material_properties(mat);
-    let limit = props.strength;
-
-    if (cell.y < 0.0) {
-        let below = get_voxel(local_x, local_y - 1, local_z);
-        let solid_thresh_check = u.terrain_params3.z;
-        if (below.x > solid_thresh_check && below.x != 1.5) {
-            // Fall straight down
-            cell.x = 0.5;
-            cell.y = 0.0;
-        } else {
-            // Try sliding diagonally below in 4 directions
-            let below_r = get_voxel(local_x + 1, local_y - 1, local_z);
-            let below_l = get_voxel(local_x - 1, local_y - 1, local_z);
-            let below_b = get_voxel(local_x, local_y - 1, local_z - 1);
-            let below_f = get_voxel(local_x, local_y - 1, local_z + 1);
-            
-            if (below_r.x > solid_thresh_check && below_r.x != 1.5) {
-                cell.x = 0.5;
-                cell.y = 0.0;
-            } else if (below_l.x > solid_thresh_check && below_l.x != 1.5) {
-                cell.x = 0.5;
-                cell.y = 0.0;
-            } else if (below_b.x > solid_thresh_check && below_b.x != 1.5) {
-                cell.x = 0.5;
-                cell.y = 0.0;
-            } else if (below_f.x > solid_thresh_check && below_f.x != 1.5) {
-                cell.x = 0.5;
-                cell.y = 0.0;
-            } else {
-                cell.y = abs(cell.y); // stabilize and land!
-            }
-        }
-    } else {
-        if (total_stress >= limit && shear_load > 0.5) {
-            cell_velocity += vec3<f32>(
-                sin(voxel_pos.x * 20.0) * 1.5,
-                -6.0,
-                cos(voxel_pos.z * 20.0) * 1.5
-            ) * dt * 20.0;
-            cell.y = -abs(cell.y); // start crumbling!
-        }
-
-        // --- Water Erosion ---
-        let w_above = get_water(local_x, local_y + 1, local_z).x;
-        let w_left  = get_water(local_x - 1, local_y, local_z).x;
-        let w_right = get_water(local_x + 1, local_y, local_z).x;
-        let w_front = get_water(local_x, local_y, local_z - 1).x;
-        let w_back  = get_water(local_x, local_y, local_z + 1).x;
+    
+    let dist = distance(voxel_pos, inst.pos_scale.xyz);
+    if (dist < radius) {
+        // em_fields.w is the electric charge, em_fields.xyz is the magnetic vector (current/vector potential)
+        local_charge += inst.em_fields.w;
+        local_current += inst.em_fields.xyz;
         
-        let water_vol = max(w_above, max(w_left, max(w_right, max(w_front, w_back))));
-        if (water_vol > 0.05) {
-            let erosion_rate = props.erosion_rate;
-            let stress_factor = 1.0 + clamp((total_stress - limit) / limit, 0.0, 2.0);
-            let actual_erosion = erosion_rate * stress_factor;
-            cell.x = cell.x + dt * water_vol * actual_erosion * 2.5 * u.misc_params.z;
-            
-            if (cell.x > -0.2 && cell.x < 0.0 && mat != 10.0) {
-                cell.y = 10.0; 
-            }
+        // If shape_info.y is ground / lightning rod (value 9.0), force potential to ground
+        if (inst.shape_info.y == 9.0) {
+            grounded = true;
         }
     }
 }
 
-// --- Lava Solidification & Falling Material (Runs in air cells) ---
-let solid_thresh = u.terrain_params3.z;
-if (cell.x > solid_thresh) {
-    let water_here = get_water(local_x, local_y, local_z);
-    if (water_here.x > 0.08 && water_here.y > 0.08) {
-        cell.x = -0.6; // turn to solid!
-        cell.y = 7.0;  // Volcanic Obsidian
-    } else {
-        // Receive falling material
-        var incoming_cell = vec4<f32>(0.0);
-        var has_incoming = false;
-        
-        // 1. Check directly above
-        let above = get_voxel(local_x, local_y + 1, local_z);
-        if (above.x <= solid_thresh && above.y < 0.0) {
-            incoming_cell = above;
-            has_incoming = true;
-        } else {
-            // 2. Check left-above (slides into us because its directly-below is solid)
-            let la = get_voxel(local_x - 1, local_y + 1, local_z);
-            let la_below = get_voxel(local_x - 1, local_y, local_z);
-            if (la.x <= solid_thresh && la.y < 0.0 && la_below.x <= solid_thresh) {
-                incoming_cell = la;
-                has_incoming = true;
-            } else {
-                // 3. Check right-above (slides into us because its directly-below is solid)
-                let ra = get_voxel(local_x + 1, local_y + 1, local_z);
-                let ra_below = get_voxel(local_x + 1, local_y, local_z);
-                if (ra.x <= solid_thresh && ra.y < 0.0 && ra_below.x <= solid_thresh) {
-                    incoming_cell = ra;
-                    has_incoming = true;
-                } else {
-                    // 4. Check back-above (slides into us because its directly-below is solid)
-                    let ba = get_voxel(local_x, local_y + 1, local_z - 1);
-                    let ba_below = get_voxel(local_x, local_y, local_z - 1);
-                    if (ba.x <= solid_thresh && ba.y < 0.0 && ba_below.x <= solid_thresh) {
-                        incoming_cell = ba;
-                        has_incoming = true;
-                    } else {
-                        // 5. Check front-above (slides into us because its directly-below is solid)
-                        let fa = get_voxel(local_x, local_y + 1, local_z + 1);
-                        let fa_below = get_voxel(local_x, local_y, local_z + 1);
-                        if (fa.x <= solid_thresh && fa.y < 0.0 && fa_below.x <= solid_thresh) {
-                            incoming_cell = fa;
-                            has_incoming = true;
-                        }
-                    }
-                }
+// Compute new potential V and vector potential A
+let water_here = get_water(local_x, local_y, local_z).x;
+let voxel_here = get_voxel(local_x, local_y, local_z);
+let mat_here = round(abs(voxel_here.y));
+let is_metal = voxel_here.x < 0.0 && (mat_here == 11.0 || mat_here == 12.0);
+let conductivity = select(0.97, select(0.998, 0.9995, is_metal), water_here > 0.05 || is_metal);
+
+var new_V = 0.0;
+if (grounded) {
+    new_V = 0.0;
+} else {
+    // Diffuse potential and add source charge with decay
+    new_V = relaxed_V * conductivity + local_charge * 0.5;
+}
+
+var new_A = relaxed_A * conductivity + local_current * 0.5;
+
+// Save back to output em field voxel
+em = vec4<f32>(new_A, new_V);
+
+}
+
+                output_fields[idx] = em + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture) + textureDimensions(gravity_texture) + textureDimensions(voxel_baked_values_texture)).x) * 0.0f);
             }
-        }
-        
-        if (has_incoming) {
-            let below = get_voxel(local_x, local_y - 1, local_z);
-            if (below.x > solid_thresh && below.x != 1.5) {
-                // Keep falling down
-                cell.x = incoming_cell.x;
-                cell.y = incoming_cell.y;
-            } else {
-                // Land and solidify!
-                cell.x = incoming_cell.x;
-                cell.y = abs(incoming_cell.y);
-            }
-        }
-    }
-}
-
-if (cell.x <= solid_thresh) {
-    let mat = round(abs(cell.y));
-    let props = get_material_properties(mat);
-    let a_above = get_water(local_x, local_y + 1, local_z).z;
-    let a_left  = get_water(local_x - 1, local_y, local_z).z;
-    let a_right = get_water(local_x + 1, local_y, local_z).z;
-    let a_front = get_water(local_x, local_y, local_z - 1).z;
-    let a_back  = get_water(local_x, local_y, local_z + 1).z;
-    let acid_vol = max(a_above, max(a_left, max(a_right, max(a_front, a_back))));
-    if (acid_vol > 0.05) {
-        // Acid corrosion speed scaled by material vulnerability
-        let corrosion_speed = 15.0 * (1.0 - props.acid_resist);
-        cell.x = cell.x + dt * acid_vol * corrosion_speed;
-    }
-
-    let l_above = get_water(local_x, local_y + 1, local_z).y;
-    let l_left  = get_water(local_x - 1, local_y, local_z).y;
-    let l_right = get_water(local_x + 1, local_y, local_z).y;
-    let l_front = get_water(local_x, local_y, local_z - 1).y;
-    let l_back  = get_water(local_x, local_y, local_z + 1).y;
-    let lava_vol = max(l_above, max(l_left, max(l_right, max(l_front, l_back))));
-    if (lava_vol > 0.05 && props.melt_speed > 0.0) {
-        cell.x = cell.x + dt * lava_vol * props.melt_speed;
-    }
-}
-
-// Prevent compiler optimization of gas_texture binding
-let dummy_gas = get_gas(0, 0, 0);
-cell.x = cell.x + dummy_gas.x * 1e-10;
-
-
-
-
-
-
-
-
-
-}
-
-{
-  let instance = instances[1];
-
-      let to_node = instance.pos_scale.xyz - voxel_pos;
-      let dist = length(to_node);
-      if (dist < instance.pos_scale.w) {
-          let force = (1.0 - (dist / instance.pos_scale.w)) * instance.light_fields.x;
-          cell_velocity += normalize(to_node) * force * dt;
-      }
-    
-}
-{
-  let instance = instances[2];
-
-      let to_node = instance.pos_scale.xyz - voxel_pos;
-      let dist = length(to_node);
-      if (dist < instance.pos_scale.w) {
-          let force = (1.0 - (dist / instance.pos_scale.w)) * instance.light_fields.x;
-          cell_velocity += normalize(to_node) * force * dt;
-      }
-    
-}
-                  // Apply velocity displacement to Signed Distance Field
-                  cell.x += length(cell_velocity) * 0.01 + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture) + textureDimensions(gravity_texture) + textureDimensions(voxel_baked_values_texture)).x) * 0.0f).x;
-                  output_grid[idx] = cell;
-              }

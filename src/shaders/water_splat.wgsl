@@ -81,13 +81,30 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
         }
     }
 
-    if (water_vol > 0.0 || lava_vol > 0.0 || acid_vol > 0.0 || oil_vol > 0.0) {
-        let existing = water_gpu_buffer[idx];
-        water_gpu_buffer[idx] = vec4<f32>(
-            max(existing.x, water_vol),
-            max(existing.y, lava_vol),
-            max(existing.z, acid_vol),
-            max(existing.w, oil_vol)
-        );
+    let existing = water_gpu_buffer[idx];
+    var final_id = existing.x;
+    var final_vol = existing.y;
+    var final_sleep = existing.w;
+    
+    var incoming_id = 0.0;
+    var incoming_vol = 0.0;
+    if (water_vol > incoming_vol) { incoming_id = 1.0; incoming_vol = water_vol; }
+    if (lava_vol > incoming_vol)  { incoming_id = 2.0; incoming_vol = lava_vol; }
+    if (acid_vol > incoming_vol)  { incoming_id = 3.0; incoming_vol = acid_vol; }
+    if (oil_vol > incoming_vol)   { incoming_id = 4.0; incoming_vol = oil_vol; }
+    
+    if (incoming_vol > 0.0) {
+        if (incoming_id == final_id || final_id == 0.0) {
+            final_id = incoming_id;
+            final_vol = max(final_vol, incoming_vol);
+        } else {
+            if (incoming_vol > final_vol) {
+                final_id = incoming_id;
+                final_vol = incoming_vol;
+            }
+        }
+        final_sleep = 0.0; // Wake voxel
     }
+    
+    water_gpu_buffer[idx] = vec4<f32>(final_id, final_vol, existing.z, final_sleep);
 }

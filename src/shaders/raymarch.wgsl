@@ -1631,10 +1631,23 @@ struct PointInstance {
 
        fn computeFogScattering(p: vec3<f32>, res_y: f32, rd: vec3<f32>, dither_threshold: f32, dominant_sun_dir: vec3<f32>, dominant_sun_col: vec3<f32>) -> vec4<f32> {
             let gas_val = sampleGasGrid(p);
-            let steam = gas_val.x;
-            let smoke = gas_val.y;
-            let acid_fog = gas_val.z;
-            let methane = gas_val.w;
+            let gas_id = round(gas_val.x);
+            let gas_vol = gas_val.y;
+            
+            var steam = 0.0;
+            var smoke = 0.0;
+            var acid_fog = 0.0;
+            var methane = 0.0;
+            
+            if (gas_id == 1.0) {
+                steam = gas_vol;
+            } else if (gas_id == 2.0) {
+                smoke = gas_vol;
+            } else if (gas_id == 3.0) {
+                acid_fog = gas_vol;
+            } else if (gas_id == 4.0) {
+                methane = gas_vol;
+            }
             
             let em_val = sampleEMGrid(p);
             let potential = em_val.w;
@@ -1752,10 +1765,17 @@ struct PointInstance {
                 final_metaball_d = res.w;
                 
                 let water_val = sampleWaterGrid(p);
-                max_water_sampled = max(max_water_sampled, water_val.x);
-                max_lava_sampled = max(max_lava_sampled, water_val.y);
-                max_acid_sampled = max(max_acid_sampled, water_val.z);
-                max_oil_sampled = max(max_oil_sampled, water_val.w);
+                let liq_id = round(water_val.x);
+                let liq_vol = water_val.y;
+                if (liq_id == 1.0) {
+                    max_water_sampled = max(max_water_sampled, liq_vol);
+                } else if (liq_id == 2.0) {
+                    max_lava_sampled = max(max_lava_sampled, liq_vol);
+                } else if (liq_id == 3.0) {
+                    max_acid_sampled = max(max_acid_sampled, liq_vol);
+                } else if (liq_id == 4.0) {
+                    max_oil_sampled = max(max_oil_sampled, liq_vol);
+                }
 
                 // Accumulate volumetric gases
                 let fog_scatter = computeFogScattering(p, res.y, rd, dither_threshold, dominant_sun_dir, dominant_sun_col);
@@ -1778,10 +1798,17 @@ struct PointInstance {
                     final_metaball_d = res.w;
 
                     let water_val = sampleWaterGrid(p);
-                    max_water_sampled = max(max_water_sampled, water_val.x);
-                    max_lava_sampled = max(max_lava_sampled, water_val.y);
-                    max_acid_sampled = max(max_acid_sampled, water_val.z);
-                    max_oil_sampled = max(max_oil_sampled, water_val.w);
+                    let liq_id = round(water_val.x);
+                    let liq_vol = water_val.y;
+                    if (liq_id == 1.0) {
+                        max_water_sampled = max(max_water_sampled, liq_vol);
+                    } else if (liq_id == 2.0) {
+                        max_lava_sampled = max(max_lava_sampled, liq_vol);
+                    } else if (liq_id == 3.0) {
+                        max_acid_sampled = max(max_acid_sampled, liq_vol);
+                    } else if (liq_id == 4.0) {
+                        max_oil_sampled = max(max_oil_sampled, liq_vol);
+                    }
 
                     // Accumulate volumetric gases
                     let fog_scatter = computeFogScattering(p, res.y, rd, dither_threshold, dominant_sun_dir, dominant_sun_col);

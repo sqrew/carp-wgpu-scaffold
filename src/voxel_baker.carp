@@ -708,7 +708,7 @@
 
   (defn pack-and-copy-water-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.water-half-buffer ren)
-          pipe @(WGPURenderer.pack-unorm8-pipeline ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -765,7 +765,7 @@
           w-half-b
           0
           res res res)
-        (let [unpack-pipe @(WGPURenderer.unpack-unorm8-pipeline ren)
+        (let [unpack-pipe @(WGPURenderer.unpack-pipeline ren)
               unpack-bufs [w-half-b w-scratch-b]]
           (with-bind-group (WGPU.create-bind-group ctx unpack-pipe &unpack-bufs) bg
             (WGPU.dispatch ctx unpack-pipe bg dispatch-cnt)))
@@ -814,7 +814,7 @@
 
   (defn pack-and-copy-gas-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.gas-half-buffer ren)
-          pipe @(WGPURenderer.pack-unorm8-pipeline ren)
+          pipe @(WGPURenderer.pack-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -857,7 +857,7 @@
           gas-half-b
           0
           res res res)
-        (let [unpack-pipe @(WGPURenderer.unpack-unorm8-pipeline ren)
+        (let [unpack-pipe @(WGPURenderer.unpack-pipeline ren)
               unpack-bufs [gas-half-b gas-scratch-b]]
           (with-bind-group (WGPU.create-bind-group ctx unpack-pipe &unpack-bufs) bg
             (WGPU.dispatch ctx unpack-pipe bg dispatch-cnt)))

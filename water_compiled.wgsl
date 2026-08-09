@@ -401,395 +401,228 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
 {
 // === Injected from water_rule.wgsl ===
 // water_rule.wgsl - Native GPU-Resident JIT Water cellular automata & fluid loop.
-//
-// Input/Output variable is:
-//   var water: vec4<f32>; // (x: Water, y: Lava, z: Acid, w: Crude Oil)
-//
-// Injected code here executes per-voxel. Use `water` to modify fluid simulation state.
-//
+// Layout: water is vec4<f32>(Liquid_ID, Volume, Age, Sleep)
 
+let solid_thresh = u.terrain_params3.z;
 let self_voxel = get_voxel(local_x, local_y, local_z);
 
 // If the voxel is solid (SDF <= threshold), it cannot contain liquid
-let solid_thresh = u.terrain_params3.z;
-if (self_voxel.x <= solid_thresh) {
+if (self_voxel.y <= solid_thresh) {
     water = vec4<f32>(0.0);
 } else {
+    // Early-out Sleep state check
+    let self_sleep = water.w;
+    var neighbors_all_sleeping = true;
+    if (self_sleep > 0.9) {
+        let active_neighbor = 
+            get_fluid(local_x - 1, local_y, local_z).w < 0.9 ||
+            get_fluid(local_x + 1, local_y, local_z).w < 0.9 ||
+            get_fluid(local_x, local_y - 1, local_z).w < 0.9 ||
+            get_fluid(local_x, local_y + 1, local_z).w < 0.9 ||
+            get_fluid(local_x, local_y, local_z - 1).w < 0.9 ||
+            get_fluid(local_x, local_y, local_z + 1).w < 0.9;
+        
+        if (!active_neighbor) {
+            return;
+        }
+    }
+
     let baked_vals = get_baked_values(local_x, local_y, local_z);
     let slope = vec2<f32>(baked_vals.z, baked_vals.w) * 2.0 - 1.0;
     let slope_bias_x = -slope.x * 0.15;
     let slope_bias_z = -slope.y * 0.15;
 
-    // --- Lightning Potential Shockwave Push ---
-    let pot_self  = abs(get_em(local_x, local_y, local_z).w);
-    let pot_left  = abs(get_em(local_x - 1, local_y, local_z).w);
-    let pot_right = abs(get_em(local_x + 1, local_y, local_z).w);
-    let pot_below = abs(get_em(local_x, local_y - 1, local_z).w);
-    let pot_above = abs(get_em(local_x, local_y + 1, local_z).w);
-    let pot_front = abs(get_em(local_x, local_y, local_z - 1).w);
-    let pot_back  = abs(get_em(local_x, local_y, local_z + 1).w);
-    
-    let fx = pot_left - pot_right;
-    let fy = pot_below - pot_above;
-    let fz = pot_front - pot_back;
-    
-    let force_mag = sqrt(fx*fx + fy*fy + fz*fz);
-    if (force_mag > 0.05) {
-        let dx = fx / force_mag;
-        let dy = fy / force_mag;
-        let dz = fz / force_mag;
-        
-        let sx = local_x - i32(round(dx));
-        let sy = local_y - i32(round(dy));
-        let sz = local_z - i32(round(dz));
-        
-        let push_speed = clamp(force_mag * 18.0 * dt, 0.0, 0.95);
-        let upstream_fluid = get_fluid(sx, sy, sz);
-        
-        water.x = mix(water.x, upstream_fluid.x, push_speed);
-        water.y = mix(water.y, upstream_fluid.y, push_speed);
-        water.z = mix(water.z, upstream_fluid.z, push_speed);
-        water.w = mix(water.w, upstream_fluid.w, push_speed);
-    }
-
-    // --- Gravity Field Advection Push ---
-    let grav_vector = get_gravity(local_x, local_y, local_z);
-    let local_time_dilation = grav_vector.w;
-    let g_len = length(grav_vector.xyz);
-    if (g_len > 0.1) {
-        let g_dir = grav_vector.xyz / g_len;
-        let is_custom_g = g_dir.y > -0.9 || g_len < 5.0 || g_len > 15.0;
-        if (is_custom_g) {
-            let dx = g_dir.x;
-            let dy = g_dir.y;
-            let dz = g_dir.z;
-            
-            let sx = local_x - i32(round(dx));
-            let sy = local_y - i32(round(dy));
-            let sz = local_z - i32(round(dz));
-            
-            let push_speed = clamp(g_len * 0.15 * dt * local_time_dilation, 0.0, 0.95);
-            let upstream_fluid = get_fluid(sx, sy, sz);
-            
-            water.x = mix(water.x, upstream_fluid.x, push_speed);
-            water.y = mix(water.y, upstream_fluid.y, push_speed);
-            water.z = mix(water.z, upstream_fluid.z, push_speed);
-            water.w = mix(water.w, upstream_fluid.w, push_speed);
-        }
-    }
-
-    var near_ceiling = false;
-    var cold_ceiling = false;
-    let gas_here = get_gas(local_x, local_y, local_z);
-    let steam_here = gas_here.x;
-
-    for (var dy = 1; dy <= 7; dy = dy + 1) {
-        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
-        if (ceiling_v.x <= solid_thresh) {
-            near_ceiling = true;
-            let ceil_mat = round(abs(ceiling_v.y));
-            if (ceil_mat == 6.0) {
-                cold_ceiling = true;
-            }
-            break;
-        }
-    }
-
-    var w_below_v  = vec4<f32>(0.0);
-    var w_below2_v = vec4<f32>(0.0);
-    var w_above_v  = vec4<f32>(0.0);
-    var w_left_v   = vec4<f32>(0.0);
-    var w_right_v  = vec4<f32>(0.0);
-    var w_back_v   = vec4<f32>(0.0);
-    var w_front_v  = vec4<f32>(0.0);
-
-    let self_idx = u32(local_x + local_y * 32 + local_z * 1024);
-    if (local_x > 0 && local_x < 31 && local_y > 1 && local_y < 31 && local_z > 0 && local_z < 31) {
-        w_below_v  = input_fields[self_idx - 32u];
-        w_below2_v = input_fields[self_idx - 64u];
-        w_above_v  = input_fields[self_idx + 32u];
-        w_left_v   = input_fields[self_idx - 1u];
-        w_right_v  = input_fields[self_idx + 1u];
-        w_back_v   = input_fields[self_idx - 1024u];
-        w_front_v  = input_fields[self_idx + 1024u];
-    } else {
-        w_below_v  = get_fluid(local_x, local_y - 1, local_z);
-        w_below2_v = get_fluid(local_x, local_y - 2, local_z);
-        w_above_v  = get_fluid(local_x, local_y + 1, local_z);
-        w_left_v   = get_fluid(local_x - 1, local_y, local_z);
-        w_right_v  = get_fluid(local_x + 1, local_y, local_z);
-        w_back_v   = get_fluid(local_x, local_y, local_z - 1);
-        w_front_v  = get_fluid(local_x, local_y, local_z + 1);
-    }
-
     // Check voxel solidity for neighbors (SDF <= threshold is solid)
-    let sol_below  = get_voxel(local_x, local_y - 1, local_z).x <= solid_thresh;
-    let sol_below2 = get_voxel(local_x, local_y - 2, local_z).x <= solid_thresh;
-    let sol_above  = get_voxel(local_x, local_y + 1, local_z).x <= solid_thresh;
-    let sol_left  = get_voxel(local_x - 1, local_y, local_z).x <= solid_thresh;
-    let sol_right = get_voxel(local_x + 1, local_y, local_z).x <= solid_thresh;
-    let sol_back  = get_voxel(local_x, local_y, local_z - 1).x <= solid_thresh;
-    let sol_front = get_voxel(local_x, local_y, local_z + 1).x <= solid_thresh;
-    
-    let flow_speed = u.misc_params.y * local_time_dilation;
-    var g_dir: vec3<f32> = vec3<f32>(0.0, -1.0, 0.0);
-    if (g_len > 0.01) {
-        g_dir = grav_vector.xyz / g_len;
-    }
-    let g_pull_below = clamp(-g_dir.y, 0.0, 1.0);
+    let sol_below  = get_voxel(local_x, local_y - 1, local_z).y <= solid_thresh;
+    let sol_above  = get_voxel(local_x, local_y + 1, local_z).y <= solid_thresh;
+    let sol_left   = get_voxel(local_x - 1, local_y, local_z).y <= solid_thresh;
+    let sol_right  = get_voxel(local_x + 1, local_y, local_z).y <= solid_thresh;
+    let sol_back   = get_voxel(local_x, local_y, local_z - 1).y <= solid_thresh;
+    let sol_front  = get_voxel(local_x, local_y, local_z + 1).y <= solid_thresh;
 
-    // --- 1. Water Flow Loop (gravity & spreading) ---
-    var new_water = water.x;
-    var w_flow_down_below = 0.0;
-    if (!sol_below && !sol_below2) {
-        w_flow_down_below = min(w_below_v.x, (1.0 - w_below2_v.x) * flow_speed * g_pull_below);
+    // Fetch neighbor liquids
+    let w_below_v = get_fluid(local_x, local_y - 1, local_z);
+    let w_above_v = get_fluid(local_x, local_y + 1, local_z);
+    let w_left_v  = get_fluid(local_x - 1, local_y, local_z);
+    let w_right_v = get_fluid(local_x + 1, local_y, local_z);
+    let w_back_v  = get_fluid(local_x, local_y, local_z - 1);
+    let w_front_v = get_fluid(local_x, local_y, local_z + 1);
+
+    var self_id = round(water.x);
+    var self_vol = water.y;
+    var self_age = water.z;
+
+    var next_id = self_id;
+    var next_vol = self_vol;
+    var next_age = self_age;
+
+    // Resolve flow speed and weight properties for self
+    var self_flow_speed = 0.0;
+    var self_weight = 0.0;
+    var self_evap_rate = 0.0;
+    if (self_id == 1.0) { // Water
+        self_flow_speed = 1.0;
+        self_weight = 1.0;
+        self_evap_rate = 0.02;
+    } else if (self_id == 2.0) { // Lava
+        self_flow_speed = 0.08;
+        self_weight = 2.0;
+        self_evap_rate = 0.0;
+    } else if (self_id == 3.0) { // Acid
+        self_flow_speed = 0.65;
+        self_weight = 1.2;
+        self_evap_rate = 0.01;
+    } else if (self_id == 4.0) { // Oil
+        self_flow_speed = 0.35;
+        self_weight = 0.8;
+        self_evap_rate = 0.015;
     }
-    var w_flow_down = 0.0;
-    if (!sol_below) {
-        w_flow_down = min(new_water, (1.0 - w_below_v.x + w_flow_down_below) * flow_speed * g_pull_below);
-    }
-    var w_flow_from_above = 0.0;
-    if (!sol_above) {
-        var w_flow_self_below = 0.0;
+
+    let global_flow_speed = u.misc_params.y * dt;
+
+    // --- 1. Downward Advection Flow ---
+    if (self_id > 0.0 && self_vol > 0.005) {
         if (!sol_below) {
-            w_flow_self_below = min(new_water, (1.0 - w_below_v.x) * flow_speed * g_pull_below);
+            let below_id = round(w_below_v.x);
+            let below_vol = w_below_v.y;
+            if (below_id == 0.0 || below_id == self_id) {
+                let flow_down = min(next_vol, (1.0 - below_vol) * global_flow_speed * self_flow_speed);
+                next_vol -= flow_down;
+            }
         }
-        w_flow_from_above = min(w_above_v.x, (1.0 - new_water + w_flow_self_below) * flow_speed);
+    } else {
+        // We are empty, check if above is falling into us
+        let above_id = round(w_above_v.x);
+        if (above_id > 0.0 && w_above_v.y > 0.005 && !sol_above) {
+            var above_flow_speed = 1.0;
+            if (above_id == 2.0) { above_flow_speed = 0.08; }
+            else if (above_id == 3.0) { above_flow_speed = 0.65; }
+            else if (above_id == 4.0) { above_flow_speed = 0.35; }
+            
+            let flow_in = min(w_above_v.y, (1.0 - next_vol) * global_flow_speed * above_flow_speed);
+            next_vol += flow_in;
+            next_id = above_id;
+            next_age = w_above_v.z;
+        }
     }
-    new_water = new_water - w_flow_down + w_flow_from_above;
 
-    var w_flow_left  = 0.0;
-    var w_flow_right = 0.0;
-    var w_flow_back  = 0.0;
-    var w_flow_front = 0.0;
-    let w_spread_factor = min(0.20, 0.15 * flow_speed);
-    if (!sol_left) {
-        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_left_below) {
-            w_flow_left = min(water.x, (1.0 - w_left_v.x) * flow_speed * 0.85);
-        } else if (!sol_below && sol_left_below) {
-            w_flow_left = -min(w_left_v.x, (1.0 - water.x) * flow_speed * 0.85);
-        } else if (sol_below) {
-            w_flow_left = (water.x - w_left_v.x) * w_spread_factor + slope_bias_x * water.x;
+    // --- 2. Displacement Swap ---
+    // If the fluid above is heavier than us, swap places
+    if (next_id > 0.0 && next_vol > 0.01) {
+        let above_id = round(w_above_v.x);
+        var above_weight = 0.0;
+        if (above_id == 1.0) { above_weight = 1.0; }
+        else if (above_id == 2.0) { above_weight = 2.0; }
+        else if (above_id == 3.0) { above_weight = 1.2; }
+        else if (above_id == 4.0) { above_weight = 0.8; }
+        
+        if (above_id > 0.0 && w_above_v.y > 0.01 && above_weight > self_weight) {
+            next_id = above_id;
+            next_vol = w_above_v.y;
+            next_age = w_above_v.z;
+        } else {
+            // Swap with below if below is lighter
+            let below_id = round(w_below_v.x);
+            var below_weight = 0.0;
+            if (below_id == 1.0) { below_weight = 1.0; }
+            else if (below_id == 2.0) { below_weight = 2.0; }
+            else if (below_id == 3.0) { below_weight = 1.2; }
+            else if (below_id == 4.0) { below_weight = 0.8; }
+            
+            if (below_id > 0.0 && w_below_v.y > 0.01 && below_weight < self_weight) {
+                next_id = below_id;
+                next_vol = w_below_v.y;
+                next_age = w_below_v.z;
+            }
         }
     }
-    if (!sol_right) {
-        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_right_below) {
-            w_flow_right = min(water.x, (1.0 - w_right_v.x) * flow_speed * 0.85);
-        } else if (!sol_below && sol_right_below) {
-            w_flow_right = -min(w_right_v.x, (1.0 - water.x) * flow_speed * 0.85);
-        } else if (sol_below) {
-            w_flow_right = (water.x - w_right_v.x) * w_spread_factor - slope_bias_x * water.x;
-        }
-    }
-    if (!sol_back) {
-        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
-        if (sol_below && !sol_back_below) {
-            w_flow_back = min(water.x, (1.0 - w_back_v.x) * flow_speed * 0.85);
-        } else if (!sol_below && sol_back_below) {
-            w_flow_back = -min(w_back_v.x, (1.0 - water.x) * flow_speed * 0.85);
-        } else if (sol_below) {
-            w_flow_back = (water.x - w_back_v.x) * w_spread_factor + slope_bias_z * water.x;
-        }
-    }
-    if (!sol_front) {
-        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
-        if (sol_below && !sol_front_below) {
-            w_flow_front = min(water.x, (1.0 - w_front_v.x) * flow_speed * 0.85);
-        } else if (!sol_below && sol_front_below) {
-            w_flow_front = -min(w_front_v.x, (1.0 - water.x) * flow_speed * 0.85);
-        } else if (sol_below) {
-            w_flow_front = (water.x - w_front_v.x) * w_spread_factor - slope_bias_z * water.x;
-        }
-    }
-    new_water -= (w_flow_left + w_flow_right + w_flow_back + w_flow_front);
-    if (new_water < 0.001 && !near_ceiling && sol_below) { new_water = 0.0; }
 
-    // --- 2. Lava Flow Loop (highly viscous, slow gravity & spreading) ---
-    var new_lava = water.y;
-    let lava_flow_speed = flow_speed * select(0.08, 0.015, select(false, get_voxel(local_x, local_y - 1, local_z).y == 13.0, local_y > 0)); // slow viscous flow, unless sitting on hot lava rock
-    var l_flow_down = 0.0;
-    if (!sol_below) {
-        l_flow_down = min(new_lava, (1.0 - w_below_v.y) * lava_flow_speed * g_pull_below);
+    // --- 3. Lateral Spreading Flow ---
+    if (next_id > 0.0 && next_vol > 0.005) {
+        let spread_rate = 0.15 * global_flow_speed * self_flow_speed;
+        
+        // Spread Left
+        if (!sol_left) {
+            let left_id = round(w_left_v.x);
+            let left_vol = w_left_v.y;
+            if (left_id == 0.0 || left_id == next_id) {
+                let flow_lat = max(0.0, (next_vol - left_vol) * spread_rate + slope_bias_x * next_vol);
+                next_vol -= flow_lat;
+            }
+        }
+        // Spread Right
+        if (!sol_right) {
+            let right_id = round(w_right_v.x);
+            let right_vol = w_right_v.y;
+            if (right_id == 0.0 || right_id == next_id) {
+                let flow_lat = max(0.0, (next_vol - right_vol) * spread_rate - slope_bias_x * next_vol);
+                next_vol -= flow_lat;
+            }
+        }
+        // Spread Back
+        if (!sol_back) {
+            let back_id = round(w_back_v.x);
+            let back_vol = w_back_v.y;
+            if (back_id == 0.0 || back_id == next_id) {
+                let flow_lat = max(0.0, (next_vol - back_vol) * spread_rate + slope_bias_z * next_vol);
+                next_vol -= flow_lat;
+            }
+        }
+        // Spread Front
+        if (!sol_front) {
+            let front_id = round(w_front_v.x);
+            let front_vol = w_front_v.y;
+            if (front_id == 0.0 || front_id == next_id) {
+                let flow_lat = max(0.0, (next_vol - front_vol) * spread_rate - slope_bias_z * next_vol);
+                next_vol -= flow_lat;
+            }
+        }
+    } else {
+        // We are empty, check if neighbors are spreading into us
+        let spread_rate = 0.15 * global_flow_speed;
+        
+        var max_incoming = 0.0;
+        var incoming_id = 0.0;
+        var incoming_age = 0.0;
+        
+        // Left
+        let left_id = round(w_left_v.x);
+        if (left_id > 0.0 && w_left_v.y > max_incoming && !sol_left) {
+            max_incoming = w_left_v.y;
+            incoming_id = left_id;
+            incoming_age = w_left_v.z;
+        }
+        // Right
+        let right_id = round(w_right_v.x);
+        if (right_id > 0.0 && w_right_v.y > max_incoming && !sol_right) {
+            max_incoming = w_right_v.y;
+            incoming_id = right_id;
+            incoming_age = w_right_v.z;
+        }
+        // Back
+        let back_id = round(w_back_v.x);
+        if (back_id > 0.0 && w_back_v.y > max_incoming && !sol_back) {
+            max_incoming = w_back_v.y;
+            incoming_id = back_id;
+            incoming_age = w_back_v.z;
+        }
+        // Front
+        let front_id = round(w_front_v.x);
+        if (front_id > 0.0 && w_front_v.y > max_incoming && !sol_front) {
+            max_incoming = w_front_v.y;
+            incoming_id = front_id;
+            incoming_age = w_front_v.z;
+        }
+        
+        if (max_incoming > 0.01) {
+            let flow_in = max_incoming * spread_rate;
+            next_vol += flow_in;
+            next_id = incoming_id;
+            next_age = incoming_age;
+        }
     }
-    var l_flow_from_above = 0.0;
-    if (!sol_above) {
-        l_flow_from_above = min(w_above_v.y, (1.0 - new_lava) * lava_flow_speed);
-    }
-    new_lava = new_lava - l_flow_down + l_flow_from_above;
 
-    var l_flow_left  = 0.0;
-    var l_flow_right = 0.0;
-    var l_flow_back  = 0.0;
-    var l_flow_front = 0.0;
-    let l_spread_factor = 0.06 * lava_flow_speed;
-    if (!sol_left) {
-        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_left_below) {
-            l_flow_left = min(new_lava, (1.0 - w_left_v.y) * lava_flow_speed * 0.85);
-        } else if (!sol_below && sol_left_below) {
-            l_flow_left = -min(w_left_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
-        } else if (sol_below) {
-            l_flow_left = (water.y - w_left_v.y) * l_spread_factor;
-        }
-    }
-    if (!sol_right) {
-        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_right_below) {
-            l_flow_right = min(new_lava, (1.0 - w_right_v.y) * lava_flow_speed * 0.85);
-        } else if (!sol_below && sol_right_below) {
-            l_flow_right = -min(w_right_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
-        } else if (sol_below) {
-            l_flow_right = (water.y - w_right_v.y) * l_spread_factor;
-        }
-    }
-    if (!sol_back) {
-        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
-        if (sol_below && !sol_back_below) {
-            l_flow_back = min(new_lava, (1.0 - w_back_v.y) * lava_flow_speed * 0.85);
-        } else if (!sol_below && sol_back_below) {
-            l_flow_back = -min(w_back_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
-        } else if (sol_below) {
-            l_flow_back = (water.y - w_back_v.y) * l_spread_factor;
-        }
-    }
-    if (!sol_front) {
-        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
-        if (sol_below && !sol_front_below) {
-            l_flow_front = min(new_lava, (1.0 - w_front_v.y) * lava_flow_speed * 0.85);
-        } else if (!sol_below && sol_front_below) {
-            l_flow_front = -min(w_front_v.y, (1.0 - new_lava) * lava_flow_speed * 0.85);
-        } else if (sol_below) {
-            l_flow_front = (water.y - w_front_v.y) * l_spread_factor;
-        }
-    }
-    new_lava -= (l_flow_left + l_flow_right + l_flow_back + l_flow_front);
-    if (new_lava < 0.001) { new_lava = 0.0; }
-
-    // --- 3. Acid Flow Loop (fast, highly corrosive) ---
-    var new_acid = water.z;
-    let acid_flow_speed = flow_speed * 0.65;
-    var a_flow_down = 0.0;
-    if (!sol_below) {
-        a_flow_down = min(new_acid, (1.0 - w_below_v.z) * acid_flow_speed * g_pull_below);
-    }
-    var a_flow_from_above = 0.0;
-    if (!sol_above) {
-        a_flow_from_above = min(w_above_v.z, (1.0 - new_acid) * acid_flow_speed);
-    }
-    new_acid = new_acid - a_flow_down + a_flow_from_above;
-
-    var a_flow_left  = 0.0;
-    var a_flow_right = 0.0;
-    var a_flow_back  = 0.0;
-    var a_flow_front = 0.0;
-    let a_spread_factor = 0.15 * acid_flow_speed;
-    if (!sol_left) {
-        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_left_below) {
-            a_flow_left = min(new_acid, (1.0 - w_left_v.z) * acid_flow_speed * 0.85);
-        } else if (!sol_below && sol_left_below) {
-            a_flow_left = -min(w_left_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
-        } else if (sol_below) {
-            a_flow_left = (water.z - w_left_v.z) * a_spread_factor;
-        }
-    }
-    if (!sol_right) {
-        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_right_below) {
-            a_flow_right = min(new_acid, (1.0 - w_right_v.z) * acid_flow_speed * 0.85);
-        } else if (!sol_below && sol_right_below) {
-            a_flow_right = -min(w_right_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
-        } else if (sol_below) {
-            a_flow_right = (water.z - w_right_v.z) * a_spread_factor;
-        }
-    }
-    if (!sol_back) {
-        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
-        if (sol_below && !sol_back_below) {
-            a_flow_back = min(new_acid, (1.0 - w_back_v.z) * acid_flow_speed * 0.85);
-        } else if (!sol_below && sol_back_below) {
-            a_flow_back = -min(w_back_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
-        } else if (sol_below) {
-            a_flow_back = (water.z - w_back_v.z) * a_spread_factor;
-        }
-    }
-    if (!sol_front) {
-        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
-        if (sol_below && !sol_front_below) {
-            a_flow_front = min(new_acid, (1.0 - w_front_v.z) * acid_flow_speed * 0.85);
-        } else if (!sol_below && sol_front_below) {
-            a_flow_front = -min(w_front_v.z, (1.0 - new_acid) * acid_flow_speed * 0.85);
-        } else if (sol_below) {
-            a_flow_front = (water.z - w_front_v.z) * a_spread_factor;
-        }
-    }
-    new_acid -= (a_flow_left + a_flow_right + a_flow_back + a_flow_front);
-    if (new_acid < 0.001) { new_acid = 0.0; }
-
-    // --- 4. Crude Oil Flow Loop (viscous, highly flammable fuel) ---
-    var new_oil = water.w;
-    let oil_flow_speed = flow_speed * 0.35;
-    var o_flow_down = 0.0;
-    if (!sol_below) {
-        o_flow_down = min(new_oil, (1.0 - w_below_v.w) * oil_flow_speed * g_pull_below);
-    }
-    var o_flow_from_above = 0.0;
-    if (!sol_above) {
-        o_flow_from_above = min(w_above_v.w, (1.0 - new_oil) * oil_flow_speed);
-    }
-    new_oil = new_oil - o_flow_down + o_flow_from_above;
-
-    var o_flow_left  = 0.0;
-    var o_flow_right = 0.0;
-    var o_flow_back  = 0.0;
-    var o_flow_front = 0.0;
-    let o_spread_factor = 0.10 * oil_flow_speed;
-    if (!sol_left) {
-        let sol_left_below = get_voxel(local_x - 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_left_below) {
-            o_flow_left = min(new_oil, (1.0 - w_left_v.w) * oil_flow_speed * 0.85);
-        } else if (!sol_below && sol_left_below) {
-            o_flow_left = -min(w_left_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
-        } else if (sol_below) {
-            o_flow_left = (water.w - w_left_v.w) * o_spread_factor;
-        }
-    }
-    if (!sol_right) {
-        let sol_right_below = get_voxel(local_x + 1, local_y - 1, local_z).x <= solid_thresh;
-        if (sol_below && !sol_right_below) {
-            o_flow_right = min(new_oil, (1.0 - w_right_v.w) * oil_flow_speed * 0.85);
-        } else if (!sol_below && sol_right_below) {
-            o_flow_right = -min(w_right_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
-        } else if (sol_below) {
-            o_flow_right = (water.w - w_right_v.w) * o_spread_factor;
-        }
-    }
-    if (!sol_back) {
-        let sol_back_below = get_voxel(local_x, local_y - 1, local_z - 1).x <= solid_thresh;
-        if (sol_below && !sol_back_below) {
-            o_flow_back = min(new_oil, (1.0 - w_back_v.w) * oil_flow_speed * 0.85);
-        } else if (!sol_below && sol_back_below) {
-            o_flow_back = -min(w_back_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
-        } else if (sol_below) {
-            o_flow_back = (water.w - w_back_v.w) * o_spread_factor;
-        }
-    }
-    if (!sol_front) {
-        let sol_front_below = get_voxel(local_x, local_y - 1, local_z + 1).x <= solid_thresh;
-        if (sol_below && !sol_front_below) {
-            o_flow_front = min(new_oil, (1.0 - w_front_v.w) * oil_flow_speed * 0.85);
-        } else if (!sol_below && sol_front_below) {
-            o_flow_front = -min(w_front_v.w, (1.0 - new_oil) * oil_flow_speed * 0.85);
-        } else if (sol_below) {
-            o_flow_front = (water.w - w_front_v.w) * o_spread_factor;
-        }
-    }
-    new_oil -= (o_flow_left + o_flow_right + o_flow_back + o_flow_front);
-    if (new_oil < 0.001) { new_oil = 0.0; }
-
-    // --- Evaporation modulated by local heat ---
+    // --- 4. Evaporation & Local Heat Reactions ---
     var local_temp = 0.0;
     var total_weight = 0.0;
     let max_instances = u32(round(u.suns[0].params.y));
@@ -812,119 +645,132 @@ if (self_voxel.x <= solid_thresh) {
     let evap_mult = select(0.002, 1.0 + (local_temp - 20.0) * 0.18, local_temp > 20.0);
     let final_evap = u.misc_params.w * evap_mult * 3.5;
 
-    // Water Evaporation (scaled 3.0x, disabled near ceilings, throttled by air dryness, and scaled down by 98% for falling water)
-    let dryness = max(0.0, 1.0 - steam_here);
-    let evap_scale = select(1.0, 0.02, !sol_below);
-    let evaporated_water = select(min(new_water, 3.0 * final_evap * dt * 50.0 * dryness * evap_scale), 0.0, near_ceiling);
-    
-    // Additional rapid electro-vaporization from lightning zapping water
-    let em_val = get_em(local_x, local_y, local_z);
-    let potential = em_val.w;
-    var zapped_evap = 0.0;
-    if (abs(potential) > 0.1) {
-        zapped_evap = min(new_water, abs(potential) * 1.5 * dt);
-    }
-    new_water = new_water - evaporated_water - zapped_evap;
-
-    // Oil Evaporation (evaporates into Methane Gas)
-    let evaporated_oil = min(new_oil, final_evap * dt * 15.0 * select(1.0, 5.0, local_temp > 60.0));
-    new_oil = new_oil - evaporated_oil;
-
-    // --- Liquid-Liquid Reactions ---
-    // 1. Water vs Lava Steam explosion reaction
-    if (new_water > 0.005 && new_lava > 0.005) {
-        let react = min(new_water, new_lava) * 0.85;
-        new_water = max(0.0, new_water - react);
-        new_lava = max(0.0, new_lava - react);
-    }
-    // 2. Water vs Acid dilution
-    if (new_water > 0.005 && new_acid > 0.005) {
-        let react = min(new_water, new_acid) * 0.20;
-        new_water = max(0.0, new_water - react);
-        new_acid = max(0.0, new_acid - react);
+    // Apply Evaporation based on ID
+    if (next_id > 0.0 && next_vol > 0.005) {
+        var local_evap_rate = self_evap_rate;
+        if (next_id == 4.0 && local_temp > 60.0) { local_evap_rate = local_evap_rate * 5.0; }
+        
+        let evap_scale = select(1.0, 0.02, !sol_below);
+        let evaporated = min(next_vol, final_evap * dt * 50.0 * local_evap_rate * evap_scale);
+        next_vol -= evaporated;
     }
 
-    // --- Combustion of Crude Oil ---
-    // Oil combusts instantly if adjacent to Lava or if local temperature > 120 C
-    let has_combustion_source = new_lava > 0.05 || w_below_v.y > 0.05 || w_above_v.y > 0.05 ||
-                                 w_left_v.y > 0.05 || w_right_v.y > 0.05 ||
-                                 w_back_v.y > 0.05 || w_front_v.y > 0.05 ||
-                                 local_temp > 120.0;
-    if (has_combustion_source && new_oil > 0.0) {
-        // Oil burns steadily and generates smoke/heat
-        let burned_oil = min(new_oil, 0.10 * dt);
-        new_oil = new_oil - burned_oil;
+    // --- 5. Contact Reactions ---
+    // 1. Water vs Lava contact at boundaries
+    if (next_id == 1.0) { // Water
+        let touches_lava = 
+            round(w_below_v.x) == 2.0 || round(w_above_v.x) == 2.0 ||
+            round(w_left_v.x) == 2.0 || round(w_right_v.x) == 2.0 ||
+            round(w_back_v.x) == 2.0 || round(w_front_v.x) == 2.0;
+        if (touches_lava) {
+            next_vol = max(0.0, next_vol - 0.85 * dt);
+        }
     }
-
-    // --- Acid contact with solid walls ---
-    // Acid eats solid walls, generating fumes (excluding ceiling to allow condensation)
-    let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
-    if (adjacent_to_solid && new_acid > 0.0) {
-        let consumed_acid = min(new_acid, 2.20 * dt);
-        new_acid = new_acid - consumed_acid;
+    if (next_id == 2.0) { // Lava
+        let touches_water = 
+            round(w_below_v.x) == 1.0 || round(w_above_v.x) == 1.0 ||
+            round(w_left_v.x) == 1.0 || round(w_right_v.x) == 1.0 ||
+            round(w_back_v.x) == 1.0 || round(w_front_v.x) == 1.0;
+        if (touches_water) {
+            next_vol = max(0.0, next_vol - 0.85 * dt);
+        }
     }
-
-    // --- Ceiling & Pressure Condensation (Vapor -> Liquid) ---
-    var local_pressure = 0.0;
-    {
-        let max_inst = u32(round(u.suns[0].params.y));
-        for (var i = 0u; i < max_inst; i = i + 1u) {
-            let inst = instances[i];
-            let radius = inst.pos_scale.w;
-            if (radius <= 0.0) { continue; }
-            let dist = length(voxel_pos - inst.pos_scale.xyz);
-            if (dist < radius) {
-                let weight = 1.0 - (dist / radius);
-                local_pressure = local_pressure + inst.interaction_fields.z * weight;
-            }
+    // 2. Oil vs fire/lava combustion
+    if (next_id == 4.0) { // Oil
+        let combusts = 
+            round(w_below_v.x) == 2.0 || round(w_above_v.x) == 2.0 ||
+            round(w_left_v.x) == 2.0 || round(w_right_v.x) == 2.0 ||
+            round(w_back_v.x) == 2.0 || round(w_front_v.x) == 2.0 ||
+            local_temp > 120.0;
+        if (combusts) {
+            next_vol = max(0.0, next_vol - 0.10 * dt);
+        }
+    }
+    // 3. Acid eating solid walls
+    if (next_id == 3.0) { // Acid
+        let adjacent_to_solid = sol_left || sol_right || sol_back || sol_front || sol_below;
+        if (adjacent_to_solid) {
+            next_vol = max(0.0, next_vol - 2.20 * dt);
         }
     }
 
+    // --- 6. Ceiling Condensation & mid-air rain ---
+    // Gas phase condensation adds to water/acid
+    let gas_here = get_gas(local_x, local_y, local_z);
+    let gas_id = round(gas_here.x);
+    let gas_vol = gas_here.y;
+    
+    let steam_here = select(0.0, gas_vol, gas_id == 1.0);
+    let acid_fog_here = select(0.0, gas_vol, gas_id == 3.0);
+    
+    var near_ceiling = false;
+    var cold_ceiling = false;
+    for (var dy = 1; dy <= 7; dy = dy + 1) {
+        let ceiling_v = get_voxel(local_x, local_y + dy, local_z);
+        if (ceiling_v.y <= solid_thresh) {
+            near_ceiling = true;
+            let ceil_mat = round(abs(ceiling_v.x));
+            if (ceil_mat == 6.0) {
+                cold_ceiling = true;
+            }
+            break;
+        }
+    }
+    
     let is_cold = cold_ceiling || (local_temp < 10.0);
     var total_condensed = 0.0;
-
-    // 1. Regular Ceiling Condensation (lowered threshold to 0.02, with a moderate base speed so it pools and lingers)
+    
     if (near_ceiling && steam_here >= 0.02) {
         let rate_mult = select(1.0, 2.5, is_cold);
         let ceiling_condensation_rate = 0.10 * u.shadow_ao_quality.w * dt * rate_mult;
         total_condensed = total_condensed + min(steam_here, ceiling_condensation_rate);
     }
-
-    // 1b. Acid Fog Ceiling Condensation
-    var acid_condensed = 0.0;
-    let acid_fog_here = gas_here.z;
-    if (near_ceiling && acid_fog_here >= 0.02) {
-        let rate_mult = select(1.0, 2.5, is_cold);
-        let acid_condensation_rate = 0.008 * u.shadow_ao_quality.w * dt * rate_mult;
-        acid_condensed = min(acid_fog_here, acid_condensation_rate);
-    }
-
-    // 2. Shockwave / Pressure Condensation
-    if (local_pressure > 5.0 && steam_here > 0.01) {
-        let pressure_condensation_rate = 1.5 * dt * local_pressure;
-        total_condensed = total_condensed + min(steam_here - total_condensed, pressure_condensation_rate);
-    }
-
-    // 3. Mid-air rain condensation (saturation-triggered downpour, with a high base speed to guarantee downpours)
+    
     let rain_threshold = u.grid_dims.w;
     var rain_condensed = 0.0;
     if (steam_here > rain_threshold) {
         let rain_rate = 3.0 * (1.5 * u.shadow_ao_quality.w + 20.0) * dt * (steam_here - rain_threshold);
         rain_condensed = min(steam_here, rain_rate);
     }
-
+    
     let combined_condensed = total_condensed + rain_condensed;
     if (combined_condensed > 0.0) {
-        new_water = new_water + combined_condensed * 1.5; // boosted conversion factor for thick visible drops
+        if (next_id == 0.0 || next_id == 1.0) {
+            next_id = 1.0;
+            next_vol = next_vol + combined_condensed * 1.5;
+        }
     }
-    if (acid_condensed > 0.0) {
-        new_acid = new_acid + acid_condensed * 0.40;
+    
+    if (near_ceiling && acid_fog_here >= 0.02) {
+        let rate_mult = select(1.0, 2.5, is_cold);
+        let acid_condensation_rate = 0.008 * u.shadow_ao_quality.w * dt * rate_mult;
+        let acid_condensed = min(acid_fog_here, acid_condensation_rate);
+        if (acid_condensed > 0.0) {
+            if (next_id == 0.0 || next_id == 3.0) {
+                next_id = 3.0;
+                next_vol = next_vol + acid_condensed * 0.40;
+            }
+        }
     }
 
-    water.x = clamp(new_water, 0.0, 1.0);
-    water.y = clamp(new_lava, 0.0, 1.0);
-    water.z = clamp(new_acid, 0.0, 1.0);
-    water.w = clamp(new_oil, 0.0, 1.0);
+    if (next_vol <= 0.005) {
+        next_id = 0.0;
+        next_vol = 0.0;
+        next_age = 0.0;
+    }
+
+    // Tick Age
+    if (next_id > 0.0) {
+        next_age = next_age + dt;
+    }
+
+    // Resolve sleep state (if volume change is microscopic, put to sleep!)
+    var next_sleep = 0.0;
+    if (abs(next_vol - self_vol) < 0.0001) {
+        next_sleep = 1.0;
+    }
+
+    water = vec4<f32>(next_id, clamp(next_vol, 0.0, 1.0), next_age, next_sleep);
 }
 
 }
