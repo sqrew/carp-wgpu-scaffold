@@ -127,6 +127,16 @@
             (IO.println &(str* "Error reading pack_unorm8.wgsl: " &err))
             @""))))
 
+  (defn pack-rgba16-shader [voxel-res]
+    (let [total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
+      (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/pack_rgba16.wgsl")
+        (Result.Success src)
+          (replace-all &src "\\{\\{TOTAL_VOXELS\\}\\}" &total-str)
+        (Result.Error err)
+          (do
+            (IO.println &(str* "Error reading pack_rgba16.wgsl: " &err))
+            @""))))
+
   (defn unpack-shader [voxel-res]
     (let [total-str (Int.str (* voxel-res (* voxel-res voxel-res)))]
       (match (IO.read-file &@"/home/sqrew/Desktop/carp-wgpu-scaffold/src/shaders/unpack.wgsl")

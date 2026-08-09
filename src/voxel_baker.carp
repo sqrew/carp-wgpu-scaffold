@@ -557,7 +557,7 @@
 
   (defn pack-and-copy-light-chunk! [ctx ren slot res]
     (let [l-half-b @(WGPURenderer.light-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-rgba16-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -622,7 +622,7 @@
 
   (defn pack-and-copy-interaction-chunk! [ctx ren slot res]
     (let [i-half-b @(WGPURenderer.interaction-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-rgba16-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -708,7 +708,7 @@
 
   (defn pack-and-copy-water-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.water-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-rgba16-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -814,7 +814,7 @@
 
   (defn pack-and-copy-gas-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.gas-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-rgba16-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
@@ -906,7 +906,7 @@
 
   (defn pack-and-copy-em-chunk! [ctx ren slot res]
     (let [w-half-b @(WGPURenderer.gas-half-buffer ren)
-          pipe @(WGPURenderer.pack-pipeline ren)
+          pipe @(WGPURenderer.pack-rgba16-pipeline ren)
           slots-per-dim (/ 384 res)
           slots-per-dim-sq (* slots-per-dim slots-per-dim)
           slot-x (Int.mod slot slots-per-dim)
