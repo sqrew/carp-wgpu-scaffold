@@ -354,7 +354,7 @@ fn get_material_properties(mat_id: f32) -> MaterialProperties {
                 let voxel_pos = chunk_info.origin_slot.xyz + vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * 1;
                 let dt = 0.00833 * get_gravity(local_x, local_y, local_z).w;
                 let dummy_use = u.time * 0.0;
-                cell.x += dummy_use;
+                cell.y += dummy_use;
                 var cell_velocity = vec3<f32>(0.0);
                 // --- DYNAMIC INJECTIONS LOOP ---
 {
@@ -668,7 +668,7 @@ cell.x = cell.x + dummy_gas.x * 1e-10;
     
 }
 {
-  let instance = instances[5];
+  let instance = instances[2];
 
       let to_node = instance.pos_scale.xyz - voxel_pos;
       let dist = length(to_node);
@@ -679,6 +679,6 @@ cell.x = cell.x + dummy_gas.x * 1e-10;
     
 }
                   // Apply velocity displacement to Signed Distance Field
-                  cell.x += length(cell_velocity) * 0.01 + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture) + textureDimensions(gravity_texture) + textureDimensions(voxel_baked_values_texture)).x) * 0.0f).x;
+                  cell.y += length(cell_velocity) * 0.01 + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture) + textureDimensions(gravity_texture) + textureDimensions(voxel_baked_values_texture)).x) * 0.0f).x;
                   output_grid[idx] = cell;
               }

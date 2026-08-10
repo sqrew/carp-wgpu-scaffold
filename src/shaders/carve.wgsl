@@ -41,19 +41,22 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let crater_dist = dist_to_crater_center - radius;
 
     var val = voxel_gpu_buffer[idx];
-    let old_dist = val.x;
+    let old_dist = val.y;
 
     if (op < 0.5) {
         // Carve (using smax to match CPU)
         let neg_crater_dist = -crater_dist;
         let new_dist = smax(old_dist, neg_crater_dist, 2.5);
-        val.x = new_dist;
+        val.y = new_dist;
+        if (new_dist > 0.0) {
+            val.x = 0.0;
+        }
     } else {
         // Build (hard union, no blending)
         let new_dist = min(old_dist, crater_dist);
-        val.x = new_dist;
+        val.y = new_dist;
         if (crater_dist < 0.0) {
-            val.y = op;
+            val.x = op;
         }
     }
 

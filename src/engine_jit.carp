@@ -353,12 +353,12 @@
                 let voxel_pos = chunk_info.origin_slot.xyz + vec3<f32>(f32(local_x), f32(local_y), f32(local_z)) * " @&cell-size-str ";
                 let dt = 0.00833 * get_gravity(local_x, local_y, local_z).w;
                 let dummy_use = u.time * 0.0;
-                cell.x += dummy_use;
+                cell.y += dummy_use;
                 var cell_velocity = vec3<f32>(0.0);
                 // --- DYNAMIC INJECTIONS LOOP ---")
             footer-block (str* "
                   // Apply velocity displacement to Signed Distance Field
-                  cell.x += length(cell_velocity) * 0.01 + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture) + textureDimensions(gravity_texture) + textureDimensions(voxel_baked_values_texture)).x) * 0.0f).x;
+                  cell.y += length(cell_velocity) * 0.01 + vec4<f32>(f32((textureDimensions(voxel_texture) + textureDimensions(water_texture) + textureDimensions(gas_texture) + textureDimensions(em_texture) + textureDimensions(gravity_texture) + textureDimensions(voxel_baked_values_texture)).x) * 0.0f).x;
                   output_grid[idx] = cell;
               }")
            injection-accum @""]
@@ -1056,9 +1056,9 @@
                                         (VoxelBaker.pack-and-copy-chunk-batched! batch ctx ren chunk v-gpu-b @(Chunk.atlas-slot chunk) res)
                                         ;; --- Sync to CPU for Player/Physics Collision ---
                                         (let [cam-pos (Camera.pos (Engine.camera e))
-                                              p-qx (World.camera-chunk-qx cam-pos)
-                                              p-qy (World.camera-chunk-qy cam-pos)
-                                              p-qz (World.camera-chunk-qz cam-pos)
+                                              p-qx (World.camera-chunk-qx world-data cam-pos)
+                                              p-qy (World.camera-chunk-qy world-data cam-pos)
+                                              p-qz (World.camera-chunk-qz world-data cam-pos)
                                               c-qx @(Chunk.coord-x chunk)
                                               c-qy @(Chunk.coord-y chunk)
                                               c-qz @(Chunk.coord-z chunk)]

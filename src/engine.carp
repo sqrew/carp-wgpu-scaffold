@@ -834,9 +834,9 @@
 
   (defn update-voxel-chunks! [e ctx ren world-data cam-pos]
     (when @(Engine.chunk-loading-enabled e)
-      (let [cam-qx (World.camera-chunk-qx cam-pos)
-            cam-qy (World.camera-chunk-qy cam-pos)
-            cam-qz (World.camera-chunk-qz cam-pos)
+      (let [cam-qx (World.camera-chunk-qx world-data cam-pos)
+            cam-qy (World.camera-chunk-qy world-data cam-pos)
+            cam-qz (World.camera-chunk-qz world-data cam-pos)
             world (Engine.world e)
             chunks (World.chunks world-data)
             num-chunks (Array.length chunks)
@@ -1098,17 +1098,18 @@
                           rad @(CraterSpawnData.radius crater)
                           op @(CraterSpawnData.op-type crater)]
                       (when (VoxelBaker.chunk-overlaps-sphere? chunk origin pos rad)
-                        (do
-                          (Diagnostics.with-zone diag "Bake: Carve CPU"
-                            (if (= op 0.0)
-                                (VoxelBaker.carve-voxel-grid-cpu! chunk pos rad res cell-size)
-                                (VoxelBaker.build-voxel-grid-cpu! chunk pos rad res cell-size op)))
-                          (Diagnostics.with-zone diag "Bake: Carve GPU"
-                            (if (= op 0.0)
-                                (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk pos rad res)
-                                (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk pos rad res op)))
-                          (Chunk.set-modified! chunk true)
-                          (set! overlapped true)))))
+                        (let [local-pos (Vector3.sub pos origin)]
+                          (do
+                            (Diagnostics.with-zone diag "Bake: Carve CPU"
+                              (if (= op 0.0)
+                                  (VoxelBaker.carve-voxel-grid-cpu! chunk &local-pos rad res cell-size)
+                                  (VoxelBaker.build-voxel-grid-cpu! chunk &local-pos rad res cell-size op)))
+                            (Diagnostics.with-zone diag "Bake: Carve GPU"
+                              (if (= op 0.0)
+                                  (VoxelBaker.carve-voxel-grid-gpu! ctx ren chunk &local-pos rad res)
+                                  (VoxelBaker.build-voxel-grid-gpu! ctx ren chunk &local-pos rad res op)))
+                            (Chunk.set-modified! chunk true)
+                            (set! overlapped true))))))
                   (when overlapped
                     (let [baked-values (the (Array Int) (replicate (* res (* res res)) &0))
                           slot @(Chunk.atlas-slot chunk)
@@ -1147,9 +1148,9 @@
           active-slots (WGPURenderer.fields-active-slots ren)
           cam (Engine.camera e)
           cam-pos (Camera.pos cam)
-          cam-qx (World.camera-chunk-qx cam-pos)
-          cam-qy (World.camera-chunk-qy cam-pos)
-          cam-qz (World.camera-chunk-qz cam-pos)]
+          cam-qx (World.camera-chunk-qx world-data cam-pos)
+          cam-qy (World.camera-chunk-qy world-data cam-pos)
+          cam-qz (World.camera-chunk-qz world-data cam-pos)]
       (do
         ; 1. First pass: check overlaps and propagate active ticks to neighbors
         (for [i 0 num-chunks]
@@ -1296,9 +1297,9 @@
 
         ;; 4. Build Chunk Lookup Data
         (Diagnostics.with-zone diag "Sync: Build Chunk Lookup"
-          (let [cam-qx (World.camera-chunk-qx cam-pos)
-                cam-qy (World.camera-chunk-qy cam-pos)
-                cam-qz (World.camera-chunk-qz cam-pos)
+          (let [cam-qx (World.camera-chunk-qx world-data cam-pos)
+                cam-qy (World.camera-chunk-qy world-data cam-pos)
+                cam-qz (World.camera-chunk-qz world-data cam-pos)
                 origin-x (- cam-qx 16)
                 origin-y (- cam-qy 16)
                 origin-z (- cam-qz 16)
@@ -1308,7 +1309,7 @@
         ;; 5. Bake voxel grid (if dirty)
         (Diagnostics.with-zone diag "Sync: Bake Voxels"
           (do
-            (Engine.bake-voxels-if-dirty! e ctx ren grid world world-data craters voxel-dirty)
+            (Engine.bake-voxels-if-dirty! e ctx ren grid world world-data (Engine.craters e) @(Engine.voxel-dirty e))
             (Engine.set-craters! e [])))
 
         ;; 5.5 Bake dynamic fields on the GPU

@@ -111,12 +111,18 @@
   (defn voxel-cell-size [world] (/ 32.0 (Double.from-int @(World.voxel-resolution world))))
   (defn chunk-size [] 32.0)
 
-  (defn camera-chunk-qx [cam-pos]
-    (the Int (Double.to-int (Double.floor (/ @(Vector3.x cam-pos) (World.chunk-size))))))
-  (defn camera-chunk-qy [cam-pos]
-    (the Int (Double.to-int (Double.floor (/ @(Vector3.y cam-pos) (World.chunk-size))))))
-  (defn camera-chunk-qz [cam-pos]
-    (the Int (Double.to-int (Double.floor (/ @(Vector3.z cam-pos) (World.chunk-size))))))
+  (defn camera-chunk-qx [world-data cam-pos]
+    (let [origin (World.grid-origin world-data)
+          local-x (- @(Vector3.x cam-pos) @(Vector3.x origin))]
+      (the Int (Double.to-int (Double.floor (/ local-x (World.chunk-size)))))))
+  (defn camera-chunk-qy [world-data cam-pos]
+    (let [origin (World.grid-origin world-data)
+          local-y (- @(Vector3.y cam-pos) @(Vector3.y origin))]
+      (the Int (Double.to-int (Double.floor (/ local-y (World.chunk-size)))))))
+  (defn camera-chunk-qz [world-data cam-pos]
+    (let [origin (World.grid-origin world-data)
+          local-z (- @(Vector3.z cam-pos) @(Vector3.z origin))]
+      (the Int (Double.to-int (Double.floor (/ local-z (World.chunk-size)))))))
 
   (defn build-chunk-lookup-data [world origin-x origin-y origin-z]
     (let [arr (the (Array Int) (replicate 33284 &0))
@@ -214,9 +220,10 @@
               (if (< val 1.5) val 1.5))))))
 
   (defn sample-voxel-grid-trilinear [world p]
-    (let [px @(Vector3.x p)
-          py @(Vector3.y p)
-          pz @(Vector3.z p)
+    (let [origin (World.grid-origin world)
+          px (- @(Vector3.x p) @(Vector3.x origin))
+          py (- @(Vector3.y p) @(Vector3.y origin))
+          pz (- @(Vector3.z p) @(Vector3.z origin))
           v-size (World.voxel-cell-size world)
           
           tx (- (/ px v-size) 0.5)

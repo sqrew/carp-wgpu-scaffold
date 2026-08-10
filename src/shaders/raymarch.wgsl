@@ -291,7 +291,8 @@ struct PointInstance {
       }
 
         fn sampleVoxelGrid(p: vec3<f32>, only_dist: bool) -> vec4<f32> {
-            let slot = getChunkSlot(vec3<i32>(floor(p / 32.0)) - chunk_lookup.origin.xyz);
+            let p_local = p - u.grid_origin.xyz;
+            let slot = getChunkSlot(vec3<i32>(floor(p_local / 32.0)) - chunk_lookup.origin.xyz);
             
             if (slot < 0) {
                 let final_h = get_terrain_height(p.x, p.z);
@@ -305,7 +306,7 @@ struct PointInstance {
                 return vec4<f32>(terrain_d, mat_id, 1.0, 1.0);
             }
             
-            let tx = p / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
+            let tx = p_local / {{VOXEL_CELL_SIZE}} - vec3<f32>(0.5);
             let c0 = vec3<i32>(floor(tx));
             let f = fract(tx);
             

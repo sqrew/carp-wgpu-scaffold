@@ -159,9 +159,10 @@
           qx @(Chunk.coord-x chunk)
           qy @(Chunk.coord-y chunk)
           qz @(Chunk.coord-z chunk)
-          ox (* (Double.from-int qx) 32.0)
-          oy (* (Double.from-int qy) 32.0)
-          oz (* (Double.from-int qz) 32.0)
+          origin (World.grid-origin world-data)
+          ox (+ @(Vector3.x origin) (* (Double.from-int qx) 32.0))
+          oy (+ @(Vector3.y origin) (* (Double.from-int qy) 32.0))
+          oz (+ @(Vector3.z origin) (* (Double.from-int qz) 32.0))
           res @(World.voxel-resolution world-data)
           cell-size (World.voxel-cell-size world-data)
           w-dim res
@@ -494,7 +495,10 @@
                             crater-dist (- dist-to-crater-center radius)
                             old-dist (Double.from-float @(Array.unsafe-nth voxel-data (+ idx-full 1)))
                             new-dist (smax old-dist (- 0.0 crater-dist) 2.5)]
-                        (Array.aset! voxel-data (+ idx-full 1) (Double.to-float new-dist)))))))))))))
+                        (do
+                          (Array.aset! voxel-data (+ idx-full 1) (Double.to-float new-dist))
+                          (when (> new-dist 0.0)
+                            (Array.aset! voxel-data idx-full 0.0f))))))))))))))
 
   (defn build-voxel-grid-cpu! [chunk center radius res cell-size mat-id]
     (let [qx @(Chunk.coord-x chunk)
